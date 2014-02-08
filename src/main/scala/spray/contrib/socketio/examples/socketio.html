@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <script src='jquery-1.7.2.min.js'></script>
+        <script src='socket.io.js'></script>
+        <script>
+            var socket = io.connect('//localhost:8080');
+
+            socket.on('connect', function() {
+                socket.emit("Hi!");
+                console.log("connected!");
+                $('#messages').append('<li>' + 'connected' + '</li>');
+            });
+            socket.on('welcome', function(data) {
+                $('#messages').append('<li>' + data.message + '</li>');
+                socket.emit('i am client', {data: 'foo!'});
+            });
+            socket.on('time', function(data) {
+                console.log(data);
+                $('#messages').append('<li>' + data.time + '</li>');
+            });
+            socket.on('error', function(errormsg) {
+                console.error(errormsg);
+            });
+            socket.on('message', function(msg) {
+                console.log(msg);
+            });
+            socket.on('disconnect', function() {
+                console.log('The client has disconnected!');
+            });
+        </script>
+    </head>
+    <body>
+        <ul id='messages'></ul>
+    </body>
+</html>

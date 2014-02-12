@@ -14,15 +14,21 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def DelimitedPacket =
     rule { "\ufffd" ~ LongValue ~ "\ufffd" ~ Packet ~> { (len, packet) => packet } }
 
-  def Packet: Rule1[Packet] = rule(Disconnect
-    | Connect
-    | Heartbeat
-    | Message
-    | JsonMessage
-    | Event
-    | Ack
-    | Error
-    | Noop)
+  def Packet: Rule1[Packet] = rule {
+    run {
+      (cursorChar: @scala.annotation.switch) match {
+        case '0' => Disconnect
+        case '1' => Connect
+        case '2' => Heartbeat
+        case '3' => Message
+        case '4' => JsonMessage
+        case '5' => Event
+        case '6' => Ack
+        case '7' => Error
+        case '8' => Noop
+      }
+    }
+  }
 
   def Disconnect =
     rule { "0" ~ { optional("::/" ~ Endpoint) ~> (_.getOrElse("")) } ~> DisconnectPacket }
@@ -83,10 +89,6 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def NormalChar = rule { !anyOf(":?=&\"\\") ~ ANY ~ append() }
 
   def Unicode = rule { 'u' ~ capture(HexDigit ~ HexDigit ~ HexDigit ~ HexDigit) ~> (java.lang.Integer.parseInt(_, 16)) }
-
-  def WhiteSpace = rule { zeroOrMore(WhiteSpaceChar) }
-  def ws(c: Char) = rule { c ~ WhiteSpace }
-  val WhiteSpaceChar = CharPredicate(" \n\r\t\f")
 }
 
 object PacketParser {

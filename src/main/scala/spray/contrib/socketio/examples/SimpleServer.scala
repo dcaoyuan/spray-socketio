@@ -16,7 +16,7 @@ import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.packet.PacketRender
-import spray.http.{ HttpHeaders, HttpMethods, HttpRequest, Uri, HttpResponse, StatusCodes, SomeOrigins, HttpEntity }
+import spray.http.{ HttpHeaders, HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity }
 import rx.lang.scala.Observer
 import scala.concurrent.duration._
 import HttpHeaders._
@@ -64,18 +64,16 @@ object SimpleServer extends App with MySslConfiguration {
           (error: Throwable) => {},
           () => {})
 
-        namespaces ! Namespace.Observe("testendpoint", observer)
+        namespaces ! Namespace.Subscribe("testendpoint", observer)
 
       case x @ TextFrame(payload) =>
         val packets = PacketParser(payload)
-        log.info("got {} from sender() {}", packets, sender().path)
+        log.info("got {}", packets)
         packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
         sender() ! x
 
       case x: Frame =>
       //log.info("Got frame: {}", x)
-
-      // --- test code for socket.io etc
 
       case HttpRequest(GET, Uri.Path("/pingpingping"), _, _, _) =>
         sender() ! HttpResponse(entity = "PONG!PONG!PONG!")

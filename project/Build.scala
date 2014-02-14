@@ -36,6 +36,7 @@ object Dependencies {
   val parboiled2 = "org.parboiled" %% "parboiled" % "2.0-SNAPSHOT" changing () // ApacheV2
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % "2.3.0-RC1" % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.0" % "test"
+  val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.16.1"
 
-  val all = Seq(spray_websocket, spray_can, akka_actor, parboiled2, akka_testkit, scalatest)
+  val all = Seq(spray_websocket, spray_can, akka_actor, parboiled2, rxscala, akka_testkit, scalatest)
 }

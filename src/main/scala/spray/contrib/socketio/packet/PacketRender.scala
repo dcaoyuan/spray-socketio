@@ -14,7 +14,7 @@ object PacketRender {
       case -1 =>
       case id =>
         builder.putBytes(id.toString.getBytes)
-        if (packet.isAck) {
+        if (packet.isAckRequested) {
           builder.putByte(Packet.PLUS)
         }
     }
@@ -47,15 +47,15 @@ object PacketRender {
       //builder.put(packet.qs.toString.getBytes)
 
       case x: AckPacket ⇒
-        if (x.ackId != -1 || x.data != "") {
+        if (x.ackId != -1 || x.args != "") {
           builder.putByte(Packet.SEPARATOR)
         }
         if (x.ackId != -1) {
           builder.putBytes(x.ackId.toString.getBytes)
         }
-        if (x.data != "") {
+        if (x.args != "") {
           builder.putByte(Packet.PLUS)
-          builder.putBytes(x.data.getBytes)
+          builder.putBytes(x.args.getBytes)
           //jsonSupport.writeValue(out, packet.args)
         }
 

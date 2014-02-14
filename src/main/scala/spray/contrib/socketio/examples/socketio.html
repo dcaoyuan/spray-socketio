@@ -4,28 +4,34 @@
         <script src='jquery-1.7.2.min.js'></script>
         <script src='socket.io.js'></script>
         <script>
-            var socket = io.connect('//localhost:8080');
+            var socket1 = io.connect('//localhost:8080/testendpoint');
+            var socket2 = io.connect('//localhost:8080/testendpoint2');
 
-            socket.on('connect', function() {
-                socket.emit("Hi!");
+            socket1.on('connect', function() {
+                socket1.emit("Hi!");
                 console.log("connected!");
                 $('#messages').append('<li>' + 'connected' + '</li>');
             });
-            socket.on('welcome', function(data) {
-                $('#messages').append('<li>' + data.message + '</li>');
-                socket.emit('i am client', {data: 'foo!'});
+            socket2.on('connect', function() {
+                socket2.emit("Hi!");
+                console.log("connected!");
+                $('#messages').append('<li>' + 'connected at 2' + '</li>');
             });
-            socket.on('time', function(data) {
+            socket1.on('welcome', function(data) {
+                $('#messages').append('<li>' + data.message + '</li>');
+                socket1.emit('i am client', {data: 'foo!'});
+            });
+            socket1.on('time', function(data) {
                 console.log(data);
                 $('#messages').append('<li>' + data.time + '</li>');
             });
-            socket.on('error', function(errormsg) {
+            socket1.on('error', function(errormsg) {
                 console.error(errormsg);
             });
-            socket.on('message', function(msg) {
+            socket1.on('message', function(msg) {
                 console.log(msg);
             });
-            socket.on('disconnect', function() {
+            socket1.on('disconnect', function() {
                 console.log('The client has disconnected!');
             });
         </script>

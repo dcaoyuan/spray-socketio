@@ -51,7 +51,7 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
 
   def GenericMessage = rule({ optional(MessageId) ~> (_.getOrElse(-1L)) }
     ~ { optional("+" ~ push(true)) ~> (_.getOrElse(false)) } ~ ":"
-    ~ { optional(Endpoint) ~> (_.getOrElse("")) } ~ ":"
+    ~ { optional(optional("/") ~ Endpoint) ~> (_.getOrElse("")) } ~ ":"
     ~ Data)
 
   def MessageId = rule { Digits ~> (_.toLong) }

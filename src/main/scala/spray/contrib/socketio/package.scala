@@ -3,6 +3,7 @@ package spray.contrib
 import spray.http.HttpRequest
 import spray.http.HttpResponse
 import java.util.UUID
+import spray.contrib.socketio.transport.SocketIOClient
 import spray.contrib.socketio.transport.Transport
 import spray.contrib.socketio.transport.WebSocket
 import spray.contrib.socketio.transport.XhrPolling
@@ -18,16 +19,12 @@ package object socketio {
   val heartbeatTimeout = 15
   val connectionClosingTimeout = 10
 
-  val NAMESPACE = "socket.io"
-
   object HandshakeRequest {
 
     def unapply(req: HttpRequest): Option[HttpResponse] = req match {
       case HttpRequest(GET, uri, headers, _, _) =>
-        //log.info("socket.io handshake, path:{}, query:{}", uri.path, uri.query)
-
         uri.path.toString.split("/") match {
-          case Array("", NAMESPACE, protocalVersion) =>
+          case Array("", "socket.io", protocalVersion) =>
             val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
 
             val sessionId = UUID.randomUUID
@@ -49,11 +46,13 @@ package object socketio {
     }
   }
 
-  def transportFor(req: HttpRequest): Option[Transport] = {
+  def clientFor(req: HttpRequest): Option[SocketIOClient] = {
     req.uri.path.toString.split("/") match {
-      case Array("", NAMESPACE, protocalVersion, transportId, sessionId) => Transport.transportFor(transportId)
+      case Array("", socketio, protocalVersion, transportId, sessionId) =>
+        Transport.transportFor(transportId) map { transport =>
+          new SocketIOClient(socketio, transport, sessionId, null)
+        }
       case _ => None
     }
   }
-
 }

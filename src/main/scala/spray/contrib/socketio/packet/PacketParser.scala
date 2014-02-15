@@ -39,7 +39,7 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def Message =
     rule { "3:" ~ GenericMessage ~> MessagePacket }
   def JsonMessage =
-    rule { "4:" ~ GenericMessage ~> JsonMessagePacket }
+    rule { "4:" ~ GenericMessage ~> JsonPacket }
   def Event =
     rule { "5:" ~ GenericMessage ~> EventPacket }
   def Ack =

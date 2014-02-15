@@ -26,17 +26,16 @@ object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
 
   class SocketioServer extends Actor with ActorLogging {
-    val namespaces = system.actorOf(Props[Namespace.Namespaces], name = "namespaces")
 
     def receive = {
       // when a new connection comes in we register ourselves as the connection handler
       case Http.Connected(remoteAddress, localAddress) =>
-        log.info("Connected to HttpListener: {}", sender().path)
+        log.info("Connected to HttpListener")
         sender() ! Http.Register(self)
 
       // socket.io handshake
       case socketio.HandshakeRequest(resp) =>
-        log.info("socketio handshake sender(): {}", sender().path)
+        log.info("socketio handshake")
         sender() ! resp
 
       // when a client request for upgrading to websocket comes in, we send
@@ -50,7 +49,7 @@ object SimpleServer extends App with MySslConfiguration {
             sender() ! UHttp.Upgrade(websocket.pipelineStage(self, x), Some(resp))
         }
 
-        log.info("websocker handshake sender(): {}", sender().path)
+        log.info("websocker handshaked")
         socketio.clientFor(req) match {
           case Some(client) =>
           case _            =>
@@ -58,19 +57,13 @@ object SimpleServer extends App with MySslConfiguration {
 
       // upgraded successfully
       case UHttp.Upgraded =>
-        log.info("Http Upgraded! from sender() {}", sender().path)
-        val observer = Observer[OnPacket[EventPacket]](
-          (next: OnPacket[EventPacket]) => { println("observed: " + next.packet.data) },
-          (error: Throwable) => {},
-          () => {})
-
-        namespaces ! Namespace.Subscribe("testendpoint", observer)
+        log.info("Http Upgraded!")
 
       case x @ TextFrame(payload) =>
         val packets = PacketParser(payload)
         log.info("got {}", packets)
         packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
-        sender() ! x
+      //sender() ! x
 
       case x: Frame =>
       //log.info("Got frame: {}", x)
@@ -86,6 +79,13 @@ object SimpleServer extends App with MySslConfiguration {
   }
 
   import system.dispatcher
+
+  val namespaces = system.actorOf(Props[Namespace.Namespaces], name = "namespaces")
+  val observer = Observer[OnPacket[EventPacket]](
+    (next: OnPacket[EventPacket]) => { println("observed: " + next.packet.data) },
+    (error: Throwable) => {},
+    () => {})
+  namespaces ! Namespace.Subscribe("testendpoint", observer)
 
   val worker = system.actorOf(Props(classOf[SocketioServer]), "websocket")
 

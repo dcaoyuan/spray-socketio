@@ -1,10 +1,7 @@
 package spray.contrib.socketio.packet
 
 object Packet {
-  val SEPARATOR = ':'.toByte
-  val PLUS = '+'.toByte
-
-  val eventReservedNames = Set(
+  val reservedEvents = Set(
     "message",
     "connect",
     "disconnect",
@@ -64,7 +61,7 @@ final case class MessagePacket(id: Long, isAckRequested: Boolean, endpoint: Stri
 /**
  * A JSON encoded message.
  */
-final case class JsonMessagePacket(id: Long, isAckRequested: Boolean, endpoint: String, data: String) extends Packet {
+final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String, data: String) extends Packet {
   def code = '4'
 }
 

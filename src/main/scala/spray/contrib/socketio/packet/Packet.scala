@@ -1,8 +1,9 @@
 package spray.contrib.socketio.packet
 
+import spray.json.JsArray
 import spray.json.JsObject
+import spray.json.JsString
 import spray.json.JsValue
-import spray.json.JsonParser
 
 object Packet {
   val reservedEvents = Set(
@@ -21,6 +22,8 @@ sealed trait Packet {
   def id: Long
   def endpoint: String
   def isAckRequested: Boolean
+
+  override def toString = PacketRender.render(this).utf8String
 }
 
 /**
@@ -73,8 +76,29 @@ final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String,
  * An event is like a json message, but has mandatory name and args fields. name
  * is a string and args an array.
  */
-final case class EventPacket(id: Long, isAckRequested: Boolean, endpoint: String, json: JsObject) extends Packet {
+object EventPacket {
+  def apply(id: Long, isAckRequested: Boolean, endpoint: String, json: JsValue): EventPacket = json match {
+    case JsObject(fields) =>
+      val name = fields.get("name") match {
+        case Some(JsString(value)) => value
+        case _                     => throw new Exception("Event packet is must have name field.")
+      }
+      val args = fields.get("args") match {
+        case Some(JsArray(xs)) => xs
+        case _                 => List()
+      }
+      apply(id, isAckRequested, endpoint, name, args)
+    case _ => throw new Exception("Event packet is not a Json object.")
+  }
+
+  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: List[JsValue]): EventPacket =
+    new EventPacket(id, isAckRequested, endpoint, name, args)
+
+  def unapply(x: EventPacket): Option[(String, List[JsValue])] = Some(x.name, x.args)
+}
+final class EventPacket private (val id: Long, val isAckRequested: Boolean, val endpoint: String, val name: String, val args: List[JsValue]) extends Packet {
   def code = '5'
+  def json = JsObject(Map("name" -> JsString(name), "args" -> JsArray(args)))
 }
 
 /**

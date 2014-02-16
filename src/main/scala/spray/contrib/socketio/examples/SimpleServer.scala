@@ -81,7 +81,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   val namespaces = system.actorOf(Props[Namespace.Namespaces], name = "namespaces")
   val observer = Observer[OnPacket[EventPacket]](
-    (next: OnPacket[EventPacket]) => { println("observed: " + next.packet.json) },
+    (next: OnPacket[EventPacket]) => { println("observed: " + next.packet.name + ", " + next.packet.args) },
     (error: Throwable) => {},
     () => {})
   namespaces ! Namespace.Subscribe("testendpoint", observer)

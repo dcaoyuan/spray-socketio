@@ -27,7 +27,6 @@ sealed abstract class JsValue {
   override def toString = compactPrint
   def toString(printer: (JsValue => String)) = printer(this)
   def compactPrint = CompactPrinter(this)
-  def prettyPrint = PrettyPrinter(this)
   def convertTo[T: JsonReader]: T = jsonReader[T].read(this)
 
   /**

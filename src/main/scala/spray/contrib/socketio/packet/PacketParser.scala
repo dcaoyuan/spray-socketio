@@ -45,7 +45,7 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def JsonMessage =
     rule { "4:" ~ GenericMessagePre ~ ":" ~ JsonData ~> JsonPacket }
   def Event =
-    rule { "5:" ~ GenericMessagePre ~ ":" ~ JsonEvent ~> EventPacket }
+    rule { "5:" ~ GenericMessagePre ~ ":" ~ JsonData ~> (EventPacket(_, _, _, _)) }
   def Ack =
     rule { "6:::" ~ MessageId ~ { optional("+" ~ StrData) ~> (_.getOrElse("")) } ~> AckPacket }
   def Error =
@@ -57,12 +57,6 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
     ~ { optional("+" ~ push(true)) ~> (_.getOrElse(false)) } ~ ":"
     ~ { optional(optional("/") ~ Endpoint) ~> (_.getOrElse("")) })
 
-  def JsonEvent = rule {
-    StrData ~> (JsonParser(_) match {
-      case x @ JsObject(fields) => x
-      case _                    => throw new Exception("Event packet is not a Json object")
-    })
-  }
   def JsonData = rule { StrData ~> (JsonParser(_)) }
   def StrData = rule { clearSB() ~ zeroOrMore(ANY ~ append()) ~ push(sb.toString) }
 
@@ -119,7 +113,8 @@ object PacketParser {
       apply("""0"""),
       apply("""0::/woot"""),
       apply("""1::/test"""),
-      apply("""1::/test?test=1"""),
+      apply("""1::/test?arg1=1"""),
+      apply("""1::/test?arg1=1&arg2=2"""),
       apply("""5:1+::{"name":"tobi"}"""),
       apply("""5:::{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),
       apply("""5:21312312:test:{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),

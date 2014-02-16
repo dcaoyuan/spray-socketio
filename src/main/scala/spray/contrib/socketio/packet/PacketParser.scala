@@ -4,6 +4,7 @@ import akka.util.ByteString
 import org.parboiled2._
 import scala.util.Failure
 import scala.util.Success
+import spray.json.JsonParser
 
 class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
 
@@ -37,22 +38,24 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def Heartbeat =
     rule { "2" ~ push(HeartbeatPacket) }
   def Message =
-    rule { "3:" ~ GenericMessage ~> MessagePacket }
+    rule { "3:" ~ GenericMessagePre ~ ":" ~ StrData ~> MessagePacket }
   def JsonMessage =
-    rule { "4:" ~ GenericMessage ~> JsonPacket }
+    rule { "4:" ~ GenericMessagePre ~ ":" ~ JsonData ~> JsonPacket }
   def Event =
-    rule { "5:" ~ GenericMessage ~> EventPacket }
+    rule { "5:" ~ GenericMessagePre ~ ":" ~ JsonData ~> EventPacket }
   def Ack =
-    rule { "6:::" ~ MessageId ~ { optional("+" ~ Data) ~> (_.getOrElse("")) } ~> AckPacket }
+    rule { "6:::" ~ MessageId ~ { optional("+" ~ StrData) ~> (_.getOrElse("")) } ~> AckPacket }
   def Error =
     rule { "7::" ~ Endpoint ~ ":" ~ Reason ~ { optional("+" ~ Advice) ~> (_.getOrElse("")) } ~> ErrorPacket }
   def Noop =
     rule { "8" ~ push(NoopPacket) }
 
-  def GenericMessage = rule({ optional(MessageId) ~> (_.getOrElse(-1L)) }
+  def GenericMessagePre = rule({ optional(MessageId) ~> (_.getOrElse(-1L)) }
     ~ { optional("+" ~ push(true)) ~> (_.getOrElse(false)) } ~ ":"
-    ~ { optional(optional("/") ~ Endpoint) ~> (_.getOrElse("")) } ~ ":"
-    ~ Data)
+    ~ { optional(optional("/") ~ Endpoint) ~> (_.getOrElse("")) })
+
+  def JsonData = rule { StrData ~> (JsonParser(_)) }
+  def StrData = rule { clearSB() ~ zeroOrMore(ANY ~ append()) ~ push(sb.toString) }
 
   def MessageId = rule { Digits ~> (_.toLong) }
 
@@ -66,8 +69,6 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def Advice = rule { Characters ~> (_.toString) }
 
   def LongValue = rule { Digits ~> (_.toLong) }
-
-  def Data = rule { clearSB() ~ zeroOrMore(ANY ~ append()) ~ push(sb.toString) }
 
   def Digit = rule { "0" - "9" }
 

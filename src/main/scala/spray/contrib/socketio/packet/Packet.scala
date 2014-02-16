@@ -1,5 +1,8 @@
 package spray.contrib.socketio.packet
 
+import spray.json.JsValue
+import spray.json.JsonParser
+
 object Packet {
   val reservedEvents = Set(
     "message",
@@ -61,7 +64,7 @@ final case class MessagePacket(id: Long, isAckRequested: Boolean, endpoint: Stri
 /**
  * A JSON encoded message.
  */
-final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String, data: String) extends Packet {
+final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String, json: JsValue) extends Packet {
   def code = '4'
 }
 
@@ -69,7 +72,7 @@ final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String,
  * An event is like a json message, but has mandatory name and args fields. name
  * is a string and args an array.
  */
-final case class EventPacket(id: Long, isAckRequested: Boolean, endpoint: String, data: String) extends Packet {
+final case class EventPacket(id: Long, isAckRequested: Boolean, endpoint: String, json: JsValue) extends Packet {
   def code = '5'
 }
 

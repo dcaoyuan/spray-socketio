@@ -14,7 +14,7 @@ object Build extends sbt.Build {
       organization := "com.wandoulabs",
       version := "0.1",
       scalaVersion := "2.10.3",
-      scalacOptions ++= Seq("-unchecked", "-deprecation"),
+      scalacOptions ++= Seq("-unchecked", "-deprecation", "-feature"),
       publishTo <<= isSnapshot { isSnapshot =>
         val id = if (isSnapshot) "snapshots" else "releases"
         val uri = "http://repo.scala-sbt.org/scalasbt/sbt-plugin-" + id

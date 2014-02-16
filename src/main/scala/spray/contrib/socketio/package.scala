@@ -30,14 +30,14 @@ package object socketio {
             val sessionId = UUID.randomUUID
             val entity = List(sessionId, heartbeatTimeout, connectionClosingTimeout, supportedTransports).mkString(":")
 
-            val handshakeResp = HttpResponse(
+            val resp = HttpResponse(
               status = StatusCodes.OK,
               entity = entity,
               headers = List(
                 HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(origins)),
                 HttpHeaders.`Access-Control-Allow-Credentials`(true)))
 
-            Some(handshakeResp)
+            Some(resp)
 
           case _ => None
         }

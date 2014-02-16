@@ -27,6 +27,7 @@ object Namespace {
   final case class Remove(name: String)
   final case class OnPacket[T <: Packet](packet: T, client: ActorRef)
   final case class Subscribe[T <: Packet](endpoint: String, observer: Observer[OnPacket[T]])(implicit val tag: TypeTag[T])
+  final case class Broadcast(packet: Packet)
 
   class Namespaces extends Actor with ActorLogging {
     import context.dispatcher
@@ -56,8 +57,12 @@ object Namespace {
 
       case Remove(name) =>
         val ns = context.actorSelection(name)
-        ns ! "broadcastOperations.disconnect()"
+        ns ! Broadcast(DisconnectPacket(name))
         ns ! PoisonPill
+
+      case x @ Broadcast(packet) =>
+        val name = toName(packet.endpoint)
+        context.actorSelection(name) ! x
 
     }
   }
@@ -70,17 +75,22 @@ object Namespace {
 class Namespace private (val name: String) extends Actor with ActorLogging {
   import Namespace._
 
+  private val clients = new mutable.WeakHashMap[ActorRef, Boolean]()
+
   val connectChannel = Subject[OnPacket[ConnectPacket]]()
   val eventChannel = Subject[OnPacket[EventPacket]]()
   val messageChannel = Subject[OnPacket[MessagePacket]]()
   val jsonChannel = Subject[OnPacket[JsonPacket]]()
 
   def receive: Receive = {
-    case OnPacket(packet: ConnectPacket, client)    => connectChannel.onNext(OnPacket(packet, client))
+    case OnPacket(packet: ConnectPacket, client) =>
+      clients += (client -> true)
+      connectChannel.onNext(OnPacket(packet, client))
+    case OnPacket(packet: DisconnectPacket, client) => clients -= client
     case OnPacket(packet: EventPacket, client)      => eventChannel.onNext(OnPacket(packet, client))
     case OnPacket(packet: MessagePacket, client)    => messageChannel.onNext(OnPacket(packet, client))
     case OnPacket(packet: JsonPacket, client)       => jsonChannel.onNext(OnPacket(packet, client))
-    case OnPacket(packet: DisconnectPacket, client) => connectChannel.onCompleted
+
     case x @ Subscribe(_, observer) =>
       x.tag.tpe match {
         case t if t =:= typeOf[ConnectPacket]    => connectChannel(observer.asInstanceOf[Observer[OnPacket[ConnectPacket]]])
@@ -90,6 +100,12 @@ class Namespace private (val name: String) extends Actor with ActorLogging {
         case t if t =:= typeOf[DisconnectPacket] => //
         case _                                   =>
       }
+
+    case Broadcast(packet) => gossip(TextFrame(PacketRender.render(packet)))
+  }
+
+  protected def gossip(msg: Any) {
+    clients foreach (_._1 ! msg)
   }
 
 }

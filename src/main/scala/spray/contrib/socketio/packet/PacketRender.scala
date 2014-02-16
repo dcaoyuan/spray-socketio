@@ -3,9 +3,9 @@ package spray.contrib.socketio.packet
 import akka.util.ByteString
 
 object PacketRender {
-  val SEPARATOR = ':'.toByte
   val PLUS = '+'.toByte
   val SLASH = '/'.toByte
+  val SEPARATOR = ':'.toByte
 
   def render(packet: Packet): ByteString = {
     val builder = ByteString.newBuilder

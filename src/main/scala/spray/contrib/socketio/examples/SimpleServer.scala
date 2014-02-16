@@ -47,12 +47,12 @@ object SimpleServer extends App with MySslConfiguration {
             val connectPacket = FrameRender.render(TextFrame(PacketRender.render(ConnectPacket())))
             val resp = x.response.withEntity(HttpEntity(connectPacket.toArray))
             sender() ! UHttp.Upgrade(websocket.pipelineStage(self, x), Some(resp))
-        }
 
-        log.info("websocker handshaked")
-        socketio.clientFor(req) match {
-          case Some(client) =>
-          case _            =>
+            log.info("websocker handshaked")
+            socketio.clientFor(req) match {
+              case Some(client) =>
+              case _            =>
+            }
         }
 
       // upgraded successfully
@@ -63,7 +63,6 @@ object SimpleServer extends App with MySslConfiguration {
         val packets = PacketParser(payload)
         log.info("got {}", packets)
         packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
-      //sender() ! x
 
       case x: Frame =>
       //log.info("Got frame: {}", x)
@@ -82,7 +81,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   val namespaces = system.actorOf(Props[Namespace.Namespaces], name = "namespaces")
   val observer = Observer[OnPacket[EventPacket]](
-    (next: OnPacket[EventPacket]) => { println("observed: " + next.packet.data) },
+    (next: OnPacket[EventPacket]) => { println("observed: " + next.packet.json) },
     (error: Throwable) => {},
     () => {})
   namespaces ! Namespace.Subscribe("testendpoint", observer)

@@ -10,6 +10,7 @@ import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.packet.Packet
+import spray.json.JsObject
 import spray.json.JsValue
 
 class SocketIOClient(
@@ -18,7 +19,7 @@ class SocketIOClient(
   val sessionId: String,
   val remoteAddress: InetSocketAddress) {
 
-  def sendEvent(name: String, data: JsValue)(implicit client: ActorRef) {
+  def sendEvent(name: String, data: JsObject)(implicit client: ActorRef) {
     val packet = EventPacket(-1L, false, namespace, data)
     send(packet)(client)
   }

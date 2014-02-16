@@ -4,6 +4,9 @@ import akka.util.ByteString
 import org.parboiled2._
 import scala.util.Failure
 import scala.util.Success
+import spray.json.JsArray
+import spray.json.JsObject
+import spray.json.JsString
 import spray.json.JsonParser
 
 class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
@@ -42,7 +45,7 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def JsonMessage =
     rule { "4:" ~ GenericMessagePre ~ ":" ~ JsonData ~> JsonPacket }
   def Event =
-    rule { "5:" ~ GenericMessagePre ~ ":" ~ JsonData ~> EventPacket }
+    rule { "5:" ~ GenericMessagePre ~ ":" ~ JsonEvent ~> EventPacket }
   def Ack =
     rule { "6:::" ~ MessageId ~ { optional("+" ~ StrData) ~> (_.getOrElse("")) } ~> AckPacket }
   def Error =
@@ -54,6 +57,12 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
     ~ { optional("+" ~ push(true)) ~> (_.getOrElse(false)) } ~ ":"
     ~ { optional(optional("/") ~ Endpoint) ~> (_.getOrElse("")) })
 
+  def JsonEvent = rule {
+    StrData ~> (JsonParser(_) match {
+      case x @ JsObject(fields) => x
+      case _                    => throw new Exception("Event packet is not a Json object")
+    })
+  }
   def JsonData = rule { StrData ~> (JsonParser(_)) }
   def StrData = rule { clearSB() ~ zeroOrMore(ANY ~ append()) ~ push(sb.toString) }
 

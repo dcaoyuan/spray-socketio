@@ -1,5 +1,6 @@
 package spray.contrib.socketio.packet
 
+import spray.json.JsObject
 import spray.json.JsValue
 import spray.json.JsonParser
 
@@ -72,7 +73,7 @@ final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String,
  * An event is like a json message, but has mandatory name and args fields. name
  * is a string and args an array.
  */
-final case class EventPacket(id: Long, isAckRequested: Boolean, endpoint: String, json: JsValue) extends Packet {
+final case class EventPacket(id: Long, isAckRequested: Boolean, endpoint: String, json: JsObject) extends Packet {
   def code = '5'
 }
 

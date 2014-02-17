@@ -16,7 +16,6 @@
 
 package spray.contrib.socketio.packet
 
-import akka.util.ByteString
 import akka.util.ByteStringBuilder
 import annotation.tailrec
 import spray.json.JsArray
@@ -29,7 +28,8 @@ import spray.json.JsTrue
 import spray.json.JsValue
 
 /**
- * A JsonPrinter serializes a JSON AST to a String.
+ * A JsonRender serializes a JSON AST to an ByteStringBuilder.
+ * Derivated from spray.json.JsonPrinter and CompactJsonPrinter
  */
 object JsonRender {
 
@@ -39,16 +39,16 @@ object JsonRender {
   def apply(x: JsValue, jsonpCallback: String, builder: ByteStringBuilder): ByteStringBuilder =
     apply(x, Some(jsonpCallback), builder)
 
-  def apply(x: JsValue, jsonpCallback: Option[String], sb: ByteStringBuilder): ByteStringBuilder = {
+  def apply(x: JsValue, jsonpCallback: Option[String], builder: ByteStringBuilder): ByteStringBuilder = {
     jsonpCallback match {
       case Some(callback) => {
-        sb.putBytes(callback.getBytes).putByte('(')
-        print(x, sb)
-        sb.putByte(')')
+        builder.putBytes(callback.getBytes).putByte('(')
+        put(x, builder)
+        builder.putByte(')')
       }
-      case None => print(x, sb)
+      case None => put(x, builder)
     }
-    sb
+    builder
   }
 
   val EscapedQuote = "\\\"".getBytes
@@ -84,18 +84,18 @@ object JsonRender {
     (mask(b >> 5) & (1 << (b & 0x1F))) != 0
   }
 
-  protected def printLeaf(x: JsValue, sb: ByteStringBuilder) {
+  protected def putLeaf(x: JsValue, sb: ByteStringBuilder) {
     x match {
       case JsNull      => sb.putBytes(NullBytes)
       case JsTrue      => sb.putBytes(TrueBytes)
       case JsFalse     => sb.putBytes(FalseBytes)
       case JsNumber(x) => sb.putBytes(x.toString.getBytes)
-      case JsString(x) => printString(x, sb)
+      case JsString(x) => putString(x, sb)
       case _           => throw new IllegalStateException
     }
   }
 
-  protected def printString(s: String, sb: ByteStringBuilder) {
+  protected def putString(s: String, sb: ByteStringBuilder) {
     @tailrec def firstToBeEncoded(ix: Int = 0): Int =
       if (ix == s.length) -1 else if (requiresEncoding(s.charAt(ix))) ix else firstToBeEncoded(ix + 1)
 
@@ -128,7 +128,7 @@ object JsonRender {
     sb.putByte('"')
   }
 
-  protected def printSeq[A](iterable: Iterable[A], printSeparator: => Unit)(f: A => Unit) {
+  protected def putSeq[A](iterable: Iterable[A], printSeparator: => Unit)(f: A => Unit) {
     var first = true
     iterable.foreach { a =>
       if (first) first = false else printSeparator
@@ -136,27 +136,27 @@ object JsonRender {
     }
   }
 
-  def print(x: JsValue, sb: ByteStringBuilder) {
+  def put(x: JsValue, sb: ByteStringBuilder) {
     x match {
-      case JsObject(x) => printObject(x, sb)
-      case JsArray(x)  => printArray(x, sb)
-      case _           => printLeaf(x, sb)
+      case JsObject(x) => putObject(x, sb)
+      case JsArray(x)  => putArray(x, sb)
+      case _           => putLeaf(x, sb)
     }
   }
 
-  private def printObject(members: Map[String, JsValue], sb: ByteStringBuilder) {
+  private def putObject(members: Map[String, JsValue], sb: ByteStringBuilder) {
     sb.putByte('{')
-    printSeq(members, sb.putByte(',')) { m =>
-      printString(m._1, sb)
+    putSeq(members, sb.putByte(',')) { m =>
+      putString(m._1, sb)
       sb.putByte(':')
-      print(m._2, sb)
+      put(m._2, sb)
     }
     sb.putByte('}')
   }
 
-  private def printArray(elements: List[JsValue], sb: ByteStringBuilder) {
+  private def putArray(elements: List[JsValue], sb: ByteStringBuilder) {
     sb.putByte('[')
-    printSeq(elements, sb.putByte(','))(print(_, sb))
+    putSeq(elements, sb.putByte(','))(put(_, sb))
     sb.putByte(']')
   }
 

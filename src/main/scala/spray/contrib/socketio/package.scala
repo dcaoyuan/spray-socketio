@@ -1,17 +1,18 @@
 package spray.contrib
 
-import spray.http.HttpRequest
-import spray.http.HttpResponse
+import akka.actor.ActorRef
 import java.util.UUID
-import spray.contrib.socketio.transport.SocketIOClient
 import spray.contrib.socketio.transport.Transport
 import spray.contrib.socketio.transport.WebSocket
 import spray.contrib.socketio.transport.XhrPolling
 import spray.http.HttpHeaders
 import spray.http.HttpHeaders._
 import spray.http.HttpMethods._
+import spray.http.HttpRequest
+import spray.http.HttpResponse
 import spray.http.SomeOrigins
 import spray.http.StatusCodes
+import spray.http.Uri
 
 package object socketio {
   // TODO config options
@@ -46,13 +47,18 @@ package object socketio {
     }
   }
 
-  def clientFor(req: HttpRequest): Option[SocketIOClient] = {
-    req.uri.path.toString.split("/") match {
-      case Array("", socketio, protocalVersion, transportId, sessionId) =>
-        Transport.transportFor(transportId) map { transport =>
-          new SocketIOClient(socketio, transport, sessionId, null)
-        }
+  def socketFor(uri: Uri, sender: ActorRef): Option[SocketIOSocket] = {
+    uri.path.toString.split("/") match {
+      case Array("", namespace, protocalVersion, transportId, sessionId) =>
+        Transport.transportFor(transportId) map { transport => SocketIOSocket("", sender, SocketIOContext(transport, sessionId)) }
       case _ => None
+    }
+  }
+
+  def isSocketioConnecting(uri: Uri): Boolean = {
+    uri.path.toString.split("/") match {
+      case Array("", namespace, protocalVersion, transportId, sessionId) => Transport.isSupported(transportId)
+      case _ => false
     }
   }
 }

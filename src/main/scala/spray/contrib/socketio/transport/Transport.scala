@@ -15,17 +15,21 @@ object Transport {
     JsonpPolling).map(x => x.id -> x).toMap
 
   def transportFor(id: String): Option[Transport] = idToTransport.get(id)
+
+  def isSupported(id: String) = idToTransport.contains(id)
 }
 
 trait Transport {
   def id: String
-  def send(packet: Packet, client: ActorRef)
+  def send(packet: Packet, sender: ActorRef)
+
+  override def toString = id
 }
 
 object XhrPolling extends Transport {
   def id = "xhr-polling"
 
-  def send(packet: Packet, client: ActorRef) {
+  def send(packet: Packet, sender: ActorRef) {
     // TODO
   }
 }
@@ -33,7 +37,7 @@ object XhrPolling extends Transport {
 object XhrMultipart extends Transport {
   def id = "xhr-multipart"
 
-  def send(packet: Packet, client: ActorRef) {
+  def send(packet: Packet, sender: ActorRef) {
     // TODO
   }
 }
@@ -41,7 +45,7 @@ object XhrMultipart extends Transport {
 object HtmlFile extends Transport {
   def id = "htmlfile"
 
-  def send(packet: Packet, client: ActorRef) {
+  def send(packet: Packet, sender: ActorRef) {
     // TODO
   }
 }
@@ -49,15 +53,15 @@ object HtmlFile extends Transport {
 object WebSocket extends Transport {
   def id = "websocket"
 
-  def send(packet: Packet, client: ActorRef) {
-    client ! TextFrame(PacketRender.render(packet))
+  def send(packet: Packet, sender: ActorRef) {
+    sender ! TextFrame(PacketRender.render(packet))
   }
 }
 
 object FlashSocket extends Transport {
   def id = "flashsocket"
 
-  def send(packet: Packet, client: ActorRef) {
+  def send(packet: Packet, sender: ActorRef) {
     // TODO
   }
 }
@@ -65,7 +69,7 @@ object FlashSocket extends Transport {
 object JsonpPolling extends Transport {
   def id = "jsonp-polling"
 
-  def send(packet: Packet, client: ActorRef) {
+  def send(packet: Packet, sender: ActorRef) {
     // TODO
   }
 }

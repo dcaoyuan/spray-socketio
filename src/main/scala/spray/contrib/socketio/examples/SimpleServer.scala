@@ -11,9 +11,8 @@ import spray.can.websocket.frame.FrameRender
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnPacket
+import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.ConnectPacket
-import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.packet.PacketRender
 import spray.http.{ HttpHeaders, HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity }
@@ -30,12 +29,12 @@ object SimpleServer extends App with MySslConfiguration {
     def receive = {
       // when a new connection comes in we register ourselves as the connection handler
       case Http.Connected(remoteAddress, localAddress) =>
-        log.info("Connected to HttpListener")
+        log.info("Connected to HttpListener, sender {}", sender().path)
         sender() ! Http.Register(self)
 
       // socket.io handshake
       case socketio.HandshakeRequest(resp) =>
-        log.info("socketio handshake")
+        log.info("socketio handshake from sender is {}", sender().path)
         sender() ! resp
 
       // when a client request for upgrading to websocket comes in, we send
@@ -44,24 +43,28 @@ object SimpleServer extends App with MySslConfiguration {
         state match {
           case x: websocket.HandshakeFailure => sender() ! x.response
           case x: websocket.HandshakeSuccess =>
-            val connectPacket = FrameRender.render(TextFrame(PacketRender.render(ConnectPacket())))
-            val resp = x.response.withEntity(HttpEntity(connectPacket.toArray))
-            sender() ! UHttp.Upgrade(websocket.pipelineStage(self, x), Some(resp))
-
-            log.info("websocker handshaked")
-            socketio.clientFor(req) match {
-              case Some(client) =>
-              case _            =>
+            log.info("websocker handshaked from sender {}", sender().path)
+            val newState = if (socketio.isSocketioConnecting(req.uri)) {
+              val connectPacket = FrameRender.render(TextFrame(PacketRender.render(ConnectPacket())))
+              x.withResponse(x.response.withEntity(HttpEntity(connectPacket.toArray)))
+            } else {
+              x
             }
+
+            sender() ! UHttp.Upgrade(websocket.pipelineStage(self, newState), newState)
         }
 
       // upgraded successfully
-      case UHttp.Upgraded =>
+      case UHttp.Upgraded(state) =>
+        socketio.socketFor(state.uri, sender()) match {
+          case Some(socket) => namespaces ! Namespace.Connected(socket)
+          case None         =>
+        }
         log.info("Http Upgraded!")
 
       case x @ TextFrame(payload) =>
         val packets = PacketParser(payload)
-        log.info("got {}", packets)
+        log.info("got {}, from sender {}", packets, sender().path)
         packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
 
       case x: Frame =>
@@ -80,8 +83,8 @@ object SimpleServer extends App with MySslConfiguration {
   import system.dispatcher
 
   val namespaces = system.actorOf(Props[Namespace.Namespaces], name = "namespaces")
-  val observer = Observer[OnPacket[EventPacket]](
-    (next: OnPacket[EventPacket]) => { println("observed: " + next.packet.name + ", " + next.packet.args) },
+  val observer = Observer[OnEvent](
+    (next: OnEvent) => { println("observed: " + next.name + ", " + next.args) },
     (error: Throwable) => {},
     () => {})
   namespaces ! Namespace.Subscribe("testendpoint", observer)

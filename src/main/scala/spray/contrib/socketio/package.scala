@@ -17,8 +17,8 @@ import spray.http.Uri
 package object socketio {
   // TODO config options
   val supportedTransports = List(WebSocket, XhrPolling).map(_.id).mkString(",")
-  val heartbeatTimeout = 15
-  val connectionClosingTimeout = 10
+  val heartbeatTimeout = 15 // seconds
+  val closeTimeout = 10 // seconds
 
   object HandshakeRequest {
 
@@ -29,7 +29,7 @@ package object socketio {
             val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
 
             val sessionId = UUID.randomUUID
-            val entity = List(sessionId, heartbeatTimeout, connectionClosingTimeout, supportedTransports).mkString(":")
+            val entity = List(sessionId, heartbeatTimeout, closeTimeout, supportedTransports).mkString(":")
 
             val resp = HttpResponse(
               status = StatusCodes.OK,
@@ -50,7 +50,7 @@ package object socketio {
   def connectionFor(uri: Uri, sender: ActorRef): Option[SocketIOConnection] = {
     uri.path.toString.split("/") match {
       case Array("", namespace, protocalVersion, transportId, sessionId) =>
-        Transport.transportFor(transportId) map { transport => SocketIOConnection("", sender, SocketIOContext(transport, sessionId)) }
+        Transport.transportFor(transportId) map { transport => SocketIOConnection(transport, sessionId, sender) }
       case _ => None
     }
   }

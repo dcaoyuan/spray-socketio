@@ -4,9 +4,6 @@ import akka.util.ByteString
 import org.parboiled2._
 import scala.util.Failure
 import scala.util.Success
-import spray.json.JsArray
-import spray.json.JsObject
-import spray.json.JsString
 import spray.json.JsonParser
 
 class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
@@ -37,9 +34,9 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def Disconnect =
     rule { "0" ~ { optional("::/" ~ Endpoint) ~> (_.getOrElse("")) } ~> DisconnectPacket }
   def Connect =
-    rule { "1::/" ~ Endpoint ~ { optional("?" ~ zeroOrMore(Query).separatedBy("&")) ~> (_.getOrElse(Nil)) } ~> ConnectPacket }
+    rule { "1::" ~ { optional("/" ~ Endpoint) ~> (_.getOrElse("")) } ~ { optional("?" ~ zeroOrMore(Query).separatedBy("&")) ~> (_.getOrElse(Nil)) } ~> ConnectPacket }
   def Heartbeat =
-    rule { "2" ~ push(HeartbeatPacket) }
+    rule { "2" ~ optional("::") ~ push(HeartbeatPacket) }
   def Message =
     rule { "3:" ~ GenericMessagePre ~ ":" ~ StrData ~> MessagePacket }
   def JsonMessage =

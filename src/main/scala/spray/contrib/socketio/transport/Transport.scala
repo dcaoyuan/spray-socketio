@@ -3,7 +3,6 @@ package spray.contrib.socketio.transport
 import akka.actor.ActorRef
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio.packet.Packet
-import spray.contrib.socketio.packet.PacketRender
 
 object Transport {
   val idToTransport = Set(
@@ -54,7 +53,7 @@ object WebSocket extends Transport {
   def id = "websocket"
 
   def send(packet: Packet, sender: ActorRef) {
-    sender ! TextFrame(PacketRender.render(packet))
+    sender ! TextFrame(packet.render)
   }
 }
 

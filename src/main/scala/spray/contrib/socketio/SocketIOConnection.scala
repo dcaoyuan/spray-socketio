@@ -8,8 +8,6 @@ import spray.contrib.socketio.packet.Packet
 import spray.contrib.socketio.transport.Transport
 import spray.json.JsValue
 
-final case class SocketIOContext(transport: Transport, sessionId: String)
-
 /**
  * Socket.IO has built-in support for multiple channels of communication
  * (which we call "multiple sockets"). Each socket is identified by an endpoint
@@ -20,27 +18,25 @@ final case class SocketIOContext(transport: Transport, sessionId: String)
  * (1::/endp2) etc to use the same sender-context pair as multiple sockets.
  * @See Namespace
  */
-final case class SocketIOConnection(endpoint: String, sender: ActorRef, context: SocketIOContext) {
+final case class SocketIOConnection(transport: Transport, sessionId: String, sender: ActorRef) {
 
-  def sessionId = context.sessionId
-
-  def sendMessage(message: String) {
+  def sendMessage(message: String)(implicit endpoint: String) {
     val packet = MessagePacket(-1L, false, endpoint, message)
     send(packet)
   }
 
-  def sendJson(json: JsValue) {
+  def sendJson(json: JsValue)(implicit endpoint: String) {
     val packet = JsonPacket(-1L, false, endpoint, json)
     send(packet)
   }
 
-  def send(packet: Packet) {
-    context.transport.send(packet, sender)
-  }
-
-  def sendEvent(name: String, args: List[JsValue]) {
+  def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
     val packet = EventPacket(-1L, false, endpoint, name, args)
     send(packet)
+  }
+
+  def send(packet: Packet)(implicit endpoint: String) {
+    transport.send(packet, sender)
   }
 
   def onDisconnect() {

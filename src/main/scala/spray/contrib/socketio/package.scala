@@ -47,10 +47,10 @@ package object socketio {
     }
   }
 
-  def socketFor(uri: Uri, sender: ActorRef): Option[SocketIOSocket] = {
+  def connectionFor(uri: Uri, sender: ActorRef): Option[SocketIOConnection] = {
     uri.path.toString.split("/") match {
       case Array("", namespace, protocalVersion, transportId, sessionId) =>
-        Transport.transportFor(transportId) map { transport => SocketIOSocket("", sender, SocketIOContext(transport, sessionId)) }
+        Transport.transportFor(transportId) map { transport => SocketIOConnection("", sender, SocketIOContext(transport, sessionId)) }
       case _ => None
     }
   }

@@ -13,8 +13,8 @@ import scala.reflect.runtime.universe._
 import scala.util.Failure
 import scala.util.Success
 import spray.can.websocket.frame.TextFrame
+import spray.contrib.socketio.SocketIOConnection
 import spray.contrib.socketio.SocketIOContext
-import spray.contrib.socketio.SocketIOSocket
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
@@ -30,17 +30,17 @@ object Namespace {
   private val allConnections = new mutable.WeakHashMap[ActorRef, SocketIOContext]()
 
   final case class Remove(namespace: String)
-  final case class Connected(connection: SocketIOSocket)
+  final case class Connected(connection: SocketIOConnection)
   final case class OnPacket[T <: Packet](packet: T, socket: ActorRef)
   final case class Subscribe[T <: OnData](endpoint: String, observer: Observer[T])(implicit val tag: TypeTag[T])
   final case class Broadcast(packet: Packet)
 
   // --- Observable data
   trait OnData
-  final case class OnConnect(args: Seq[(String, String)], socket: SocketIOSocket) extends OnData
-  final case class OnMessage(msg: String, socket: SocketIOSocket) extends OnData
-  final case class OnJson(json: JsValue, socket: SocketIOSocket) extends OnData
-  final case class OnEvent(name: String, args: List[JsValue], socket: SocketIOSocket) extends OnData
+  final case class OnConnect(args: Seq[(String, String)], conn: SocketIOConnection) extends OnData
+  final case class OnMessage(msg: String, conn: SocketIOConnection) extends OnData
+  final case class OnJson(json: JsValue, conn: SocketIOConnection) extends OnData
+  final case class OnEvent(name: String, args: List[JsValue], conn: SocketIOConnection) extends OnData
 
   class Namespaces extends Actor with ActorLogging {
     import context.dispatcher
@@ -60,7 +60,7 @@ object Namespace {
       case x @ Subscribe(endpoint, observer) =>
         tryNamespace(toName(endpoint), Some(x))
 
-      case x @ Connected(SocketIOSocket(_, sender, context)) =>
+      case x @ Connected(SocketIOConnection(_, sender, context)) =>
         allConnections += (sender -> context)
 
       case x @ OnPacket(packet @ ConnectPacket(endpoint, args), sender) =>
@@ -96,30 +96,29 @@ object Namespace {
 class Namespace private (val endpoint: String) extends Actor with ActorLogging {
   import Namespace._
 
-  log.info("namespace created {}, path {}", endpoint, self.path)
-  private val sockets = new mutable.WeakHashMap[ActorRef, SocketIOContext]()
+  private val connections = new mutable.WeakHashMap[ActorRef, SocketIOContext]()
 
   val connectChannel = Subject[OnConnect]()
   val messageChannel = Subject[OnMessage]()
   val jsonChannel = Subject[OnJson]()
   val eventChannel = Subject[OnEvent]()
 
-  def socketFor(sender: ActorRef): Option[SocketIOSocket] = sockets.get(sender) map (SocketIOSocket(endpoint, sender, _))
-  def sessionIdFor(sender: ActorRef): Option[String] = sockets.get(sender) map (_.sessionId)
+  def connectionFor(sender: ActorRef): Option[SocketIOConnection] = connections.get(sender) map (SocketIOConnection(endpoint, sender, _))
+  def sessionIdFor(sender: ActorRef): Option[String] = connections.get(sender) map (_.sessionId)
 
   def receive: Receive = {
     case OnPacket(packet: ConnectPacket, sender) =>
-      allConnections.get(sender) foreach { context => sockets += (sender -> context) }
-      socketFor(sender) foreach { socket => connectChannel.onNext(OnConnect(packet.args, socket)) }
-      log.info("clients for {}: {}", endpoint, sockets)
+      allConnections.get(sender) foreach { conn => connections += (sender -> conn) }
+      connectionFor(sender) foreach { conn => connectChannel.onNext(OnConnect(packet.args, conn)) }
+      log.info("clients for {}: {}", endpoint, connections)
 
     case OnPacket(packet: DisconnectPacket, sender) =>
-      sockets -= sender
-      log.info("clients removed: {}", sockets)
+      connections -= sender
+      log.info("clients removed: {}", connections)
 
-    case OnPacket(packet: MessagePacket, sender) => socketFor(sender) foreach { socket => messageChannel.onNext(OnMessage(packet.data, socket)) }
-    case OnPacket(packet: JsonPacket, sender)    => socketFor(sender) foreach { socket => jsonChannel.onNext(OnJson(packet.json, socket)) }
-    case OnPacket(packet: EventPacket, sender)   => socketFor(sender) foreach { socket => eventChannel.onNext(OnEvent(packet.name, packet.args, socket)) }
+    case OnPacket(packet: MessagePacket, sender) => connectionFor(sender) foreach { conn => messageChannel.onNext(OnMessage(packet.data, conn)) }
+    case OnPacket(packet: JsonPacket, sender)    => connectionFor(sender) foreach { conn => jsonChannel.onNext(OnJson(packet.json, conn)) }
+    case OnPacket(packet: EventPacket, sender)   => connectionFor(sender) foreach { conn => eventChannel.onNext(OnEvent(packet.name, packet.args, conn)) }
 
     case x @ Subscribe(_, observer) =>
       x.tag.tpe match {
@@ -134,7 +133,7 @@ class Namespace private (val endpoint: String) extends Actor with ActorLogging {
   }
 
   protected def gossip(msg: Any) {
-    sockets foreach (_._1 ! msg)
+    connections foreach (_._1 ! msg)
   }
 
 }

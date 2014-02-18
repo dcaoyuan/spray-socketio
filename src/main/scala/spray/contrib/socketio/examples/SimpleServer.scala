@@ -24,7 +24,7 @@ import HttpMethods._
 object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
 
-  class SocketioServer extends Actor with ActorLogging {
+  class SocketIOServer extends Actor with ActorLogging {
 
     def receive = {
       // when a new connection comes in we register ourselves as the connection handler
@@ -41,24 +41,24 @@ object SimpleServer extends App with MySslConfiguration {
       // UHttp.Upgrade to upgrade to websocket pipelines with an accepting response.
       case req @ websocket.HandshakeRequest(state) =>
         state match {
-          case x: websocket.HandshakeFailure => sender() ! x.response
-          case x: websocket.HandshakeSuccess =>
+          case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
+          case wsContext: websocket.HandshakeContext =>
             log.info("websocker handshaked from sender {}", sender().path)
-            val newState = if (socketio.isSocketioConnecting(req.uri)) {
+            val newContext = if (socketio.isSocketioConnecting(req.uri)) {
               val connectPacket = FrameRender.render(TextFrame(PacketRender.render(ConnectPacket())))
-              x.withResponse(x.response.withEntity(HttpEntity(connectPacket.toArray)))
+              wsContext.withResponse(wsContext.response.withEntity(HttpEntity(connectPacket.toArray)))
             } else {
-              x
+              wsContext
             }
 
-            sender() ! UHttp.Upgrade(websocket.pipelineStage(self, newState), newState)
+            sender() ! UHttp.Upgrade(websocket.pipelineStage(self, newContext), newContext)
         }
 
       // upgraded successfully
-      case UHttp.Upgraded(state) =>
-        socketio.socketFor(state.uri, sender()) match {
-          case Some(socket) => namespaces ! Namespace.Connected(socket)
-          case None         =>
+      case UHttp.Upgraded(wsContext) =>
+        socketio.connectionFor(wsContext.uri, sender()) match {
+          case Some(conn) => namespaces ! Namespace.Connected(conn)
+          case None       =>
         }
         log.info("Http Upgraded!")
 
@@ -84,12 +84,13 @@ object SimpleServer extends App with MySslConfiguration {
 
   val namespaces = system.actorOf(Props[Namespace.Namespaces], name = "namespaces")
   val observer = Observer[OnEvent](
-    (next: OnEvent) => { println("observed: " + next.name + ", " + next.args) },
-    (error: Throwable) => {},
-    () => {})
+    (next: OnEvent) => {
+      println("observed: " + next.name + ", " + next.args)
+      next.conn.sendEvent("welcome", Nil)
+    })
   namespaces ! Namespace.Subscribe("testendpoint", observer)
 
-  val worker = system.actorOf(Props(classOf[SocketioServer]), "websocket")
+  val worker = system.actorOf(Props(classOf[SocketIOServer]), "websocket")
 
   IO(UHttp) ! Http.Bind(worker, "localhost", 8080)
 

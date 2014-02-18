@@ -19,12 +19,12 @@ import spray.can.websocket.frame.Frame
 import spray.can.websocket.frame.FrameRender
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
-import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.Namespace
+import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.PacketParser
-import spray.contrib.socketio.packet.PacketRender
 import spray.http.{ HttpHeaders, HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity }
+import org.parboiled2.ParseError
 import rx.lang.scala.Observer
 import scala.concurrent.duration._
 import HttpHeaders._
@@ -33,7 +33,7 @@ import HttpMethods._
 object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
 
-  class SocketioServer extends Actor with ActorLogging {
+  class SocketIOServer extends Actor with ActorLogging {
 
     def receive = {
       // when a new connection comes in we register ourselves as the connection handler
@@ -54,7 +54,7 @@ object SimpleServer extends App with MySslConfiguration {
           case wsContext: websocket.HandshakeContext =>
             log.info("websocker handshaked from sender {}", sender().path)
             val newContext = if (socketio.isSocketioConnecting(req.uri)) {
-              val connectPacket = FrameRender.render(TextFrame(PacketRender.render(ConnectPacket())))
+              val connectPacket = FrameRender.render(TextFrame(ConnectPacket().render))
               wsContext.withResponse(wsContext.response.withEntity(HttpEntity(connectPacket.toArray)))
             } else {
               wsContext
@@ -72,9 +72,13 @@ object SimpleServer extends App with MySslConfiguration {
         log.info("Http Upgraded!")
 
       case x @ TextFrame(payload) =>
-        val packets = PacketParser(payload)
-        log.info("got {}, from sender {}", packets, sender().path)
-        packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
+        try {
+          val packets = PacketParser(payload)
+          log.info("got {}, from sender {}", packets, sender().path)
+          packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
+        } catch {
+          case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
+        }
 
       case x: Frame =>
       //log.info("Got frame: {}", x)
@@ -95,13 +99,11 @@ object SimpleServer extends App with MySslConfiguration {
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       println("observed: " + next.name + ", " + next.args)
-      next.conn.sendEvent("welcome", Nil)
-    },
-    (error: Throwable) => {},
-    () => {})
+      next.replyEvent("welcome", Nil)
+    })
   namespaces ! Namespace.Subscribe("testendpoint", observer)
 
-  val worker = system.actorOf(Props(classOf[SocketioServer]), "websocket")
+  val worker = system.actorOf(Props(classOf[SocketIOServer]), "websocket")
 
   IO(UHttp) ! Http.Bind(worker, "localhost", 8080)
 

@@ -90,7 +90,7 @@ object SimpleServer extends App with MySslConfiguration {
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       println("observed: " + next.name + ", " + next.args)
-      next.sendEvent("welcome", Nil)
+      next.replyEvent("welcome", Nil)
     })
   namespaces ! Namespace.Subscribe("testendpoint", observer)
 

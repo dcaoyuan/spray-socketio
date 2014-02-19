@@ -18,7 +18,7 @@ package object socketio {
   // TODO config options
   val supportedTransports = List(WebSocket, XhrPolling).map(_.id).mkString(",")
   val heartbeatTimeout = 15 // seconds
-  val closeTimeout = 10 // seconds
+  val closeTimeout = 30 // seconds
 
   object HandshakeRequest {
 
@@ -50,8 +50,9 @@ package object socketio {
   def soContextFor(uri: Uri, sender: ActorRef): Option[SocketIOContext] = {
     uri.path.toString.split("/") match {
       case Array("", namespace, protocalVersion, transportId, sessionId) =>
-        Transport.transportFor(transportId) map { transport => SocketIOContext(transport, sessionId, sender) }
-      case _ => None
+        Transport.transportFor(transportId) map { transport => new SocketIOContext(transport, sessionId, sender) }
+      case _ =>
+        None
     }
   }
 

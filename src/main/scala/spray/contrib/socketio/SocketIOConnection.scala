@@ -1,11 +1,13 @@
 package spray.contrib.socketio
 
 import akka.actor.Actor
+import akka.actor.ActorLogging
 import akka.actor.Cancellable
 import akka.actor.Stash
 import akka.actor.Terminated
 import akka.io.Tcp
 import scala.concurrent.duration._
+import spray.contrib.socketio
 import spray.contrib.socketio.packet.HeartbeatPacket
 import spray.contrib.socketio.packet.Packet
 import spray.json.JsValue
@@ -23,7 +25,7 @@ object SocketIOConnection {
   final case class Reply(packet: Packet)(implicit val endpoint: String)
 }
 
-class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash {
+class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash with ActorLogging {
   import SocketIOConnection._
   import context.dispatcher
 
@@ -35,48 +37,40 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash {
 
   context.watch(sender)
 
-  context.system.scheduler.schedule(5.seconds, 10.seconds) {
+  context.system.scheduler.schedule(1.seconds, socketio.heartbeatTimeout.seconds) {
     soContext.send(HeartbeatPacket)("")
   }
 
-  heartbeatTimeout = context.system.scheduler.scheduleOnce((30 + 1).seconds) {
+  heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout + 1).seconds) {
     soContext.transportActor ! Tcp.Close
   }
 
   def receive = processing
 
   def processing: Receive = {
-    case Terminated(`transportActor`) =>
-      context.stop(self)
-
-    case Pause => context.become(paused)
+    case Terminated(`transportActor`) => context.stop(self)
+    case Pause                        => context.become(paused)
 
     case ReclockCloseTimeout =>
       if (closeTimeout != null) closeTimeout.cancel
-      closeTimeout = context.system.scheduler.scheduleOnce((60 + 1).seconds) {
+      closeTimeout = context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
         soContext.transportActor ! Tcp.Close
       }
 
     case ReclockHeartbeatTimeout =>
+      log.info("Got heartbeat!")
       heartbeatTimeout.cancel
-      heartbeatTimeout = context.system.scheduler.scheduleOnce((30 + 1).seconds) {
+      heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout + 1).seconds) {
         soContext.transportActor ! Tcp.Close
       }
 
     case ConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
 
-    case x @ ReplyMessage(message) =>
-      soContext.sendMessage(message)(x.endpoint)
-
-    case x @ ReplyJson(json) =>
-      soContext.sendJson(json)(x.endpoint)
-
-    case x @ ReplyEvent(name, args) =>
-      soContext.sendEvent(name, args)(x.endpoint)
-
-    case x @ Reply(packet) =>
-      soContext.send(packet)(x.endpoint)
+    case x @ ReplyMessage(message)  => soContext.sendMessage(message)(x.endpoint)
+    case x @ ReplyJson(json)        => soContext.sendJson(json)(x.endpoint)
+    case x @ ReplyEvent(name, args) => soContext.sendEvent(name, args)(x.endpoint)
+    case x @ Reply(packet)          => soContext.send(packet)(x.endpoint)
   }
 
   def paused: Receive = {

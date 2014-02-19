@@ -11,8 +11,6 @@ import rx.lang.scala.Subject
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
-import scala.util.Failure
-import scala.util.Success
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio.SocketIOConnection.ReclockCloseTimeout
 import spray.contrib.socketio.SocketIOConnection.ReclockHeartbeatTimeout
@@ -28,7 +26,7 @@ import spray.json.JsValue
 object Namespace {
   val DEFAULT_NAMESPACE = "socket.io"
 
-  private val allConnections = new mutable.HashMap[ActorRef, ActorRef]() // transportActor -> SocketIOConnection Actor
+  private val allConnections = new mutable.HashMap[ActorRef, ActorRef]() // transportActor -> SocketIOConnection_Actor
 
   final case class Remove(namespace: String)
   final case class Connected(soContext: SocketIOContext)
@@ -38,11 +36,12 @@ object Namespace {
 
   // --- Observable data
   sealed trait OnData {
+    import spray.contrib.socketio.SocketIOConnection._
+
     def conn: ActorRef // SocketIOConnection Actor
     implicit def endpoint: String
 
-    import spray.contrib.socketio.SocketIOConnection._
-    def replyMessage(message: String) = conn ! ReplyMessage(message)
+    def replyMessage(msg: String) = conn ! ReplyMessage(msg)
     def replyJson(json: JsValue) = conn ! ReplyJson(json)
     def replyEvent(name: String, args: List[JsValue]) = conn ! ReplyEvent(name, args)
     def reply(packet: Packet) = conn ! Reply(packet)
@@ -57,31 +56,29 @@ object Namespace {
 
     def toName(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
 
-    def tryNamespace(name: String, msg: Option[Any]) {
-      context.actorSelection(name).resolveOne(5.seconds).onComplete {
-        case Success(ns) => msg foreach (ns.tell(_, self))
-        case Failure(_) =>
-          val ns = context.actorOf(Props(classOf[Namespace], name), name = name)
-          msg foreach (ns.tell(_, self))
-      }
+    def tryDispatch(namespace: String, msg: Any) {
+      for {
+        ns <- context.actorSelection(namespace).resolveOne(5.seconds).recover {
+          case _: Throwable => context.actorOf(Props(classOf[Namespace], namespace), name = namespace)
+        }
+      } ns ! msg
     }
 
     def receive: Receive = {
       case x @ Subscribe(endpoint, observer) =>
-        tryNamespace(toName(endpoint), Some(x))
+        tryDispatch(toName(endpoint), x)
 
-      case x @ Connected(soContext @ SocketIOContext(_, _, transportActor)) =>
-        context.watch(transportActor)
-        allConnections += (transportActor -> context.actorOf(Props(classOf[SocketIOConnection], soContext)))
+      case x @ Connected(soContext: SocketIOContext) =>
+        context.watch(soContext.transportActor)
+        allConnections += (soContext.transportActor -> context.actorOf(Props(classOf[SocketIOConnection], soContext)))
 
       case x @ OnPacket(packet @ ConnectPacket(endpoint, args), transportActor) =>
         // do authorization here ?
         transportActor ! TextFrame(packet.render)
-
-        tryNamespace(toName(endpoint), Some(x))
+        tryDispatch(toName(endpoint), x)
 
       case x @ OnPacket(packet @ DisconnectPacket(endpoint), transportActor) =>
-        tryNamespace(toName(endpoint), Some(x)) // TODO
+        context.actorSelection(toName(endpoint)) ! x
 
       case x @ OnPacket(HeartbeatPacket, transportActor) =>
         allConnections.get(transportActor) foreach { _ ! ReclockHeartbeatTimeout }
@@ -98,7 +95,7 @@ object Namespace {
         context.actorSelection(toName(packet.endpoint)) ! x
 
       case Terminated(transportActor) =>
-        allConnections.get(transportActor) foreach { _ ! ReclockCloseTimeout }
+        allConnections.get(transportActor) foreach { _ ! ReclockCloseTimeout } // TODO
         log.info("clients removed: {}", allConnections)
         allConnections -= transportActor
     }

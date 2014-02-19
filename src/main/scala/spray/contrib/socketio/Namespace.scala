@@ -28,8 +28,7 @@ import spray.json.JsValue
 object Namespace {
   val DEFAULT_NAMESPACE = "socket.io"
 
-  private val allSoContexts = new mutable.WeakHashMap[ActorRef, SocketIOContext]()
-  private val allConnections = new mutable.WeakHashMap[ActorRef, ActorRef]()
+  private val allConnections = new mutable.HashMap[ActorRef, ActorRef]() // transportActor -> SocketIOConnection Actor
 
   final case class Remove(namespace: String)
   final case class Connected(soContext: SocketIOContext)
@@ -39,18 +38,19 @@ object Namespace {
 
   // --- Observable data
   sealed trait OnData {
-    def conn: SocketIOContext
+    def conn: ActorRef // SocketIOConnection Actor
     implicit def endpoint: String
 
-    def replyMessage(message: String) = conn.sendMessage(message)
-    def replyJson(json: JsValue) = conn.sendJson(json)
-    def replyEvent(name: String, args: List[JsValue]) = conn.sendEvent(name, args)
-    def reply(packet: Packet) = conn.send(packet)
+    import spray.contrib.socketio.SocketIOConnection._
+    def replyMessage(message: String) = conn ! ReplyMessage(message)
+    def replyJson(json: JsValue) = conn ! ReplyJson(json)
+    def replyEvent(name: String, args: List[JsValue]) = conn ! ReplyEvent(name, args)
+    def reply(packet: Packet) = conn ! Reply(packet)
   }
-  final case class OnConnect(args: Seq[(String, String)], conn: SocketIOContext)(implicit val endpoint: String) extends OnData
-  final case class OnMessage(msg: String, conn: SocketIOContext)(implicit val endpoint: String) extends OnData
-  final case class OnJson(json: JsValue, conn: SocketIOContext)(implicit val endpoint: String) extends OnData
-  final case class OnEvent(name: String, args: List[JsValue], conn: SocketIOContext)(implicit val endpoint: String) extends OnData
+  final case class OnConnect(args: Seq[(String, String)], conn: ActorRef)(implicit val endpoint: String) extends OnData
+  final case class OnMessage(msg: String, conn: ActorRef)(implicit val endpoint: String) extends OnData
+  final case class OnJson(json: JsValue, conn: ActorRef)(implicit val endpoint: String) extends OnData
+  final case class OnEvent(name: String, args: List[JsValue], conn: ActorRef)(implicit val endpoint: String) extends OnData
 
   class Namespaces extends Actor with ActorLogging {
     import context.dispatcher
@@ -70,26 +70,24 @@ object Namespace {
       case x @ Subscribe(endpoint, observer) =>
         tryNamespace(toName(endpoint), Some(x))
 
-      case x @ Connected(soContext @ SocketIOContext(_, _, connActor)) =>
-        context.watch(connActor)
-        allSoContexts += (connActor -> soContext)
-        allConnections += (connActor -> context.actorOf(Props(classOf[SocketIOConnection], soContext)))
+      case x @ Connected(soContext @ SocketIOContext(_, _, transportActor)) =>
+        context.watch(transportActor)
+        allConnections += (transportActor -> context.actorOf(Props(classOf[SocketIOConnection], soContext)))
 
-      case x @ OnPacket(packet @ ConnectPacket(endpoint, args), connActor) =>
+      case x @ OnPacket(packet @ ConnectPacket(endpoint, args), transportActor) =>
         // do authorization here ?
-        connActor ! TextFrame(packet.render)
+        transportActor ! TextFrame(packet.render)
 
         tryNamespace(toName(endpoint), Some(x))
 
-      case x @ OnPacket(packet @ DisconnectPacket(endpoint), connActor) =>
+      case x @ OnPacket(packet @ DisconnectPacket(endpoint), transportActor) =>
         tryNamespace(toName(endpoint), Some(x)) // TODO
 
-      case x @ OnPacket(HeartbeatPacket, connActor) =>
-        allConnections.get(connActor) foreach { _ ! ReclockHeartbeatTimeout }
+      case x @ OnPacket(HeartbeatPacket, transportActor) =>
+        allConnections.get(transportActor) foreach { _ ! ReclockHeartbeatTimeout }
 
-      case x @ OnPacket(packet, connActor) =>
-        val name = toName(packet.endpoint)
-        context.actorSelection(name) ! x
+      case x @ OnPacket(packet, transportActor) =>
+        context.actorSelection(toName(packet.endpoint)) ! x
 
       case Remove(namespace) =>
         val ns = context.actorSelection(namespace)
@@ -97,13 +95,12 @@ object Namespace {
         ns ! PoisonPill
 
       case x @ Broadcast(packet) =>
-        val name = toName(packet.endpoint)
-        context.actorSelection(name) ! x
+        context.actorSelection(toName(packet.endpoint)) ! x
 
-      case Terminated(connActor) =>
-        log.info("clients removed: {}", allSoContexts)
-        allSoContexts -= connActor
-        allConnections -= connActor
+      case Terminated(transportActor) =>
+        allConnections.get(transportActor) foreach { _ ! ReclockCloseTimeout }
+        log.info("clients removed: {}", allConnections)
+        allConnections -= transportActor
     }
   }
 
@@ -115,7 +112,7 @@ object Namespace {
 class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
   import Namespace._
 
-  private val soContexts = new mutable.WeakHashMap[ActorRef, SocketIOContext]()
+  private val connections = new mutable.HashMap[ActorRef, ActorRef]()
 
   val connectChannel = Subject[OnConnect]()
   val messageChannel = Subject[OnMessage]()
@@ -123,23 +120,23 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
   val eventChannel = Subject[OnEvent]()
 
   def receive: Receive = {
-    case OnPacket(packet: ConnectPacket, connActor) =>
-      context.watch(connActor)
-      allSoContexts.get(connActor) foreach { soContext => soContexts += (connActor -> soContext) }
-      soContexts.get(connActor) foreach { soContext => connectChannel.onNext(OnConnect(packet.args, soContext)) }
-      log.info("clients for {}: {}", endpoint, soContexts)
+    case OnPacket(packet: ConnectPacket, transportActor) =>
+      context.watch(transportActor)
+      allConnections.get(transportActor) foreach { conn => connections += (transportActor -> conn) }
+      connections.get(transportActor) foreach { conn => connectChannel.onNext(OnConnect(packet.args, conn)) }
+      log.info("clients for {}: {}", endpoint, connections)
 
-    case OnPacket(packet: DisconnectPacket, connActor) =>
-      soContexts -= connActor
-      log.info("clients removed: {}", soContexts)
+    case OnPacket(packet: DisconnectPacket, transportActor) =>
+      connections -= transportActor
+      log.info("clients removed: {}", connections)
 
-    case OnPacket(HeartbeatPacket, connActor) =>
-      soContexts -= connActor
-      log.info("clients removed: {}", soContexts)
+    case OnPacket(HeartbeatPacket, transportActor) =>
+      connections -= transportActor
+      log.info("clients removed: {}", connections)
 
-    case OnPacket(packet: MessagePacket, connActor) => soContexts.get(connActor) foreach { soContext => messageChannel.onNext(OnMessage(packet.data, soContext)) }
-    case OnPacket(packet: JsonPacket, connActor)    => soContexts.get(connActor) foreach { soContext => jsonChannel.onNext(OnJson(packet.json, soContext)) }
-    case OnPacket(packet: EventPacket, connActor)   => soContexts.get(connActor) foreach { soContext => eventChannel.onNext(OnEvent(packet.name, packet.args, soContext)) }
+    case OnPacket(packet: MessagePacket, transportActor) => connections.get(transportActor) foreach { conn => messageChannel.onNext(OnMessage(packet.data, conn)) }
+    case OnPacket(packet: JsonPacket, transportActor)    => connections.get(transportActor) foreach { conn => jsonChannel.onNext(OnJson(packet.json, conn)) }
+    case OnPacket(packet: EventPacket, transportActor)   => connections.get(transportActor) foreach { conn => eventChannel.onNext(OnEvent(packet.name, packet.args, conn)) }
 
     case x @ Subscribe(_, observer) =>
       x.tag.tpe match {
@@ -152,13 +149,13 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
 
     case Broadcast(packet) => gossip(packet)
 
-    case Terminated(connActor) =>
-      log.info("clients removed: {}", soContexts)
-      soContexts -= connActor
+    case Terminated(transportActor) =>
+      log.info("clients removed: {}", connections)
+      connections -= transportActor
   }
 
   def gossip(packet: Packet) {
-    soContexts foreach (_._2.send(packet))
+    connections foreach (_._2 ! spray.contrib.socketio.SocketIOConnection.Reply(packet))
   }
 
 }

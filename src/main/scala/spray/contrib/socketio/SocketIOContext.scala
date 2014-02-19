@@ -18,25 +18,25 @@ import spray.json.JsValue
  * (1::/endp2) etc to use the same sender-context pair as multiple sockets.
  * @See Namespace
  */
-final case class SocketIOContext(transport: Transport, sessionId: String, connActor: ActorRef) {
+final case class SocketIOContext(transport: Transport, sessionId: String, transportActor: ActorRef) {
 
-  def sendMessage(message: String)(implicit endpoint: String) {
+  private[socketio] def sendMessage(message: String)(implicit endpoint: String) {
     val packet = MessagePacket(-1L, false, endpoint, message)
     send(packet)
   }
 
-  def sendJson(json: JsValue)(implicit endpoint: String) {
+  private[socketio] def sendJson(json: JsValue)(implicit endpoint: String) {
     val packet = JsonPacket(-1L, false, endpoint, json)
     send(packet)
   }
 
-  def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
+  private[socketio] def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
     val packet = EventPacket(-1L, false, endpoint, name, args)
     send(packet)
   }
 
-  def send(packet: Packet)(implicit endpoint: String) {
-    transport.send(packet, connActor)
+  private[socketio] def send(packet: Packet)(implicit endpoint: String) {
+    transport.send(packet, transportActor)
   }
 
   def onDisconnect() {
@@ -48,4 +48,6 @@ final case class SocketIOContext(transport: Transport, sessionId: String, connAc
   //    send(DisconnectPacket(namespace))
   //    onDisconnect()
   //  }
+  //
+
 }

@@ -23,14 +23,11 @@ import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.PacketParser
-import spray.http.{ HttpHeaders, HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity }
+import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity }
 import org.parboiled2.ParseError
 import rx.lang.scala.Observer
 import scala.concurrent.duration._
-import HttpHeaders._
-import HttpMethods._
-import spray.json.JsObject
-import spray.json.JsString
+import spray.json.DefaultJsonProtocol
 
 object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
@@ -85,7 +82,7 @@ object SimpleServer extends App with MySslConfiguration {
       case x: Frame =>
       //log.info("Got frame: {}", x)
 
-      case HttpRequest(GET, Uri.Path("/pingpingping"), _, _, _) =>
+      case HttpRequest(HttpMethods.GET, Uri.Path("/pingpingping"), _, _, _) =>
         sender() ! HttpResponse(entity = "PONG!PONG!PONG!")
 
       case x: HttpRequest =>
@@ -95,14 +92,24 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
+  // --- json protocals:
+  case class Message(message: String)
+  case class Now(time: String)
+  object TheJsonProtocol extends DefaultJsonProtocol {
+    implicit val msgFormat = jsonFormat1(Message)
+    implicit val nowFormat = jsonFormat1(Now)
+  }
+  import spray.json._
+  import TheJsonProtocol._
+
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
-        case OnEvent("Hi!", args, conn) =>
+        case OnEvent("Hi!", args, context) =>
           println("observed: " + next.name + ", " + next.args)
-          next.replyEvent("welcome", List(JsObject(Map("message" -> JsString("From spray-socketio")))))
-          next.replyEvent("time", List(JsObject(Map("time" -> JsString("It's" + (new java.util.Date))))))
-        case OnEvent("time", args, conn) =>
+          next.replyEvent("welcome", List(Message("Reply from spray-socketio").toJson))
+          next.replyEvent("time", List(Now((new java.util.Date).toString).toJson))
+        case OnEvent("time", args, context) =>
           println("observed: " + next.name + ", " + next.args)
         case _ =>
           println("observed: " + next.name + ", " + next.args)

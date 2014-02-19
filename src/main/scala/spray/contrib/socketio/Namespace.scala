@@ -32,8 +32,8 @@ object Namespace {
   val namespaces = ActorSystem().actorOf(Props[Namespace.Namespaces], name = "namespaces")
 
   private val authorizedSessionIds = new mutable.HashMap[String, Either[Cancellable, SocketIOContext]]()
-  def authorize(soContext: SocketIOContext): Boolean = {
-    authorizedSessionIds.get(soContext.sessionId) match {
+  def authorize(ctx: SocketIOContext): Boolean = {
+    authorizedSessionIds.get(ctx.sessionId) match {
       case Some(Left(timeout)) =>
         timeout.cancel
         true
@@ -101,14 +101,14 @@ object Namespace {
         }
 
       case x @ OnPacket(packet @ ConnectPacket(endpoint, args), transportActor) =>
-        allConnections.get(transportActor) foreach { soContext =>
-          soContext.send(packet)
+        allConnections.get(transportActor) foreach { ctx =>
+          ctx.send(packet)
           tryDispatch(toName(endpoint), x)
         }
 
       case x @ OnPacket(packet @ DisconnectPacket(endpoint), transportActor) =>
-        allConnections.get(transportActor) foreach { soContext =>
-          authorizedSessionIds -= soContext.sessionId
+        allConnections.get(transportActor) foreach { ctx =>
+          authorizedSessionIds -= ctx.sessionId
         }
         allConnections -= transportActor
         context.actorSelection(toName(endpoint)) ! x
@@ -152,8 +152,8 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
   def receive: Receive = {
     case OnPacket(packet: ConnectPacket, transportActor) =>
       context.watch(transportActor)
-      allConnections.get(transportActor) foreach { soContext => connections += (transportActor -> soContext) }
-      connections.get(transportActor) foreach { soContext => connectChannel.onNext(OnConnect(packet.args, soContext)) }
+      allConnections.get(transportActor) foreach { ctx => connections += (transportActor -> ctx) }
+      connections.get(transportActor) foreach { ctx => connectChannel.onNext(OnConnect(packet.args, ctx)) }
       log.info("clients for {}: {}", endpoint, connections)
 
     case OnPacket(packet: DisconnectPacket, transportActor) =>
@@ -164,9 +164,9 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
       connections -= transportActor
       log.info("clients removed: {}", connections)
 
-    case OnPacket(packet: MessagePacket, transportActor) => connections.get(transportActor) foreach { soContext => messageChannel.onNext(OnMessage(packet.data, soContext)) }
-    case OnPacket(packet: JsonPacket, transportActor)    => connections.get(transportActor) foreach { soContext => jsonChannel.onNext(OnJson(packet.json, soContext)) }
-    case OnPacket(packet: EventPacket, transportActor)   => connections.get(transportActor) foreach { soContext => eventChannel.onNext(OnEvent(packet.name, packet.args, soContext)) }
+    case OnPacket(packet: MessagePacket, transportActor) => connections.get(transportActor) foreach { ctx => messageChannel.onNext(OnMessage(packet.data, ctx)) }
+    case OnPacket(packet: JsonPacket, transportActor)    => connections.get(transportActor) foreach { ctx => jsonChannel.onNext(OnJson(packet.json, ctx)) }
+    case OnPacket(packet: EventPacket, transportActor)   => connections.get(transportActor) foreach { ctx => eventChannel.onNext(OnEvent(packet.name, packet.args, ctx)) }
 
     case x @ Subscribe(_, observer) =>
       x.tag.tpe match {

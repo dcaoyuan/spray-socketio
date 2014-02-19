@@ -29,6 +29,8 @@ import rx.lang.scala.Observer
 import scala.concurrent.duration._
 import HttpHeaders._
 import HttpMethods._
+import spray.json.JsObject
+import spray.json.JsString
 
 object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
@@ -66,7 +68,7 @@ object SimpleServer extends App with MySslConfiguration {
       // upgraded successfully
       case UHttp.Upgraded(wsContext) =>
         socketio.soContextFor(wsContext.uri, sender()) match {
-          case Some(soContext) => namespaces ! Namespace.Connected(soContext)
+          case Some(soContext) => Namespace.namespaces ! Namespace.Connected(soContext)
           case None            =>
         }
         log.info("Http Upgraded!")
@@ -75,7 +77,7 @@ object SimpleServer extends App with MySslConfiguration {
         try {
           val packets = PacketParser(payload)
           log.info("got {}, from sender {}", packets, sender().path)
-          packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
+          packets foreach { Namespace.namespaces ! Namespace.OnPacket(_, sender()) }
         } catch {
           case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
         }
@@ -93,15 +95,22 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
-  import system.dispatcher
-
-  val namespaces = system.actorOf(Props[Namespace.Namespaces], name = "namespaces")
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
-      println("observed: " + next.name + ", " + next.args)
-      next.replyEvent("welcome", Nil)
+      next match {
+        case OnEvent("Hi!", args, conn) =>
+          println("observed: " + next.name + ", " + next.args)
+          next.replyEvent("welcome", List(JsObject(Map("message" -> JsString("From spray-socketio")))))
+          next.replyEvent("time", List(JsObject(Map("time" -> JsString("It's" + (new java.util.Date))))))
+        case OnEvent("time", args, conn) =>
+          println("observed: " + next.name + ", " + next.args)
+        case _ =>
+          println("observed: " + next.name + ", " + next.args)
+      }
     })
-  namespaces ! Namespace.Subscribe("testendpoint", observer)
+  Namespace.namespaces ! Namespace.Subscribe("testendpoint", observer)
+
+  import system.dispatcher
 
   val worker = system.actorOf(Props(classOf[SocketIOServer]), "websocket")
 

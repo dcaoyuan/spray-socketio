@@ -1,9 +1,10 @@
 package spray.contrib.socketio
 
 import akka.actor.ActorRef
-import spray.contrib.socketio.packet.EventPacket
-import spray.contrib.socketio.packet.JsonPacket
-import spray.contrib.socketio.packet.MessagePacket
+import spray.contrib.socketio.SocketIOConnection.SendEvent
+import spray.contrib.socketio.SocketIOConnection.SendJson
+import spray.contrib.socketio.SocketIOConnection.SendMessage
+import spray.contrib.socketio.SocketIOConnection.SendPacket
 import spray.contrib.socketio.packet.Packet
 import spray.contrib.socketio.transport.Transport
 import spray.json.JsValue
@@ -23,25 +24,26 @@ import spray.json.JsValue
  */
 class SocketIOContext(val transport: Transport, val sessionId: String, val transportActor: ActorRef) {
 
-  private def properEndpoint(endpoint: String) = if (endpoint == Namespace.DEFAULT_NAMESPACE) "" else endpoint
-
-  private[socketio] def sendMessage(msg: String)(implicit endpoint: String) {
-    val packet = MessagePacket(-1L, false, properEndpoint(endpoint), msg)
-    send(packet)
+  private var _conn: ActorRef = _
+  def conn = _conn
+  def withConnection(conn: ActorRef) {
+    _conn = conn
   }
 
-  private[socketio] def sendJson(json: JsValue)(implicit endpoint: String) {
-    val packet = JsonPacket(-1L, false, properEndpoint(endpoint), json)
-    send(packet)
+  def sendMessage(msg: String)(implicit endpoint: String) {
+    conn ! SendMessage(msg)
   }
 
-  private[socketio] def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
-    val packet = EventPacket(-1L, false, properEndpoint(endpoint), name, args)
-    send(packet)
+  def sendJson(json: JsValue)(implicit endpoint: String) {
+    conn ! SendJson(json)
   }
 
-  private[socketio] def send(packet: Packet)(implicit endpoint: String) {
-    transport.send(packet, transportActor)
+  def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
+    conn ! SendEvent(name, args)
+  }
+
+  def send(packet: Packet) {
+    conn ! SendPacket(packet)
   }
 
   def onDisconnect() {

@@ -28,7 +28,9 @@ package object socketio {
           case Array("", "socket.io", protocalVersion) =>
             val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
 
-            val sessionId = UUID.randomUUID
+            val sessionId = UUID.randomUUID.toString
+            Namespace.namespaces ! Namespace.Session(sessionId)
+
             val entity = List(sessionId, heartbeatTimeout, closeTimeout, supportedTransports).mkString(":")
 
             val resp = HttpResponse(

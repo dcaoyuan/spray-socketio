@@ -3,10 +3,8 @@ package spray.contrib.socketio.packet
 import akka.util.ByteString
 import akka.util.ByteStringBuilder
 import scala.annotation.tailrec
-import spray.json.JsArray
-import spray.json.JsObject
-import spray.json.JsString
-import spray.json.JsValue
+import spray.json._
+import DefaultJsonProtocol._
 
 object Packet {
   val reservedEvents = Set(
@@ -86,7 +84,7 @@ case object HeartbeatPacket extends Packet {
   def code = '2'
   def endpoint = ""
 
-  val render = ByteString('2'.toByte)
+  val render = ByteString("2::")
 }
 
 trait DataPacket extends Packet {

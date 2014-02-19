@@ -13,7 +13,7 @@ object ConnectionActivity {
   case object ConnectedTime
 }
 
-class ConnectionActivity(conn: SocketIOConnection) extends Actor {
+class ConnectionActivity(conn: SocketIOContext) extends Actor {
   import context.dispatcher
   import ConnectionActivity._
 

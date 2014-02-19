@@ -18,7 +18,7 @@ import spray.json.JsValue
  * (1::/endp2) etc to use the same sender-context pair as multiple sockets.
  * @See Namespace
  */
-final case class SocketIOConnection(transport: Transport, sessionId: String, connActor: ActorRef) {
+final case class SocketIOContext(transport: Transport, sessionId: String, connActor: ActorRef) {
 
   def sendMessage(message: String)(implicit endpoint: String) {
     val packet = MessagePacket(-1L, false, endpoint, message)

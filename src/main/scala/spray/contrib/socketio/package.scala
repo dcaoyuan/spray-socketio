@@ -47,15 +47,15 @@ package object socketio {
     }
   }
 
-  def connectionFor(uri: Uri, sender: ActorRef): Option[SocketIOConnection] = {
+  def soContextFor(uri: Uri, sender: ActorRef): Option[SocketIOContext] = {
     uri.path.toString.split("/") match {
       case Array("", namespace, protocalVersion, transportId, sessionId) =>
-        Transport.transportFor(transportId) map { transport => SocketIOConnection(transport, sessionId, sender) }
+        Transport.transportFor(transportId) map { transport => SocketIOContext(transport, sessionId, sender) }
       case _ => None
     }
   }
 
-  def isSocketioConnecting(uri: Uri): Boolean = {
+  def isSocketIOConnecting(uri: Uri): Boolean = {
     uri.path.toString.split("/") match {
       case Array("", namespace, protocalVersion, transportId, sessionId) => Transport.isSupported(transportId)
       case _ => false

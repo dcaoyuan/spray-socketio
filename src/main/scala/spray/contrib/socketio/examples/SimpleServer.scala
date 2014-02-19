@@ -44,7 +44,7 @@ object SimpleServer extends App with MySslConfiguration {
           case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
           case wsContext: websocket.HandshakeContext =>
             log.info("websocker handshaked from sender {}", sender().path)
-            val newContext = if (socketio.isSocketioConnecting(req.uri)) {
+            val newContext = if (socketio.isSocketIOConnecting(req.uri)) {
               val connectPacket = FrameRender.render(TextFrame(ConnectPacket().render))
               wsContext.withResponse(wsContext.response.withEntity(HttpEntity(connectPacket.toArray)))
             } else {
@@ -56,7 +56,7 @@ object SimpleServer extends App with MySslConfiguration {
 
       // upgraded successfully
       case UHttp.Upgraded(wsContext) =>
-        socketio.connectionFor(wsContext.uri, sender()) match {
+        socketio.soContextFor(wsContext.uri, sender()) match {
           case Some(conn) => namespaces ! Namespace.Connected(conn)
           case None       =>
         }

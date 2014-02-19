@@ -6,7 +6,6 @@ import spray.contrib.socketio.SocketIOConnection.SendJson
 import spray.contrib.socketio.SocketIOConnection.SendMessage
 import spray.contrib.socketio.SocketIOConnection.SendPacket
 import spray.contrib.socketio.packet.Packet
-import spray.contrib.socketio.transport.Transport
 import spray.json.JsValue
 
 /**
@@ -30,23 +29,23 @@ class SocketIOContext(val transport: Transport, val sessionId: String, val trans
     _conn = conn
   }
 
-  def sendMessage(msg: String)(implicit endpoint: String) {
+  private[socketio] def sendMessage(msg: String)(implicit endpoint: String) {
     conn ! SendMessage(msg)
   }
 
-  def sendJson(json: JsValue)(implicit endpoint: String) {
+  private[socketio] def sendJson(json: JsValue)(implicit endpoint: String) {
     conn ! SendJson(json)
   }
 
-  def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
+  private[socketio] def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
     conn ! SendEvent(name, args)
   }
 
-  def send(packet: Packet) {
+  private[socketio] def send(packet: Packet) {
     conn ! SendPacket(packet)
   }
 
-  def onDisconnect() {
+  private[socketio] def onDisconnect() {
     //namespace.onDisconnect(this)
     //clientActor.removeChildClient(this);
   }

@@ -1,4 +1,4 @@
-package spray.contrib.socketio.transport
+package spray.contrib.socketio
 
 import akka.actor.ActorRef
 import spray.can.websocket.frame.TextFrame

@@ -2,9 +2,9 @@ package spray.contrib
 
 import akka.actor.ActorRef
 import java.util.UUID
-import spray.contrib.socketio.transport.Transport
-import spray.contrib.socketio.transport.WebSocket
-import spray.contrib.socketio.transport.XhrPolling
+import spray.contrib.socketio.Transport
+import spray.contrib.socketio.WebSocket
+import spray.contrib.socketio.XhrPolling
 import spray.http.HttpHeaders
 import spray.http.HttpHeaders._
 import spray.http.HttpMethods._

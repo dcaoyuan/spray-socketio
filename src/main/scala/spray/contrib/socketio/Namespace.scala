@@ -14,8 +14,8 @@ import scala.reflect.runtime.universe._
 import scala.util.Failure
 import scala.util.Success
 import spray.can.websocket.frame.TextFrame
-import spray.contrib.socketio.ConnectionActivity.ReclockCloseTimeout
-import spray.contrib.socketio.ConnectionActivity.ReclockHeartbeatTimeout
+import spray.contrib.socketio.SocketIOConnection.ReclockCloseTimeout
+import spray.contrib.socketio.SocketIOConnection.ReclockHeartbeatTimeout
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
@@ -29,7 +29,7 @@ object Namespace {
   val DEFAULT_NAMESPACE = "socket.io"
 
   private val allSoContexts = new mutable.WeakHashMap[ActorRef, SocketIOContext]()
-  private val connectionActivities = new mutable.WeakHashMap[ActorRef, ActorRef]()
+  private val allConnections = new mutable.WeakHashMap[ActorRef, ActorRef]()
 
   final case class Remove(namespace: String)
   final case class Connected(soContext: SocketIOContext)
@@ -73,7 +73,7 @@ object Namespace {
       case x @ Connected(soContext @ SocketIOContext(_, _, connActor)) =>
         context.watch(connActor)
         allSoContexts += (connActor -> soContext)
-        connectionActivities += (connActor -> context.actorOf(Props(classOf[ConnectionActivity], soContext)))
+        allConnections += (connActor -> context.actorOf(Props(classOf[SocketIOConnection], soContext)))
 
       case x @ OnPacket(packet @ ConnectPacket(endpoint, args), connActor) =>
         // do authorization here ?
@@ -85,7 +85,7 @@ object Namespace {
         tryNamespace(toName(endpoint), Some(x)) // TODO
 
       case x @ OnPacket(HeartbeatPacket, connActor) =>
-        connectionActivities.get(connActor) foreach { _ ! ReclockHeartbeatTimeout }
+        allConnections.get(connActor) foreach { _ ! ReclockHeartbeatTimeout }
 
       case x @ OnPacket(packet, connActor) =>
         val name = toName(packet.endpoint)
@@ -103,7 +103,7 @@ object Namespace {
       case Terminated(connActor) =>
         log.info("clients removed: {}", allSoContexts)
         allSoContexts -= connActor
-        connectionActivities -= connActor
+        allConnections -= connActor
     }
   }
 

@@ -64,7 +64,7 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
       log.info("Got heartbeat!")
       heartbeatTimeout.cancel
       heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout + 1).seconds) {
-        log.info("Connection disconnected by heartbeat timeout")
+        log.info("Disconnected due to heartbeat timeout.")
         transportActor ! Tcp.Close
       }
 

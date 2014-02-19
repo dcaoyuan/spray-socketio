@@ -21,7 +21,12 @@ import spray.json.JsValue
  * @Note let this context not to be final, so business application can store more
  * states in it.
  */
-class SocketIOContext(val transport: Transport, val sessionId: String, val transportActor: ActorRef) {
+class SocketIOContext(val transport: Transport, val sessionId: String, private var _transportActor: ActorRef) {
+
+  def transportActor = _transportActor
+  def withTransportActor(transportActor: ActorRef) {
+    _transportActor = transportActor
+  }
 
   private var _conn: ActorRef = _
   def conn = _conn

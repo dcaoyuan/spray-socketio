@@ -49,7 +49,7 @@ package object socketio {
     }
   }
 
-  def soContextFor(uri: Uri, sender: ActorRef): Option[SocketIOContext] = {
+  def contextFor(uri: Uri, sender: ActorRef): Option[SocketIOContext] = {
     uri.path.toString.split("/") match {
       case Array("", namespace, protocalVersion, transportId, sessionId) =>
         Transport.transportFor(transportId) map { transport => new SocketIOContext(transport, sessionId, sender) }

@@ -10,11 +10,11 @@ import akka.actor.Props
 import akka.actor.Terminated
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
-import scala.collection.mutable
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
 import spray.contrib.socketio
-import spray.contrib.socketio.SocketIOConnection.ReclockCloseTimeout
+import spray.contrib.socketio.SocketIOConnection.Pause
 import spray.contrib.socketio.SocketIOConnection.ReclockHeartbeatTimeout
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
@@ -31,21 +31,20 @@ object Namespace {
   // TODO inject actor system
   val namespaces = ActorSystem().actorOf(Props[Namespace.Namespaces], name = "namespaces")
 
-  private val authorizedSessionIds = new mutable.HashMap[String, Either[Cancellable, SocketIOContext]]()
+  // transportActor -> SocketIOContext
+  private val allConnections = new TrieMap[ActorRef, SocketIOContext]()
+  private val authorizedSessionIds = new TrieMap[String, Either[Cancellable, SocketIOContext]]()
   def authorize(ctx: SocketIOContext): Boolean = {
     authorizedSessionIds.get(ctx.sessionId) match {
       case Some(Left(timeout)) =>
         timeout.cancel
         true
-      case Some(Right(soContext)) => // already occupied by socketio connection TODO
+      case Some(Right(soContext)) => // already occupied by socketio connection. TODO
         false
       case None =>
         false
     }
   }
-
-  // transportActor -> SocketIOContext
-  private val allConnections = new mutable.HashMap[ActorRef, SocketIOContext]()
 
   final case class Remove(namespace: String)
   final case class Session(sessionId: String)
@@ -75,11 +74,9 @@ object Namespace {
     def toName(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
 
     def tryDispatch(namespace: String, msg: Any) {
-      for {
-        ns <- context.actorSelection(namespace).resolveOne(5.seconds).recover {
-          case _: Throwable => context.actorOf(Props(classOf[Namespace], namespace), name = namespace)
-        }
-      } ns ! msg
+      context.actorSelection(namespace).resolveOne(5.seconds).recover {
+        case _: Throwable => context.actorOf(Props(classOf[Namespace], namespace), name = namespace)
+      } map (_ ! msg)
     }
 
     def receive: Receive = {
@@ -87,8 +84,8 @@ object Namespace {
         tryDispatch(toName(endpoint), x)
 
       case Session(sessionId) =>
-        authorizedSessionIds += (sessionId ->
-          Left(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
+        authorizedSessionIds += (
+          sessionId -> Left(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
             authorizedSessionIds -= sessionId
           }))
 
@@ -128,8 +125,20 @@ object Namespace {
         context.actorSelection(toName(packet.endpoint)) ! x
 
       case Terminated(transportActor) =>
-        allConnections.get(transportActor) foreach { _.conn ! ReclockCloseTimeout } // TODO
-        log.info("clients removed: {}", allConnections)
+        allConnections.get(transportActor) foreach { ctx =>
+          ctx.conn ! Pause
+          authorizedSessionIds.get(ctx.sessionId) match {
+            case Some(Right(_)) =>
+              log.info("Will disconnect {} in {} seconds.", ctx.sessionId, socketio.closeTimeout)
+              authorizedSessionIds(ctx.sessionId) = Left(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
+                authorizedSessionIds -= ctx.sessionId
+                context.stop(ctx.conn)
+                log.info("Disconnected {}.", ctx.sessionId)
+              })
+            case _ =>
+          }
+        }
+        log.info("Lost connection to: {}", transportActor)
         allConnections -= transportActor
     }
   }
@@ -142,7 +151,7 @@ object Namespace {
 class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
   import Namespace._
 
-  private val connections = new mutable.HashMap[ActorRef, SocketIOContext]()
+  private val connections = new TrieMap[ActorRef, SocketIOContext]()
 
   val connectChannel = Subject[OnConnect]()
   val messageChannel = Subject[OnMessage]()
@@ -158,11 +167,6 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
 
     case OnPacket(packet: DisconnectPacket, transportActor) =>
       connections -= transportActor
-      log.info("clients removed: {}", connections)
-
-    case OnPacket(HeartbeatPacket, transportActor) =>
-      connections -= transportActor
-      log.info("clients removed: {}", connections)
 
     case OnPacket(packet: MessagePacket, transportActor) => connections.get(transportActor) foreach { ctx => messageChannel.onNext(OnMessage(packet.data, ctx)) }
     case OnPacket(packet: JsonPacket, transportActor)    => connections.get(transportActor) foreach { ctx => jsonChannel.onNext(OnJson(packet.json, ctx)) }
@@ -177,10 +181,10 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
         case _                            =>
       }
 
-    case Broadcast(packet) => gossip(packet)
+    case Broadcast(packet) =>
+      gossip(packet)
 
     case Terminated(transportActor) =>
-      log.info("clients removed: {}", connections)
       connections -= transportActor
   }
 

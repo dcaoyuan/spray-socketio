@@ -55,7 +55,7 @@ object SimpleServer extends App with MySslConfiguration {
 
       // upgraded successfully
       case UHttp.Upgraded(wsContext) =>
-        socketio.soContextFor(wsContext.uri, sender()) match {
+        socketio.contextFor(wsContext.uri, sender()) match {
           case Some(soContext) => Namespace.namespaces ! Namespace.Connected(soContext)
           case None            =>
         }

@@ -17,7 +17,6 @@ import spray.json.JsValue
 
 object SocketIOConnection {
   case object ReclockHeartbeatTimeout
-  case object ReclockCloseTimeout
   case object ConnectedTime
   case object Pause
   case object Resume
@@ -34,36 +33,32 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
 
   val startTime = System.currentTimeMillis
 
-  val transportActor = soContext.transportActor
-  var closeTimeout: Cancellable = _
-  var heartbeatTimeout: Cancellable = _
+  def transportActor = soContext.transportActor
 
-  context.watch(sender)
+  def heartbeatInterval = socketio.heartbeatTimeout * 0.618
 
-  context.system.scheduler.schedule(1.seconds, socketio.heartbeatTimeout.seconds) {
+  context.watch(transportActor)
+
+  // It seems socket.io client may fire heartbeat only when it received heartbeat
+  // from server, or, just bounce heartheat instead of firing heartbeat standalone.
+  var heartbeatFirer: Cancellable = context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
     send(HeartbeatPacket)
   }
 
-  heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout + 1).seconds) {
+  var heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout).seconds) {
     transportActor ! Tcp.Close
   }
 
   def receive = processing
 
   def processing: Receive = {
-    case Terminated(`transportActor`) => context.stop(self)
-    case Pause                        => context.become(paused)
-
-    case ReclockCloseTimeout =>
-      if (closeTimeout != null) closeTimeout.cancel
-      closeTimeout = context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
-        transportActor ! Tcp.Close
-      }
+    case Pause | Terminated(_) =>
+      heartbeatFirer.cancel
+      context.become(paused)
 
     case ReclockHeartbeatTimeout =>
-      log.info("Got heartbeat!")
       heartbeatTimeout.cancel
-      heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout + 1).seconds) {
+      heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout).seconds) {
         log.info("Disconnected due to heartbeat timeout.")
         transportActor ! Tcp.Close
       }
@@ -76,6 +71,22 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
     case x @ SendEvent(name, args) => sendEvent(name, args)(x.endpoint)
     case x @ SendPacket(packet)    => send(packet)
   }
+
+  def paused: Receive = {
+    case Terminated(_) =>
+      heartbeatFirer.cancel
+
+    case Resume =>
+      heartbeatFirer = context.system.scheduler.schedule(1.seconds, heartbeatInterval.seconds) {
+        send(HeartbeatPacket)
+      }
+      unstashAll()
+      context.become(processing)
+
+    case msg =>
+      stash()
+  }
+
 
   private def properEndpoint(endpoint: String) = if (endpoint == Namespace.DEFAULT_NAMESPACE) "" else endpoint
 
@@ -98,16 +109,5 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
     soContext.transport.send(packet, transportActor)
   }
 
-  def paused: Receive = {
-    case Terminated(`transportActor`) =>
-      context.stop(self)
-
-    case Resume =>
-      unstashAll()
-      context.become(processing)
-
-    case msg =>
-      stash()
-  }
 }
 

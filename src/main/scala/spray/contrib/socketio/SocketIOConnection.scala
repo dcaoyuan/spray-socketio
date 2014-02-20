@@ -5,7 +5,6 @@ import akka.actor.ActorLogging
 import akka.actor.Cancellable
 import akka.actor.Stash
 import akka.actor.Terminated
-import akka.io.Tcp
 import scala.concurrent.duration._
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.EventPacket
@@ -41,26 +40,26 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
 
   // It seems socket.io client may fire heartbeat only when it received heartbeat
   // from server, or, just bounce heartheat instead of firing heartbeat standalone.
-  var heartbeatFirer: Cancellable = context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
+  var heartbeatFiring: Cancellable = context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
     send(HeartbeatPacket)
   }
 
   var heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout).seconds) {
-    transportActor ! Tcp.Close
+    Namespace.namespaces ! Namespace.HeartbeatTimeout(transportActor)
   }
 
   def receive = processing
 
   def processing: Receive = {
     case Pause | Terminated(_) =>
-      heartbeatFirer.cancel
+      heartbeatFiring.cancel
       context.become(paused)
 
     case ReclockHeartbeatTimeout =>
       heartbeatTimeout.cancel
       heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout).seconds) {
         log.info("Disconnected due to heartbeat timeout.")
-        transportActor ! Tcp.Close
+        Namespace.namespaces ! Namespace.HeartbeatTimeout(transportActor)
       }
 
     case ConnectedTime =>
@@ -74,10 +73,10 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
 
   def paused: Receive = {
     case Terminated(_) =>
-      heartbeatFirer.cancel
+      heartbeatFiring.cancel
 
     case Resume =>
-      heartbeatFirer = context.system.scheduler.schedule(1.seconds, heartbeatInterval.seconds) {
+      heartbeatFiring = context.system.scheduler.schedule(1.seconds, heartbeatInterval.seconds) {
         send(HeartbeatPacket)
       }
       unstashAll()
@@ -86,7 +85,6 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
     case msg =>
       stash()
   }
-
 
   private def properEndpoint(endpoint: String) = if (endpoint == Namespace.DEFAULT_NAMESPACE) "" else endpoint
 

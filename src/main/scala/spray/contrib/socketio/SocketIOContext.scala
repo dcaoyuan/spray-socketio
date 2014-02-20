@@ -24,30 +24,32 @@ import spray.json.JsValue
 class SocketIOContext(val transport: Transport, val sessionId: String, private var _transportActor: ActorRef) {
 
   def transportActor = _transportActor
-  def withTransportActor(transportActor: ActorRef) {
+  def withTransportActor(transportActor: ActorRef) = {
     _transportActor = transportActor
+    this
   }
 
-  private var _conn: ActorRef = _
-  def conn = _conn
-  def withConnection(conn: ActorRef) {
-    _conn = conn
+  private var _connection: ActorRef = _ // SocketIOConnection
+  def connection = _connection
+  def withConnection(conn: ActorRef) = {
+    _connection = conn
+    this
   }
 
   private[socketio] def sendMessage(msg: String)(implicit endpoint: String) {
-    conn ! SendMessage(msg)
+    connection ! SendMessage(msg)
   }
 
   private[socketio] def sendJson(json: JsValue)(implicit endpoint: String) {
-    conn ! SendJson(json)
+    connection ! SendJson(json)
   }
 
   private[socketio] def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
-    conn ! SendEvent(name, args)
+    connection ! SendEvent(name, args)
   }
 
   private[socketio] def send(packet: Packet) {
-    conn ! SendPacket(packet)
+    connection ! SendPacket(packet)
   }
 
   private[socketio] def onDisconnect() {

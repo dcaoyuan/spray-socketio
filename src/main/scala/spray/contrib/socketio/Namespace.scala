@@ -8,6 +8,7 @@ import akka.actor.Cancellable
 import akka.actor.PoisonPill
 import akka.actor.Props
 import akka.actor.Terminated
+import akka.io.Tcp
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
 import scala.collection.concurrent.TrieMap
@@ -16,6 +17,7 @@ import scala.reflect.runtime.universe._
 import spray.contrib.socketio
 import spray.contrib.socketio.SocketIOConnection.Pause
 import spray.contrib.socketio.SocketIOConnection.ReclockHeartbeatTimeout
+import spray.contrib.socketio.SocketIOConnection.Resume
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
@@ -33,13 +35,16 @@ object Namespace {
 
   // transportActor -> SocketIOContext
   private val allConnections = new TrieMap[ActorRef, SocketIOContext]()
-  private val authorizedSessionIds = new TrieMap[String, Either[Cancellable, SocketIOContext]]()
+  private val authorizedSessionIds = new TrieMap[String, (Option[Cancellable], Option[SocketIOContext])]()
   def authorize(ctx: SocketIOContext): Boolean = {
     authorizedSessionIds.get(ctx.sessionId) match {
-      case Some(Left(timeout)) =>
-        timeout.cancel
+      case Some((Some(timeout), None)) =>
         true
-      case Some(Right(soContext)) => // already occupied by socketio connection. TODO
+      case Some((Some(timeout), Some(soContext))) => // a previous ctx existed, but is to be close by timeout
+        true
+      case Some((None, Some(soContext))) => // already occupied by socketio connection.
+        false
+      case Some((None, None)) => // should not happen
         false
       case None =>
         false
@@ -52,6 +57,8 @@ object Namespace {
   final case class OnPacket[T <: Packet](packet: T, socket: ActorRef)
   final case class Subscribe[T <: OnData](endpoint: String, observer: Observer[T])(implicit val tag: TypeTag[T])
   final case class Broadcast(packet: Packet)
+
+  final case class HeartbeatTimeout(transportActor: ActorRef)
 
   // --- Observable data
   sealed trait OnData {
@@ -84,17 +91,33 @@ object Namespace {
         tryDispatch(toName(endpoint), x)
 
       case Session(sessionId) =>
-        authorizedSessionIds += (
-          sessionId -> Left(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
+        authorizedSessionIds(sessionId) = (
+          Some(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
             authorizedSessionIds -= sessionId
-          }))
+          }), None)
 
       case x @ Connected(soContext: SocketIOContext) =>
         if (authorize(soContext)) {
-          authorizedSessionIds(soContext.sessionId) = Right(soContext)
-          context.watch(soContext.transportActor)
-          soContext.withConnection(context.actorOf(Props(classOf[SocketIOConnection], soContext)))
-          allConnections += (soContext.transportActor -> soContext)
+          val theSoContext = authorizedSessionIds.get(soContext.sessionId) match {
+            case Some((Some(timeout), None)) =>
+              timeout.cancel
+              soContext.withConnection(context.actorOf(Props(classOf[SocketIOConnection], soContext)))
+
+            case Some((Some(timeout), Some(existedSoContext))) =>
+              // a previous ctx existed, should use this one and attach the new transportActor to it, then resume connection
+              timeout.cancel
+              existedSoContext.withTransportActor(soContext.transportActor)
+              existedSoContext.connection ! Resume
+              existedSoContext
+
+            case _ =>
+              // no authorized sessionId. Should not reach here, but anyway:
+              soContext
+          }
+
+          authorizedSessionIds(theSoContext.sessionId) = (None, Some(theSoContext))
+          context.watch(theSoContext.transportActor)
+          allConnections(theSoContext.transportActor) = theSoContext
         }
 
       case x @ OnPacket(packet @ ConnectPacket(endpoint, args), transportActor) =>
@@ -111,7 +134,7 @@ object Namespace {
         context.actorSelection(toName(endpoint)) ! x
 
       case x @ OnPacket(HeartbeatPacket, transportActor) =>
-        allConnections.get(transportActor) foreach { _.conn ! ReclockHeartbeatTimeout }
+        allConnections.get(transportActor) foreach { _.connection ! ReclockHeartbeatTimeout }
 
       case x @ OnPacket(packet, transportActor) =>
         context.actorSelection(toName(packet.endpoint)) ! x
@@ -124,22 +147,31 @@ object Namespace {
       case x @ Broadcast(packet) =>
         context.actorSelection(toName(packet.endpoint)) ! x
 
-      case Terminated(transportActor) =>
-        allConnections.get(transportActor) foreach { ctx =>
-          ctx.conn ! Pause
-          authorizedSessionIds.get(ctx.sessionId) match {
-            case Some(Right(_)) =>
-              log.info("Will disconnect {} in {} seconds.", ctx.sessionId, socketio.closeTimeout)
-              authorizedSessionIds(ctx.sessionId) = Left(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
+      case Terminated(transportActor)       => scheduleCloseConnection(transportActor)
+      case HeartbeatTimeout(transportActor) => scheduleCloseConnection(transportActor)
+    }
+
+    def scheduleCloseConnection(transportActor: ActorRef) {
+      allConnections.get(transportActor) foreach { ctx =>
+        authorizedSessionIds.get(ctx.sessionId) match {
+          case Some((None, Some(soContext))) =>
+            ctx.connection ! Pause
+            log.info("Will disconnect {} in {} seconds.", ctx.sessionId, socketio.closeTimeout)
+
+            authorizedSessionIds(ctx.sessionId) = (
+              Some(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
                 authorizedSessionIds -= ctx.sessionId
-                context.stop(ctx.conn)
+                soContext.connection ! Tcp.Close
+                context.stop(ctx.connection)
                 log.info("Disconnected {}.", ctx.sessionId)
-              })
-            case _ =>
-          }
+              }), Some(soContext))
+
+          case Some((Some(timeout), _)) => // has been scheduled closing
+          case _                        =>
         }
-        log.info("Lost connection to: {}", transportActor)
-        allConnections -= transportActor
+      }
+
+      allConnections -= transportActor
     }
   }
 
@@ -161,7 +193,7 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
   def receive: Receive = {
     case OnPacket(packet: ConnectPacket, transportActor) =>
       context.watch(transportActor)
-      allConnections.get(transportActor) foreach { ctx => connections += (transportActor -> ctx) }
+      allConnections.get(transportActor) foreach { ctx => connections(transportActor) = ctx }
       connections.get(transportActor) foreach { ctx => connectChannel.onNext(OnConnect(packet.args, ctx)) }
       log.info("clients for {}: {}", endpoint, connections)
 

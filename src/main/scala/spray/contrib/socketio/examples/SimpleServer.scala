@@ -98,7 +98,7 @@ object SimpleServer extends App with MySslConfiguration {
       next match {
         case OnEvent("Hi!", args, context) =>
           println("observed: " + next.name + ", " + next.args)
-          next.replyEvent("welcome", List(Message("Reply from spray-socketio").toJson))
+          next.replyEvent("welcome", List(Message("Greeting from spray-socketio").toJson))
           next.replyEvent("time", List(Now((new java.util.Date).toString).toJson))
         case OnEvent("time", args, context) =>
           println("observed: " + next.name + ", " + next.args)

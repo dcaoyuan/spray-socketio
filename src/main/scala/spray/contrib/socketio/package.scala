@@ -8,6 +8,7 @@ import spray.contrib.socketio.XhrPolling
 import spray.http.HttpHeaders
 import spray.http.HttpHeaders._
 import spray.http.HttpMethods._
+import spray.http.HttpOrigin
 import spray.http.HttpRequest
 import spray.http.HttpResponse
 import spray.http.SomeOrigins
@@ -20,17 +21,17 @@ package object socketio {
   val heartbeatTimeout = 15 // seconds
   val closeTimeout = 30 // seconds
 
+  case class HandshakeState(response: HttpResponse, sessionId: String, qurey: Uri.Query, origins: Seq[HttpOrigin])
+
   object HandshakeRequest {
 
-    def unapply(req: HttpRequest): Option[HttpResponse] = req match {
+    def unapply(req: HttpRequest): Option[HandshakeState] = req match {
       case HttpRequest(GET, uri, headers, _, _) =>
         uri.path.toString.split("/") match {
           case Array("", "socket.io", protocalVersion) =>
             val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
 
             val sessionId = UUID.randomUUID.toString
-            Namespace.namespaces ! Namespace.Session(sessionId)
-
             val entity = List(sessionId, heartbeatTimeout, closeTimeout, supportedTransports).mkString(":")
 
             val resp = HttpResponse(
@@ -40,14 +41,14 @@ package object socketio {
                 HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(origins)),
                 HttpHeaders.`Access-Control-Allow-Credentials`(true)))
 
-            Some(resp)
+            Some(HandshakeState(resp, sessionId, uri.query, origins))
 
           case _ => None
         }
 
       case _ => None
-    }
   }
+    }
 
   def contextFor(uri: Uri, sender: ActorRef): Option[SocketIOContext] = {
     uri.path.toString.split("/") match {

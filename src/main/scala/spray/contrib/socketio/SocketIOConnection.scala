@@ -2,6 +2,7 @@ package spray.contrib.socketio
 
 import akka.actor.Actor
 import akka.actor.ActorLogging
+import akka.actor.ActorRef
 import akka.actor.Cancellable
 import akka.actor.Stash
 import akka.actor.Terminated
@@ -26,7 +27,7 @@ object SocketIOConnection {
   final case class SendPacket(packet: Packet)
 }
 
-class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash with ActorLogging {
+class SocketIOConnection(soContext: SocketIOContext, namespaces: ActorRef) extends Actor with Stash with ActorLogging {
   import SocketIOConnection._
   import context.dispatcher
 
@@ -45,7 +46,7 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
   }
 
   var heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout).seconds) {
-    Namespace.namespaces ! Namespace.HeartbeatTimeout(transportActor)
+    namespaces ! Namespace.HeartbeatTimeout(transportActor)
   }
 
   def receive = processing
@@ -58,8 +59,7 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
     case ReclockHeartbeatTimeout =>
       heartbeatTimeout.cancel
       heartbeatTimeout = context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout).seconds) {
-        log.info("Disconnected due to heartbeat timeout.")
-        Namespace.namespaces ! Namespace.HeartbeatTimeout(transportActor)
+        namespaces ! Namespace.HeartbeatTimeout(transportActor)
       }
 
     case ConnectedTime =>
@@ -72,7 +72,7 @@ class SocketIOConnection(soContext: SocketIOContext) extends Actor with Stash wi
   }
 
   def paused: Receive = {
-    case Terminated(_) =>
+    case Terminated(x) =>
       heartbeatFiring.cancel
 
     case Resume =>

@@ -23,6 +23,8 @@ import spray.json.DefaultJsonProtocol
 object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
 
+  val namespaces = system.actorOf(Props[Namespace.Namespaces], name = Namespace.NAMESPACES)
+
   class SocketIOServer extends Actor with ActorLogging {
 
     def receive = {
@@ -32,9 +34,10 @@ object SimpleServer extends App with MySslConfiguration {
         sender() ! Http.Register(self)
 
       // socket.io handshake
-      case socketio.HandshakeRequest(resp) =>
+      case socketio.HandshakeRequest(state) =>
         log.info("socketio handshake from sender is {}", sender().path)
-        sender() ! resp
+        namespaces ! Namespace.Session(state.sessionId)
+        sender() ! state.response
 
       // when a client request for upgrading to websocket comes in, we send
       // UHttp.Upgrade to upgrade to websocket pipelines with an accepting response.
@@ -56,7 +59,7 @@ object SimpleServer extends App with MySslConfiguration {
       // upgraded successfully
       case UHttp.Upgraded(wsContext) =>
         socketio.contextFor(wsContext.uri, sender()) match {
-          case Some(soContext) => Namespace.namespaces ! Namespace.Connected(soContext)
+          case Some(soContext) => namespaces ! Namespace.Connected(soContext)
           case None            =>
         }
         log.info("Http Upgraded!")
@@ -65,7 +68,7 @@ object SimpleServer extends App with MySslConfiguration {
         try {
           val packets = PacketParser(payload)
           log.info("got {}, from sender {}", packets, sender().path)
-          packets foreach { Namespace.namespaces ! Namespace.OnPacket(_, sender()) }
+          packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
         } catch {
           case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
         }
@@ -106,7 +109,7 @@ object SimpleServer extends App with MySslConfiguration {
           println("observed: " + next.name + ", " + next.args)
       }
     })
-  Namespace.namespaces ! Namespace.Subscribe("testendpoint", observer)
+  namespaces ! Namespace.Subscribe("testendpoint", observer)
 
   import system.dispatcher
 

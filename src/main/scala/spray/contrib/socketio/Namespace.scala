@@ -3,7 +3,6 @@ package spray.contrib.socketio
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
-import akka.actor.ActorSystem
 import akka.actor.Cancellable
 import akka.actor.PoisonPill
 import akka.actor.Props
@@ -29,9 +28,7 @@ import spray.json.JsValue
 
 object Namespace {
   val DEFAULT_NAMESPACE = "socket.io"
-
-  // TODO inject actor system
-  val namespaces = ActorSystem().actorOf(Props[Namespace.Namespaces], name = "namespaces")
+  val NAMESPACES = "socketio-namespaces"
 
   // transportActor -> SocketIOContext
   private val allConnections = new TrieMap[ActorRef, SocketIOContext]()
@@ -101,7 +98,7 @@ object Namespace {
           val theSoContext = authorizedSessionIds.get(soContext.sessionId) match {
             case Some((Some(timeout), None)) =>
               timeout.cancel
-              soContext.withConnection(context.actorOf(Props(classOf[SocketIOConnection], soContext)))
+              soContext.withConnection(context.actorOf(Props(classOf[SocketIOConnection], soContext, self)))
 
             case Some((Some(timeout), Some(existedSoContext))) =>
               // a previous ctx existed, should use this one and attach the new transportActor to it, then resume connection

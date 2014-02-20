@@ -10,8 +10,11 @@ Example (in progressing):
 package spray.contrib.socketio.examples
 
 import akka.io.IO
-import akka.actor.{ ActorSystem, Actor, Props, ActorLogging }
+import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import akka.pattern._
+import org.parboiled2.ParseError
+import rx.lang.scala.Observer
+import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket
@@ -24,27 +27,25 @@ import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.PacketParser
 import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity }
-import org.parboiled2.ParseError
-import rx.lang.scala.Observer
-import scala.concurrent.duration._
 import spray.json.DefaultJsonProtocol
 
 object SimpleServer extends App with MySslConfiguration {
-  implicit val system = ActorSystem()
 
-  val namespaces = system.actorOf(Props[Namespace.Namespaces], name = Namespace.NAMESPACES)
+  /**
+   * This is actually a singleton actor due to akka IO machanism, we can only
+   * identify each client-connection by underlying sender()
+   */
+  class SocketIOServer(namespaces: ActorRef) extends Actor with ActorLogging {
 
-  class SocketIOServer extends Actor with ActorLogging {
+    def receive = socketIOLogic orElse genericLogic
 
-    def receive = {
+    def socketIOLogic: Receive = {
       // when a new connection comes in we register ourselves as the connection handler
       case Http.Connected(remoteAddress, localAddress) =>
-        log.info("Connected to HttpListener, sender {}", sender().path)
         sender() ! Http.Register(self)
 
       // socket.io handshake
       case socketio.HandshakeRequest(state) =>
-        log.info("socketio handshake from sender is {}", sender().path)
         namespaces ! Namespace.Session(state.sessionId)
         sender() ! state.response
 
@@ -54,14 +55,12 @@ object SimpleServer extends App with MySslConfiguration {
         state match {
           case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
           case wsContext: websocket.HandshakeContext =>
-            log.info("websocker handshaked from sender {}", sender().path)
             val newContext = if (socketio.isSocketIOConnecting(req.uri)) {
               val connectPacket = FrameRender.render(TextFrame(ConnectPacket().render))
               wsContext.withResponse(wsContext.response.withEntity(HttpEntity(connectPacket.toArray)))
             } else {
               wsContext
             }
-
             sender() ! UHttp.Upgrade(websocket.pipelineStage(self, newContext), newContext)
         }
 
@@ -71,17 +70,21 @@ object SimpleServer extends App with MySslConfiguration {
           case Some(soContext) => namespaces ! Namespace.Connected(soContext)
           case None            =>
         }
-        log.info("Http Upgraded!")
+        log.debug("Http Upgraded!")
 
-      case x @ TextFrame(payload) =>
+      case x @ TextFrame(payload) if Namespace.isSocketIOConnection(sender()) =>
         try {
           val packets = PacketParser(payload)
-          log.info("got {}, from sender {}", packets, sender().path)
+          log.debug("got {}, from sender {}", packets, sender().path)
           packets foreach { namespaces ! Namespace.OnPacket(_, sender()) }
         } catch {
           case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
         }
 
+      case x: HttpRequest if Namespace.isSocketIOConnection(sender()) =>
+    }
+
+    def genericLogic: Receive = {
       case x: Frame =>
       //log.info("Got frame: {}", x)
 
@@ -96,22 +99,23 @@ object SimpleServer extends App with MySslConfiguration {
   }
 
   // --- json protocals:
-  case class Message(message: String)
-  case class Now(time: String)
+  case class Msg(message: String)
   object TheJsonProtocol extends DefaultJsonProtocol {
-    implicit val msgFormat = jsonFormat1(Message)
-    implicit val nowFormat = jsonFormat1(Now)
+    implicit val msgFormat = jsonFormat1(Msg)
   }
   import spray.json._
   import TheJsonProtocol._
+
+  implicit val system = ActorSystem()
+  val namespaces = system.actorOf(Props[Namespace.Namespaces], name = Namespace.NAMESPACES)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
         case OnEvent("Hi!", args, context) =>
           println("observed: " + next.name + ", " + next.args)
-          next.replyEvent("welcome", List(Message("Greeting from spray-socketio").toJson))
-          next.replyEvent("time", List(Now((new java.util.Date).toString).toJson))
+          next.replyEvent("welcome", List(Msg("Greeting from spray-socketio").toJson))
+          next.replyEvent("time", List(Msg((new java.util.Date).toString).toJson))
         case OnEvent("time", args, context) =>
           println("observed: " + next.name + ", " + next.args)
         case _ =>
@@ -122,7 +126,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   import system.dispatcher
 
-  val worker = system.actorOf(Props(classOf[SocketIOServer]), "websocket")
+  val worker = system.actorOf(Props(classOf[SocketIOServer], namespaces), "websocket")
 
   IO(UHttp) ! Http.Bind(worker, "localhost", 8080)
 

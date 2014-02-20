@@ -45,6 +45,8 @@ object Namespace {
     }
   }
 
+  def isSocketIOConnection(transportActor: ActorRef) = allConnections.contains(transportActor)
+
   final case class Remove(namespace: String)
   final case class Session(sessionId: String)
   final case class Connected(soContext: SocketIOContext)

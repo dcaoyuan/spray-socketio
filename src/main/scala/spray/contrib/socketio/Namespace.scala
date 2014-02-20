@@ -14,9 +14,6 @@ import scala.collection.concurrent.TrieMap
 import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
 import spray.contrib.socketio
-import spray.contrib.socketio.SocketIOConnection.Pause
-import spray.contrib.socketio.SocketIOConnection.ReclockHeartbeatTimeout
-import spray.contrib.socketio.SocketIOConnection.Resume
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
@@ -95,26 +92,22 @@ object Namespace {
 
       case x @ Connected(soContext: SocketIOContext) =>
         if (authorize(soContext)) {
-          val theSoContext = authorizedSessionIds.get(soContext.sessionId) match {
+          authorizedSessionIds.get(soContext.sessionId) match {
             case Some((Some(timeout), None)) =>
               timeout.cancel
-              soContext.withConnection(context.actorOf(Props(classOf[SocketIOConnection], soContext, self)))
+              soContext.withConnection(context.actorOf(Props(classOf[SocketIOConnection], self)))
 
             case Some((Some(timeout), Some(existedSoContext))) =>
               // a previous ctx existed, should use this one and attach the new transportActor to it, then resume connection
               timeout.cancel
-              existedSoContext.withTransportActor(soContext.transportActor)
-              existedSoContext.connection ! Resume
-              existedSoContext
+              soContext.withConnection(existedSoContext.connection)
 
-            case _ =>
-              // no authorized sessionId. Should not reach here, but anyway:
-              soContext
+            case _ => // no authorized sessionId. Should not reach here
           }
 
-          authorizedSessionIds(theSoContext.sessionId) = (None, Some(theSoContext))
-          context.watch(theSoContext.transportActor)
-          allConnections(theSoContext.transportActor) = theSoContext
+          authorizedSessionIds(soContext.sessionId) = (None, Some(soContext))
+          context.watch(soContext.transportActor)
+          allConnections(soContext.transportActor) = soContext
         }
 
       case x @ OnPacket(packet @ ConnectPacket(endpoint, args), transportActor) =>
@@ -131,7 +124,7 @@ object Namespace {
         context.actorSelection(toName(endpoint)) ! x
 
       case x @ OnPacket(HeartbeatPacket, transportActor) =>
-        allConnections.get(transportActor) foreach { _.connection ! ReclockHeartbeatTimeout }
+        allConnections.get(transportActor) foreach { _.connection ! HeartbeatPacket }
 
       case x @ OnPacket(packet, transportActor) =>
         context.actorSelection(toName(packet.endpoint)) ! x
@@ -152,7 +145,7 @@ object Namespace {
       allConnections.get(transportActor) foreach { ctx =>
         authorizedSessionIds.get(ctx.sessionId) match {
           case Some((None, Some(soContext))) =>
-            ctx.connection ! Pause
+            ctx.connection ! SocketIOConnection.Pause
             log.info("Will disconnect {} in {} seconds.", ctx.sessionId, socketio.closeTimeout)
 
             authorizedSessionIds(ctx.sessionId) = (

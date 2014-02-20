@@ -1,6 +1,7 @@
 package spray.contrib.socketio
 
 import akka.actor.ActorRef
+import spray.contrib.socketio.SocketIOConnection.ProcessingWith
 import spray.contrib.socketio.SocketIOConnection.SendEvent
 import spray.contrib.socketio.SocketIOConnection.SendJson
 import spray.contrib.socketio.SocketIOConnection.SendMessage
@@ -21,18 +22,13 @@ import spray.json.JsValue
  * @Note let this context not to be final, so business application can store more
  * states in it.
  */
-class SocketIOContext(val transport: Transport, val sessionId: String, private var _transportActor: ActorRef) {
-
-  def transportActor = _transportActor
-  def withTransportActor(transportActor: ActorRef) = {
-    _transportActor = transportActor
-    this
-  }
+class SocketIOContext(val transport: Transport, val sessionId: String, val transportActor: ActorRef) {
 
   private var _connection: ActorRef = _ // SocketIOConnection
   def connection = _connection
   def withConnection(conn: ActorRef) = {
     _connection = conn
+    conn ! ProcessingWith(this)
     this
   }
 

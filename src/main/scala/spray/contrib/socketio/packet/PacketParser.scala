@@ -87,7 +87,7 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
       | "t" ~ append('\t')
       | Unicode ~> { code => sb.append(code.asInstanceOf[Char]); () })
 
-  def NormalChar = rule { !anyOf(":?=&\"\\") ~ ANY ~ append() }
+  def NormalChar = rule { !anyOf("\ufffd:?=&\"\\") ~ ANY ~ append() }
 
   def Unicode = rule { 'u' ~ capture(HexDigit ~ HexDigit ~ HexDigit ~ HexDigit) ~> (java.lang.Integer.parseInt(_, 16)) }
 }
@@ -98,9 +98,9 @@ object PacketParser {
   def apply(input: Array[Char]): Seq[Packet] = {
     val parser = new PacketParser(input)
     parser.Packets.run() match {
-      case Success(packets)       => packets
-      case Failure(e: ParseError) => throw e
-      case Failure(e)             => throw e
+      case Success(packets)        => packets
+      case Failure(ex: ParseError) => throw ex
+      case Failure(ex)             => throw ex
     }
   }
 
@@ -117,7 +117,7 @@ object PacketParser {
       apply("""5:1+::{"name":"tobi"}"""),
       apply("""5:::{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),
       apply("""5:21312312:test:{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),
-      apply("""6:::140""")) foreach println
+      apply("""6:::140"""),
+      apply("""\ufffd16\ufffd1::/testendpoint\ufffd17\ufffd1::/testendpoint2""")) foreach println
   }
-
 }

@@ -1,11 +1,11 @@
 package spray.contrib.socketio
 
 import akka.actor.ActorRef
-import spray.contrib.socketio.SocketIOConnection.ProcessingWith
-import spray.contrib.socketio.SocketIOConnection.SendEvent
-import spray.contrib.socketio.SocketIOConnection.SendJson
-import spray.contrib.socketio.SocketIOConnection.SendMessage
-import spray.contrib.socketio.SocketIOConnection.SendPacket
+import spray.contrib.socketio.ConnectionActive.ProcessingWith
+import spray.contrib.socketio.ConnectionActive.SendEvent
+import spray.contrib.socketio.ConnectionActive.SendJson
+import spray.contrib.socketio.ConnectionActive.SendMessage
+import spray.contrib.socketio.ConnectionActive.SendPackets
 import spray.contrib.socketio.packet.Packet
 import spray.json.JsValue
 
@@ -21,31 +21,33 @@ import spray.json.JsValue
  *
  * @Note let this context not to be final, so business application can store more
  * states in it.
+ *
+ * serverConnection <--> SocketIOContext <--> connectionActive
  */
-class SocketIOContext(val transport: Transport, val sessionId: String, val transportActor: ActorRef) {
+class SocketIOContext(val transport: Transport, val sessionId: String, val serverConnection: ActorRef) {
 
-  private var _connection: ActorRef = _ // SocketIOConnection
-  def connection = _connection
-  def withConnection(conn: ActorRef) = {
-    _connection = conn
-    conn ! ProcessingWith(this)
+  private var _connectionActive: ActorRef = _
+  def connectionActive = _connectionActive
+  def withConnectionActive(connectionActive: ActorRef) = {
+    _connectionActive = connectionActive
+    _connectionActive ! ProcessingWith(this)
     this
   }
 
-  private[socketio] def sendMessage(msg: String)(implicit endpoint: String) {
-    connection ! SendMessage(msg)
+  private[socketio] def sendMessage(msg: String, endpoint: String) {
+    connectionActive ! SendMessage(msg, endpoint)
   }
 
-  private[socketio] def sendJson(json: JsValue)(implicit endpoint: String) {
-    connection ! SendJson(json)
+  private[socketio] def sendJson(json: JsValue, endpoint: String) {
+    connectionActive ! SendJson(json, endpoint)
   }
 
-  private[socketio] def sendEvent(name: String, args: List[JsValue])(implicit endpoint: String) {
-    connection ! SendEvent(name, args)
+  private[socketio] def sendEvent(name: String, args: List[JsValue], endpoint: String) {
+    connectionActive ! SendEvent(name, args, endpoint)
   }
 
-  private[socketio] def send(packet: Packet) {
-    connection ! SendPacket(packet)
+  private[socketio] def send(packets: List[Packet]) {
+    connectionActive ! SendPackets(packets)
   }
 
   private[socketio] def onDisconnect() {

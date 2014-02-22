@@ -16,6 +16,25 @@ object Packet {
     "error",
     "retry",
     "reconnect")
+
+  def renderToString(packets: List[Packet]): String = {
+    packets match {
+      case Nil      => ""
+      case h :: Nil => h.render.utf8String
+      case xs       => renderToString(new StringBuilder(), xs)
+    }
+  }
+
+  @tailrec
+  private def renderToString(builder: StringBuilder, packets: List[Packet]): String = {
+    packets match {
+      case Nil => builder.toString
+      case h :: xs =>
+        val msg = h.render.utf8String
+        builder.append('\ufffd').append(msg.length.toString).append('\ufffd').append(msg)
+        renderToString(builder, xs)
+    }
+  }
 }
 
 sealed trait Packet {
@@ -259,5 +278,5 @@ case object NoopPacket extends Packet {
   def code = '8'
   def endpoint = ""
 
-  val render = ByteString('8'.toByte)
+  val render = ByteString("8::")
 }

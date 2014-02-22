@@ -27,7 +27,6 @@ object Namespace {
   val DEFAULT_NAMESPACE = "socket.io"
   val NAMESPACES = "socketio-namespaces"
 
-  // transportActor -> SocketIOContext
   private val allConnections = new TrieMap[ActorRef, SocketIOContext]()
   private val authorizedSessionIds = new TrieMap[String, (Option[Cancellable], Option[SocketIOContext])]()
   def authorize(ctx: SocketIOContext): Boolean = {
@@ -45,11 +44,11 @@ object Namespace {
     }
   }
 
-  def isSocketIOConnection(transportActor: ActorRef) = allConnections.contains(transportActor)
+  def isSocketIOConnected(serverConnection: ActorRef) = allConnections.contains(serverConnection)
 
   final case class Remove(namespace: String)
   final case class Session(sessionId: String)
-  final case class Connected(soContext: SocketIOContext)
+  final case class Connecting(soContext: SocketIOContext)
   final case class OnPacket[T <: Packet](packet: T, socket: ActorRef)
   final case class Subscribe[T <: OnData](endpoint: String, observer: Observer[T])(implicit val tag: TypeTag[T])
   final case class Broadcast(packet: Packet)
@@ -59,12 +58,12 @@ object Namespace {
   // --- Observable data
   sealed trait OnData {
     def context: SocketIOContext
-    implicit def endpoint: String
+    def endpoint: String
 
-    def replyMessage(msg: String) = context.sendMessage(msg)
-    def replyJson(json: JsValue) = context.sendJson(json)
-    def replyEvent(name: String, args: List[JsValue]) = context.sendEvent(name, args)
-    def reply(packet: Packet) = context.send(packet)
+    def replyMessage(msg: String) = context.sendMessage(msg, endpoint)
+    def replyJson(json: JsValue) = context.sendJson(json, endpoint)
+    def replyEvent(name: String, args: JsValue*) = context.sendEvent(name, args.toList, endpoint)
+    def reply(packets: Packet*) = context.send(packets.toList)
   }
   final case class OnConnect(args: Seq[(String, String)], context: SocketIOContext)(implicit val endpoint: String) extends OnData
   final case class OnMessage(msg: String, context: SocketIOContext)(implicit val endpoint: String) extends OnData
@@ -92,43 +91,43 @@ object Namespace {
             authorizedSessionIds -= sessionId
           }), None)
 
-      case x @ Connected(soContext: SocketIOContext) =>
+      case Connecting(soContext: SocketIOContext) =>
         if (authorize(soContext)) {
           authorizedSessionIds.get(soContext.sessionId) match {
             case Some((Some(timeout), None)) =>
               timeout.cancel
-              soContext.withConnection(context.actorOf(Props(classOf[SocketIOConnection], self)))
+              soContext.withConnectionActive(context.actorOf(Props(classOf[ConnectionActive], self)))
 
             case Some((Some(timeout), Some(existedSoContext))) =>
               // a previous ctx existed, should use this one and attach the new transportActor to it, then resume connection
               timeout.cancel
-              soContext.withConnection(existedSoContext.connection)
+              soContext.withConnectionActive(existedSoContext.connectionActive)
 
             case _ => // no authorized sessionId. Should not reach here
           }
 
+          context.watch(soContext.serverConnection)
           authorizedSessionIds(soContext.sessionId) = (None, Some(soContext))
-          context.watch(soContext.transportActor)
-          allConnections(soContext.transportActor) = soContext
+          allConnections(soContext.serverConnection) = soContext
         }
 
-      case x @ OnPacket(packet @ ConnectPacket(endpoint, args), transportActor) =>
-        allConnections.get(transportActor) foreach { ctx =>
-          ctx.send(packet)
+      case x @ OnPacket(packet @ ConnectPacket(endpoint, args), serverConnection) =>
+        allConnections.get(serverConnection) foreach { ctx =>
+          ctx.send(List(packet))
           tryDispatch(toName(endpoint), x)
         }
 
-      case x @ OnPacket(packet @ DisconnectPacket(endpoint), transportActor) =>
-        allConnections.get(transportActor) foreach { ctx =>
+      case x @ OnPacket(packet @ DisconnectPacket(endpoint), serverConnection) =>
+        allConnections.get(serverConnection) foreach { ctx =>
           authorizedSessionIds -= ctx.sessionId
         }
-        allConnections -= transportActor
+        allConnections -= serverConnection
         context.actorSelection(toName(endpoint)) ! x
 
-      case x @ OnPacket(HeartbeatPacket, transportActor) =>
-        allConnections.get(transportActor) foreach { _.connection ! HeartbeatPacket }
+      case x @ OnPacket(HeartbeatPacket, serverConnection) =>
+        allConnections.get(serverConnection) foreach { _.connectionActive ! HeartbeatPacket }
 
-      case x @ OnPacket(packet, transportActor) =>
+      case x @ OnPacket(packet, serverConnection) =>
         context.actorSelection(toName(packet.endpoint)) ! x
 
       case Remove(namespace) =>
@@ -139,22 +138,22 @@ object Namespace {
       case x @ Broadcast(packet) =>
         context.actorSelection(toName(packet.endpoint)) ! x
 
-      case Terminated(transportActor)       => scheduleCloseConnection(transportActor)
-      case HeartbeatTimeout(transportActor) => scheduleCloseConnection(transportActor)
+      case Terminated(serverConnection)       => scheduleCloseConnection(serverConnection)
+      case HeartbeatTimeout(serverConnection) => scheduleCloseConnection(serverConnection)
     }
 
-    def scheduleCloseConnection(transportActor: ActorRef) {
-      allConnections.get(transportActor) foreach { ctx =>
+    def scheduleCloseConnection(serverConnection: ActorRef) {
+      allConnections.get(serverConnection) foreach { ctx =>
         authorizedSessionIds.get(ctx.sessionId) match {
           case Some((None, Some(soContext))) =>
-            ctx.connection ! SocketIOConnection.Pause
+            ctx.connectionActive ! ConnectionActive.Pause
             log.info("Will disconnect {} in {} seconds.", ctx.sessionId, socketio.closeTimeout)
 
             authorizedSessionIds(ctx.sessionId) = (
               Some(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
                 authorizedSessionIds -= ctx.sessionId
-                soContext.connection ! Tcp.Close
-                context.stop(ctx.connection)
+                soContext.serverConnection ! Tcp.Close
+                context.stop(ctx.connectionActive)
                 log.info("Disconnected {}.", ctx.sessionId)
               }), Some(soContext))
 
@@ -163,7 +162,7 @@ object Namespace {
         }
       }
 
-      allConnections -= transportActor
+      allConnections -= serverConnection
     }
   }
 
@@ -183,18 +182,19 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
   val eventChannel = Subject[OnEvent]()
 
   def receive: Receive = {
-    case OnPacket(packet: ConnectPacket, transportActor) =>
-      context.watch(transportActor)
-      allConnections.get(transportActor) foreach { ctx => connections(transportActor) = ctx }
-      connections.get(transportActor) foreach { ctx => connectChannel.onNext(OnConnect(packet.args, ctx)) }
-      log.info("clients for {}: {}", endpoint, connections)
+    case OnPacket(packet: ConnectPacket, serverConnection) =>
+      context.watch(serverConnection)
+      allConnections.get(serverConnection) foreach { ctx =>
+        connections(serverConnection) = ctx
+        connectChannel.onNext(OnConnect(packet.args, ctx))
+      }
 
-    case OnPacket(packet: DisconnectPacket, transportActor) =>
-      connections -= transportActor
+    case OnPacket(packet: DisconnectPacket, serverConnection) =>
+      connections -= serverConnection
 
-    case OnPacket(packet: MessagePacket, transportActor) => connections.get(transportActor) foreach { ctx => messageChannel.onNext(OnMessage(packet.data, ctx)) }
-    case OnPacket(packet: JsonPacket, transportActor)    => connections.get(transportActor) foreach { ctx => jsonChannel.onNext(OnJson(packet.json, ctx)) }
-    case OnPacket(packet: EventPacket, transportActor)   => connections.get(transportActor) foreach { ctx => eventChannel.onNext(OnEvent(packet.name, packet.args, ctx)) }
+    case OnPacket(packet: MessagePacket, serverConnection) => connections.get(serverConnection) foreach { ctx => messageChannel.onNext(OnMessage(packet.data, ctx)) }
+    case OnPacket(packet: JsonPacket, serverConnection)    => connections.get(serverConnection) foreach { ctx => jsonChannel.onNext(OnJson(packet.json, ctx)) }
+    case OnPacket(packet: EventPacket, serverConnection)   => connections.get(serverConnection) foreach { ctx => eventChannel.onNext(OnEvent(packet.name, packet.args, ctx)) }
 
     case x @ Subscribe(_, observer) =>
       x.tag.tpe match {
@@ -208,12 +208,12 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
     case Broadcast(packet) =>
       gossip(packet)
 
-    case Terminated(transportActor) =>
-      connections -= transportActor
+    case Terminated(serverConnection) =>
+      connections -= serverConnection
   }
 
   def gossip(packet: Packet) {
-    connections foreach (_._2.send(packet))
+    connections foreach (_._2.send(List(packet)))
   }
 
 }

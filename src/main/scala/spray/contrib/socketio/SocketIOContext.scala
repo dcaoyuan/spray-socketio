@@ -7,6 +7,9 @@ import spray.contrib.socketio.ConnectionActive.SendJson
 import spray.contrib.socketio.ConnectionActive.SendMessage
 import spray.contrib.socketio.ConnectionActive.SendPackets
 import spray.contrib.socketio.packet.Packet
+import spray.contrib.socketio.transport.Transport
+import spray.http.HttpOrigin
+import spray.http.Uri
 import spray.json.JsValue
 
 /**
@@ -24,7 +27,7 @@ import spray.json.JsValue
  *
  * serverConnection <--> SocketIOContext <--> connectionActive
  */
-class SocketIOContext(val transport: Transport, val sessionId: String, val serverConnection: ActorRef) {
+class SocketIOContext(val transport: Transport, val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin], val serverConnection: ActorRef) {
 
   private var _connectionActive: ActorRef = _
   def connectionActive = _connectionActive

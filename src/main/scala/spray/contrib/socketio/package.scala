@@ -2,9 +2,8 @@ package spray.contrib
 
 import akka.actor.ActorRef
 import java.util.UUID
-import spray.contrib.socketio.Transport
-import spray.contrib.socketio.WebSocket
-import spray.contrib.socketio.XhrPolling
+import spray.contrib.socketio.transport.WebSocket
+import spray.contrib.socketio.transport.XhrPolling
 import spray.http.HttpHeaders
 import spray.http.HttpHeaders._
 import spray.http.HttpMethods._
@@ -54,9 +53,11 @@ package object socketio {
     }
 
   def contextFor(req: HttpRequest, serverConnection: ActorRef): Option[SocketIOContext] = {
+    val query = req.uri.query
+    val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
     req.uri.path.toString.split("/") match {
       case Array("", SOCKET_IO, protocalVersion, transportId, sessionId) =>
-        Transport.transportFor(transportId) map { transport => new SocketIOContext(transport, sessionId, serverConnection) }
+        transport.transportFor(transportId) map { transport => new SocketIOContext(transport, sessionId, query, origins, serverConnection) }
       case _ =>
         None
     }
@@ -64,7 +65,7 @@ package object socketio {
 
   def isSocketIOConnecting(uri: Uri): Boolean = {
     uri.path.toString.split("/") match {
-      case Array("", SOCKET_IO, protocalVersion, transportId, sessionId) => Transport.isSupported(transportId)
+      case Array("", SOCKET_IO, protocalVersion, transportId, sessionId) => transport.isSupported(transportId)
       case _ => false
     }
   }

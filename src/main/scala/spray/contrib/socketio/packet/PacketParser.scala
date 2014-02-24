@@ -2,6 +2,7 @@ package spray.contrib.socketio.packet
 
 import akka.util.ByteString
 import org.parboiled2._
+import scala.collection.immutable.Queue
 import scala.util.Failure
 import scala.util.Success
 import spray.json.JsonParser
@@ -105,6 +106,34 @@ object PacketParser {
   }
 
   // -- simple test
+  protected def testBatch() = {
+    var sendingPackets = Queue[Packet](ConnectPacket("testendpoint1"), ConnectPacket("testendpoint2"))
+    if (sendingPackets.isEmpty) {
+      ""
+    } else if (sendingPackets.tail.isEmpty) {
+      val head = sendingPackets.head
+      sendingPackets = sendingPackets.tail
+      head.render.utf8String
+    } else {
+      var totalLength = 0
+      val sb = new StringBuilder()
+      var prev: Packet = null
+      while (sendingPackets.nonEmpty) {
+        val curr = sendingPackets.head
+        curr match {
+          case NoopPacket | HeartbeatPacket if curr == prev => // keep one is enough
+          case _ =>
+            val msg = curr.render.utf8String
+            totalLength += msg.length
+            sb.append('\ufffd').append(msg.length.toString).append('\ufffd').append(msg)
+        }
+        sendingPackets = sendingPackets.tail
+        prev = curr
+      }
+      sb.toString
+    }
+  }
+
   def main(args: Array[String]) {
     List(
       apply("""0"""),
@@ -118,6 +147,7 @@ object PacketParser {
       apply("""5:::{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),
       apply("""5:21312312:test:{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),
       apply("""6:::140"""),
-      apply("""\ufffd16\ufffd1::/testendpoint\ufffd17\ufffd1::/testendpoint2""")) foreach println
+      apply("""\ufffd16\ufffd1::/testendpoint\ufffd17\ufffd1::/testendpoint2"""),
+      apply(testBatch)) foreach println
   }
 }

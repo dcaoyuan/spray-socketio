@@ -5,18 +5,18 @@
         <script src='socket.io.js'></script>
         <script>
             var socket1 = io.connect('//localhost:8080/testendpoint');
-            var socket2 = io.connect('//localhost:8080/testendpoint2');
+            //var socket2 = io.connect('//localhost:8080/testendpoint2');
 
             socket1.on('connect', function() {
                 socket1.emit("Hi!");
                 console.log("connected!");
                 $('#messages').append('<li>' + 'connected' + '</li>');
             });
-            socket2.on('connect', function() {
-                socket2.emit("Hi!");
-                console.log("connected!");
-                $('#messages').append('<li>' + 'connected at 2' + '</li>');
-            });
+            //socket2.on('connect', function() {
+            //    socket2.emit("Hi!");
+            //    console.log("connected!");
+            //   $('#messages').append('<li>' + 'connected at 2' + '</li>');
+            //});
             socket1.on('welcome', function(data) {
                 $('#messages').append('<li>' + data.message + '</li>');
                 socket1.emit('i am client', {data: 'foo!'});

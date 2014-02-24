@@ -11,24 +11,18 @@ package spray.contrib.socketio.examples
 
 import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
-import akka.pattern._
-import org.parboiled2.ParseError
 import rx.lang.scala.Observer
 import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket
 import spray.can.websocket.frame.Frame
-import spray.can.websocket.frame.FrameRender
-import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.packet.ConnectPacket
+import spray.contrib.socketio.SocketIOConnection
 import spray.contrib.socketio.packet.EventPacket
-import spray.contrib.socketio.packet.PacketParser
-import spray.http.HttpHeaders.Origin
-import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, HttpHeaders, ContentTypes, ContentType, MediaTypes, SomeOrigins, HttpProtocols, HttpOrigin }
+import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, ContentType, MediaTypes }
 import spray.json.DefaultJsonProtocol
 
 object SimpleServer extends App with MySslConfiguration {
@@ -38,95 +32,12 @@ object SimpleServer extends App with MySslConfiguration {
       // when a new connection comes in we register a WebSocketConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOConnection], serverConnection, namespaces))
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, namespaces))
         serverConnection ! Http.Register(conn)
     }
   }
 
-  class SocketIOConnection(serverConnection: ActorRef, namespaces: ActorRef) extends Actor with ActorLogging {
-
-    def receive = socketioHandshake orElse websocketConnecting orElse xrhpollingConnecting orElse genericLogic orElse closeLogic
-
-    def closeLogic: Receive = {
-      case x: Http.ConnectionClosed =>
-        context.stop(self)
-        log.debug("Connection closed due to {}, {}: stopped.", x, self)
-    }
-
-    def socketioHandshake: Receive = {
-      case socketio.HandshakeRequest(state) =>
-        log.debug("{}: socketio handshake", self)
-        namespaces ! Namespace.Session(state.sessionId)
-        sender() ! state.response
-    }
-
-    def websocketConnecting: Receive = {
-      case req @ websocket.HandshakeRequest(state) =>
-        state match {
-          case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
-          case wsContext: websocket.HandshakeContext =>
-            val theContext = socketio.contextFor(wsContext.request, serverConnection) match {
-              case Some(soContext) =>
-                log.info("{}: websocket handshake successed.", self)
-                namespaces ! Namespace.Connecting(soContext)
-                val connectPacket = FrameRender.render(TextFrame(ConnectPacket().render))
-                wsContext.withResponse(wsContext.response.withEntity(HttpEntity(connectPacket.toArray)))
-              case None =>
-                wsContext
-            }
-            sender() ! UHttp.Upgrade(websocket.pipelineStage(self, theContext), theContext)
-        }
-
-      // upgraded successfully
-      case UHttp.Upgraded(wsContext) =>
-        log.debug("{}: upgraded.", self)
-
-      case TextFrame(payload) if Namespace.isSocketIOConnected(serverConnection) =>
-        try {
-          val packets = PacketParser(payload)
-          log.debug("got {}, self {}", packets, self)
-          packets foreach { namespaces ! Namespace.OnPacket(_, serverConnection) }
-        } catch {
-          case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
-        }
-    }
-
-    def xrhpollingConnecting: Receive = {
-      case req @ HttpRequest(HttpMethods.GET, uri, _, _, HttpProtocols.`HTTP/1.1`) if socketio.isSocketIOConnecting(uri) & !Namespace.isSocketIOConnected(serverConnection) =>
-        log.info("conn {}, sender {}: socketio GET {}", self, sender(), req.entity)
-        socketio.contextFor(req, serverConnection) match {
-          case Some(soContext) =>
-            namespaces ! Namespace.Connecting(soContext)
-
-            val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
-            val originsHeaders = if (origins.nonEmpty) {
-              List(
-                HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(origins)),
-                HttpHeaders.`Access-Control-Allow-Credentials`(true))
-            } else {
-              Nil
-            }
-            val headers = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
-          //sendActor ! SendMsg(sender(), ConnectPacket(), origins)
-          //httpSend(ConnectPacket(), sender(), origins)
-
-          case None =>
-        }
-
-      case req @ HttpRequest(HttpMethods.POST, uri, _, entity, HttpProtocols.`HTTP/1.1`) if Namespace.isSocketIOConnected(serverConnection) =>
-        log.info("conn {}, sender {}: socketio POST {}", self, sender(), req.entity)
-        val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
-        try {
-          val packets = PacketParser(entity.data.toByteString)
-          log.info("Got: {}", packets)
-          packets foreach { namespaces ! Namespace.OnPacket(_, serverConnection) }
-          //packets foreach { x => httpSend(x, sender(), origins) }
-          //sendActor ! SendMsgs(sender(), packets.toList ::: List(welcomePacket), origins)
-          //sendActor ! SendMsg(sender(), welcomePacket, origins)
-        } catch {
-          case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
-        }
-    }
+  class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOConnection {
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>
@@ -150,13 +61,12 @@ object SimpleServer extends App with MySslConfiguration {
       case x: Frame =>
     }
 
-  }
-
-  def renderTextFile(path: String) = {
-    val source = scala.io.Source.fromFile(path)
-    val lines = source.getLines mkString "\n"
-    source.close()
-    lines
+    def renderTextFile(path: String) = {
+      val source = scala.io.Source.fromFile(path)
+      val lines = source.getLines mkString "\n"
+      source.close()
+      lines
+    }
   }
 
   // --- json protocals for socketio messages:

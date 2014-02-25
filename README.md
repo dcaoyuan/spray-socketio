@@ -21,7 +21,6 @@ import spray.contrib.socketio
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOConnection
-import spray.contrib.socketio.packet.EventPacket
 import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, ContentType, MediaTypes }
 import spray.json.DefaultJsonProtocol
 
@@ -29,7 +28,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   class SocketIOServer(namespaces: ActorRef) extends Actor with ActorLogging {
     def receive = {
-      // when a new connection comes in we register a WebSocketConnection actor as the per connection handler
+      // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
         val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, namespaces))
@@ -96,8 +95,6 @@ object SimpleServer extends App with MySslConfiguration {
       }
     })
   namespaces ! Namespace.Subscribe("testendpoint", observer)
-
-  val welcomePacket = EventPacket(-1, false, "testendpoint", "welcome", List(Msg("Greeting from spray-socketio").toJson))
 
   import system.dispatcher
 

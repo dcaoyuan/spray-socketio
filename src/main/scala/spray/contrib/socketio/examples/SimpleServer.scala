@@ -20,7 +20,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   class SocketIOServer(namespaces: ActorRef) extends Actor with ActorLogging {
     def receive = {
-      // when a new connection comes in we register a WebSocketConnection actor as the per connection handler
+      // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
         val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, namespaces))
@@ -79,7 +79,11 @@ object SimpleServer extends App with MySslConfiguration {
         case OnEvent("Hi!", args, context) =>
           println("observed: " + next.name + ", " + next.args)
           next.replyEvent("welcome", Msg("Greeting from spray-socketio").toJson)
-        //next.replyEvent("time", Now((new java.util.Date).toString).toJson)
+          next.replyEvent("time", Now((new java.util.Date).toString).toJson)
+          // batched packets
+          next.reply(
+            EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Greeting from spray-socketio").toJson)),
+            EventPacket(-1L, false, "testendpoint", "time", List(Now((new java.util.Date).toString).toJson)))
         case OnEvent("time", args, context) =>
           println("observed: " + next.name + ", " + next.args)
         case _ =>
@@ -87,8 +91,6 @@ object SimpleServer extends App with MySslConfiguration {
       }
     })
   namespaces ! Namespace.Subscribe("testendpoint", observer)
-
-  val welcomePacket = EventPacket(-1, false, "testendpoint", "welcome", List(Msg("Greeting from spray-socketio").toJson))
 
   import system.dispatcher
 

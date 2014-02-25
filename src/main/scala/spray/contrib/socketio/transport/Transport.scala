@@ -88,7 +88,10 @@ trait Transport {
 
   protected def dispatch(serverConnection: ActorRef, payload: String)
 
-  protected def dispatch(serverConnection: ActorRef) {
+  /**
+   * It seems XHR-Pollong client does not support batch dispatched packets.
+   */
+  protected def batchDispatch(serverConnection: ActorRef) {
     if (connContext.sendingPackets.isEmpty) {
       // do nothing
     } else if (connContext.sendingPackets.tail.isEmpty) {
@@ -119,6 +122,17 @@ trait Transport {
     }
   }
 
+  protected def singleDispatch(serverConnection: ActorRef) {
+    if (connContext.sendingPackets.isEmpty) {
+      // do nothing
+    } else {
+      val head = connContext.sendingPackets.head
+      connContext.sendingPackets = connContext.sendingPackets.tail
+      val payload = head.render.utf8String
+      log.debug("Dispatching {}, to {}", payload, serverConnection)
+      dispatch(serverConnection, payload)
+    }
+  }
 }
 
 object WebSocket extends Transport.Id {
@@ -132,7 +146,7 @@ final case class WebSocket(system: ActorSystem, connection: ActorRef) extends Tr
 
   override def sendPacket(packets: Packet*) {
     super.sendPacket(packets: _*)
-    dispatch(connection)
+    batchDispatch(connection)
   }
 
   def dispatch(serverConnection: ActorRef, payload: String) {
@@ -148,7 +162,7 @@ final case class XhrPolling(system: ActorSystem) extends Transport {
     if (connContext.sendingPackets.isEmpty) {
       sendPacket(NoopPacket)
     }
-    dispatch(serverConnection)
+    singleDispatch(serverConnection)
   }
 
   def onPost(serverConnection: ActorRef, payload: ByteString) {

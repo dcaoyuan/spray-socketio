@@ -13,7 +13,7 @@ trait SocketIOConnection extends Actor with ActorLogging {
   def serverConnection: ActorRef
   def namespaces: ActorRef
 
-  implicit val soConnContext = socketio.SoConnectingContext(serverConnection, namespaces, context.dispatcher)
+  implicit val soConnContext = socketio.SoConnectingContext(serverConnection, namespaces, context.system, context.dispatcher)
 
   import context.dispatcher
 

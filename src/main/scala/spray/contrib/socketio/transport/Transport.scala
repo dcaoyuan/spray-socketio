@@ -1,6 +1,8 @@
 package spray.contrib.socketio.transport
 
 import akka.actor.ActorRef
+import akka.actor.ActorSystem
+import akka.event.Logging
 import akka.util.ByteString
 import org.parboiled2.ParseError
 import spray.can.Http
@@ -42,12 +44,16 @@ object Transport {
  * Specically, for websocket, we'll keep serverConnection
  */
 trait Transport {
+  def system: ActorSystem
+  protected val log = Logging.getLogger(system, this)
+
   private var _connContext: ConnectionContext = _
   def connContext = _connContext
   def bindConnContext(connContext: ConnectionContext) = {
     _connContext = connContext
     this
   }
+
 
   private def properEndpoint(endpoint: String) = if (endpoint == Namespace.DEFAULT_NAMESPACE) "" else endpoint
 
@@ -67,9 +73,8 @@ trait Transport {
   }
 
   def sendPacket(packets: Packet*) {
-    //log.debug("{}: enqueue {}", self, packets)
     packets foreach { packet => connContext.sendingPackets = connContext.sendingPackets.enqueue(packet) }
-    println(connContext.sendingPackets)
+    log.debug("Enqueued {}, sendingPackets: {}", packets, connContext.sendingPackets)
   }
 
   protected def onPayload(serverConnection: ActorRef, payload: ByteString) {
@@ -77,7 +82,7 @@ trait Transport {
       val packets = PacketParser(payload)
       packets foreach { connContext.namespaces ! Namespace.OnPacket(_, connContext.sessionId) }
     } catch {
-      case ex: ParseError => //log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
+      case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
     }
   }
 
@@ -90,7 +95,7 @@ trait Transport {
       val head = connContext.sendingPackets.head
       connContext.sendingPackets = connContext.sendingPackets.tail
       val payload = head.render.utf8String
-      //println("Dispatch ", payload, ", to", serverConnection)
+      log.debug("Dispatching {}, to {}", payload, serverConnection)
       dispatch(serverConnection, payload)
     } else {
       var totalLength = 0
@@ -109,7 +114,7 @@ trait Transport {
         prev = curr
       }
       val payload = sb.toString
-      //println("Dispatch ", payload, ", to", serverConnection)
+      log.debug("Dispatching {}, to {}", payload, serverConnection)
       dispatch(serverConnection, payload)
     }
   }
@@ -119,7 +124,7 @@ trait Transport {
 object WebSocket extends Transport.Id {
   val ID = "websocket"
 }
-final case class WebSocket(connection: ActorRef) extends Transport {
+final case class WebSocket(system: ActorSystem, connection: ActorRef) extends Transport {
 
   override def onPayload(serverConnection: ActorRef, payload: ByteString) {
     super.onPayload(serverConnection, payload)
@@ -138,7 +143,7 @@ final case class WebSocket(connection: ActorRef) extends Transport {
 object XhrPolling extends Transport.Id {
   val ID = "xhr-polling"
 }
-class XhrPolling extends Transport {
+final case class XhrPolling(system: ActorSystem) extends Transport {
   def onGet(serverConnection: ActorRef) {
     if (connContext.sendingPackets.isEmpty) {
       sendPacket(NoopPacket)
@@ -164,7 +169,7 @@ class XhrPolling extends Transport {
 object XhrMultipart extends Transport.Id {
   val ID = "xhr-multipart"
 }
-class XhrMultipart extends Transport {
+final case class XhrMultipart(system: ActorSystem) extends Transport {
   protected def dispatch(serverConnection: ActorRef, payload: String) {
     // TODO
   }
@@ -173,7 +178,7 @@ class XhrMultipart extends Transport {
 object HtmlFile extends Transport.Id {
   val ID = "htmlfile"
 }
-class HtmlFile extends Transport {
+final case class HtmlFile(system: ActorSystem) extends Transport {
   protected def dispatch(serverConnection: ActorRef, payload: String) {
     // TODO
   }
@@ -182,7 +187,7 @@ class HtmlFile extends Transport {
 object FlashSocket extends Transport.Id {
   val ID = "flashsocket"
 }
-class FlashSocket extends Transport {
+final case class FlashSocket(system: ActorSystem) extends Transport {
   protected def dispatch(serverConnection: ActorRef, payload: String) {
     // TODO
   }
@@ -191,7 +196,7 @@ class FlashSocket extends Transport {
 object JsonpPolling extends Transport.Id {
   val ID = "jsonp-polling"
 }
-class JsonpPolling extends Transport {
+final case class JsonpPolling(system: ActorSystem) extends Transport {
   protected def dispatch(serverConnection: ActorRef, payload: String) {
     // TODO
   }

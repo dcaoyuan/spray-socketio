@@ -1,6 +1,7 @@
 package spray.contrib
 
 import akka.actor.ActorRef
+import akka.actor.ActorSystem
 import akka.pattern._
 import akka.pattern.ask
 import java.util.UUID
@@ -62,7 +63,7 @@ package object socketio {
     }
   }
 
-  case class SoConnectingContext(serverConnection: ActorRef, namespaces: ActorRef, implicit val ec: ExecutionContext)
+  case class SoConnectingContext(serverConnection: ActorRef, namespaces: ActorRef, system: ActorSystem, implicit val ec: ExecutionContext)
 
   def wsConnected(req: HttpRequest)(implicit soConnContext: SoConnectingContext): Option[Boolean] = {
     val query = req.uri.query
@@ -70,7 +71,7 @@ package object socketio {
     req.uri.path.toString.split("/") match {
       case Array("", SOCKET_IO, protocalVersion, WebSocket.ID, sessionId) =>
         import soConnContext.ec
-        val connecting = Namespace.Connecting(sessionId, query, origins, new WebSocket(soConnContext.serverConnection))
+        val connecting = Namespace.Connecting(sessionId, query, origins, new WebSocket(soConnContext.system, soConnContext.serverConnection))
         for {
           connContextOpt <- soConnContext.namespaces.ask(connecting)(5.seconds).mapTo[Option[ConnectionContext]]
           connContext <- connContextOpt
@@ -121,7 +122,7 @@ package object socketio {
                   connContext.transport.asInstanceOf[XhrPolling].onGet(soConnContext.serverConnection)
 
                 case None =>
-                  val connecting = Namespace.Connecting(sessionId, query, origins, new XhrPolling)
+                  val connecting = Namespace.Connecting(sessionId, query, origins, new XhrPolling(soConnContext.system))
                   for {
                     connContextOpt <- soConnContext.namespaces.ask(connecting)(5.seconds).mapTo[Option[ConnectionContext]]
                     connContext <- connContextOpt

@@ -128,7 +128,7 @@ object Namespace {
           authorizedSessionIds(sessionId) = (None, Some(connContext))
           connectionActiveToSessionId(connContext.connectionActive) = sessionId
           transport match {
-            case WebSocket(connection) =>
+            case WebSocket(_, connection) =>
               context.watch(connection)
               serverConnectionToSessionId(connection) = sessionId
               sessionIdToServerConnection(sessionId) = connection

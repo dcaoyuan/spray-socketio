@@ -8,7 +8,7 @@ import java.util.UUID
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import spray.can.websocket.frame.TextFrame
-import spray.contrib.socketio.ConnectionActive.Processing
+import spray.contrib.socketio.ConnectionActive.Awake
 import spray.contrib.socketio.Namespace.AskConnectionContext
 import spray.contrib.socketio.Namespace.Connecting
 import spray.contrib.socketio.packet.ConnectPacket
@@ -77,7 +77,7 @@ package object socketio {
           connContext <- connContextOpt
         } {
           connContext.transport.asInstanceOf[WebSocket].sendPacket(ConnectPacket())
-          connContext.connectionActive ! Processing
+          connContext.connectionActive ! Awake
         }
         Some(true)
       case _ =>
@@ -129,7 +129,7 @@ package object socketio {
                   } {
                     connContext.transport.asInstanceOf[XhrPolling].sendPacket(ConnectPacket())
                     connContext.transport.asInstanceOf[XhrPolling].onGet(soConnContext.serverConnection)
-                    connContext.connectionActive ! Processing
+                    connContext.connectionActive ! Awake
                   }
               }
             }

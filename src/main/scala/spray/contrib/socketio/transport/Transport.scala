@@ -73,8 +73,8 @@ trait Transport {
   }
 
   def sendPacket(packets: Packet*) {
-    packets foreach { packet => connContext.sendingPackets = connContext.sendingPackets.enqueue(packet) }
-    log.debug("Enqueued {}, sendingPackets: {}", packets, connContext.sendingPackets)
+    packets foreach { packet => connContext.pendingPackets = connContext.pendingPackets.enqueue(packet) }
+    log.debug("Enqueued {}, pendingPackets: {}", packets, connContext.pendingPackets)
   }
 
   protected def onPayload(serverConnection: ActorRef, payload: ByteString) {
@@ -92,11 +92,11 @@ trait Transport {
    * It seems XHR-Pollong client does not support batch dispatched packets.
    */
   protected def batchDispatch(serverConnection: ActorRef) {
-    if (connContext.sendingPackets.isEmpty) {
+    if (connContext.pendingPackets.isEmpty) {
       // do nothing
-    } else if (connContext.sendingPackets.tail.isEmpty) {
-      val head = connContext.sendingPackets.head
-      connContext.sendingPackets = connContext.sendingPackets.tail
+    } else if (connContext.pendingPackets.tail.isEmpty) {
+      val head = connContext.pendingPackets.head
+      connContext.pendingPackets = connContext.pendingPackets.tail
       val payload = head.render.utf8String
       log.debug("Dispatching {}, to {}", payload, serverConnection)
       dispatch(serverConnection, payload)
@@ -104,8 +104,8 @@ trait Transport {
       var totalLength = 0
       val sb = new StringBuilder()
       var prev: Packet = null
-      while (connContext.sendingPackets.nonEmpty) {
-        val curr = connContext.sendingPackets.head
+      while (connContext.pendingPackets.nonEmpty) {
+        val curr = connContext.pendingPackets.head
         curr match {
           case NoopPacket | HeartbeatPacket if curr == prev => // keep one is enough
           case _ =>
@@ -113,7 +113,7 @@ trait Transport {
             totalLength += msg.length
             sb.append('\ufffd').append(msg.length.toString).append('\ufffd').append(msg)
         }
-        connContext.sendingPackets = connContext.sendingPackets.tail
+        connContext.pendingPackets = connContext.pendingPackets.tail
         prev = curr
       }
       val payload = sb.toString
@@ -123,11 +123,11 @@ trait Transport {
   }
 
   protected def singleDispatch(serverConnection: ActorRef) {
-    if (connContext.sendingPackets.isEmpty) {
+    if (connContext.pendingPackets.isEmpty) {
       // do nothing
     } else {
-      val head = connContext.sendingPackets.head
-      connContext.sendingPackets = connContext.sendingPackets.tail
+      val head = connContext.pendingPackets.head
+      connContext.pendingPackets = connContext.pendingPackets.tail
       val payload = head.render.utf8String
       log.debug("Dispatching {}, to {}", payload, serverConnection)
       dispatch(serverConnection, payload)
@@ -159,7 +159,7 @@ object XhrPolling extends Transport.Id {
 }
 final case class XhrPolling(system: ActorSystem) extends Transport {
   def onGet(serverConnection: ActorRef) {
-    if (connContext.sendingPackets.isEmpty) {
+    if (connContext.pendingPackets.isEmpty) {
       sendPacket(NoopPacket)
     }
     singleDispatch(serverConnection)

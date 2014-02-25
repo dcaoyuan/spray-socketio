@@ -13,12 +13,12 @@ object ConnectionActive {
   case object ConnectedTime
 
   case object Pause
-  case object Processing
+  case object Awake
 }
 
 /**
  *
- * connectionActive <1--1> connContext <1--1> transport <1--1> serverConnection
+ * connectionActive <1--1> connContext <1--n> transport <1--1..n> serverConnection
  */
 class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) extends Actor with Stash with ActorLogging {
   import ConnectionActive._
@@ -36,7 +36,7 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
   def receive = paused
 
   def paused: Receive = {
-    case Processing =>
+    case Awake =>
       log.debug("{}: awaked.", self)
       heartbeatFiring = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
         connContext.transport.sendPacket(HeartbeatPacket)

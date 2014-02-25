@@ -1,7 +1,13 @@
 spray-socketio
 ==============
 
-socket.io for spray
+socket.io for spray (in progressing)
+
+Transports already supported : WebSocket, XHR-Polling.
+
+
+Features not supported yet: ACK, Room
+
 
 Example (in progressing):
 

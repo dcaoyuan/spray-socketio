@@ -4,6 +4,8 @@ import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.pattern._
 import akka.pattern.ask
+import com.typesafe.config.Config
+import com.typesafe.config.ConfigFactory
 import java.util.UUID
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -27,11 +29,16 @@ import spray.http.StatusCodes
 import spray.http.Uri
 
 package object socketio {
-  // TODO config options
-  val supportedTransports = List(WebSocket, XhrPolling).map(_.ID).mkString(",")
-  val heartbeatTimeout = 30 // seconds
-  val closeTimeout = 60 // seconds
   val SOCKET_IO = "socket.io"
+
+  val Settings = new Settings(ConfigFactory.load().getConfig("spray.socketio"))
+  class Settings(config: Config) {
+    val SupportedTransports = config.getString("server.supported-transports")
+    val HeartbeatTimeout = config.getInt("server.heartbeat-timeout")
+    val CloseTimeout = config.getInt("server.close-timeout")
+    val NamespacesDispatcher = config.getString("namespaces-dispatcher")
+    val NamespaceDispatcher = config.getString("namespace-dispatcher")
+  }
 
   case class HandshakeState(response: HttpResponse, sessionId: String, qurey: Uri.Query, origins: Seq[HttpOrigin])
 
@@ -47,7 +54,7 @@ package object socketio {
 
             val respHeaders = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
             val sessionId = UUID.randomUUID.toString
-            val respEntity = List(sessionId, heartbeatTimeout, closeTimeout, supportedTransports).mkString(":")
+            val respEntity = List(sessionId, Settings.HeartbeatTimeout, Settings.CloseTimeout, Settings.SupportedTransports).mkString(":")
 
             val resp = HttpResponse(
               status = StatusCodes.OK,

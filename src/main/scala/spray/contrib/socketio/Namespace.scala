@@ -109,7 +109,7 @@ object Namespace {
     def tryDispatch(endpoint: String, msg: Any) {
       val namespace = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
       context.actorSelection(namespace).resolveOne(5.seconds).recover {
-        case _: Throwable => context.actorOf(Props(classOf[Namespace], namespace), name = namespace)
+        case _: Throwable => context.actorOf(Props(classOf[Namespace], namespace).withDispatcher(socketio.Settings.NamespaceDispatcher), name = namespace)
       } map (_ ! msg)
     }
 
@@ -124,7 +124,7 @@ object Namespace {
 
       case Session(sessionId) =>
         authorizedSessionIds(sessionId) = (
-          Some(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
+          Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
             authorizedSessionIds -= sessionId
           }), None)
 
@@ -216,10 +216,10 @@ object Namespace {
       authorizedSessionIds.get(sessionId) match {
         case Some((None, Some(connContext))) =>
           connContext.connectionActive ! ConnectionActive.Pause
-          log.info("{} Will be disconnected in {} seconds.", sessionId, socketio.closeTimeout)
+          log.info("{} Will be disconnected in {} seconds.", sessionId, socketio.Settings.CloseTimeout)
 
           authorizedSessionIds(sessionId) = (
-            Some(context.system.scheduler.scheduleOnce(socketio.closeTimeout.seconds) {
+            Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
               authorizedSessionIds -= sessionId
               connectionActiveToSessionId -= connContext.connectionActive
               //connContext.serverConnection ! Tcp.Close

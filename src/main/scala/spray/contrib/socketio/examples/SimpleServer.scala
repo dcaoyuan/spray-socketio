@@ -71,7 +71,7 @@ object SimpleServer extends App with MySslConfiguration {
   import TheJsonProtocol._
 
   implicit val system = ActorSystem()
-  val namespaces = system.actorOf(Props[Namespace.Namespaces], name = Namespace.NAMESPACES)
+  val namespaces = system.actorOf(Props(classOf[Namespace.Namespaces]).withDispatcher(socketio.Settings.NamespacesDispatcher), name = Namespace.NAMESPACES)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {

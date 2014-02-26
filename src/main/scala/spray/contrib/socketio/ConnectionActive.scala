@@ -26,7 +26,7 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
 
   val startTime = System.currentTimeMillis
 
-  def heartbeatInterval = socketio.heartbeatTimeout * 0.618
+  def heartbeatInterval = socketio.Settings.HeartbeatTimeout * 0.618
 
   // It seems socket.io client may fire heartbeat only when it received heartbeat
   // from server, or, just bounce heartheat instead of firing heartbeat standalone.
@@ -41,7 +41,7 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
       heartbeatFiring = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
         connContext.transport.sendPacket(HeartbeatPacket)
       })
-      heartbeatTimeout = Some(context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout).seconds) {
+      heartbeatTimeout = Some(context.system.scheduler.scheduleOnce((socketio.Settings.HeartbeatTimeout).seconds) {
         namespaces ! Namespace.HeartbeatTimeout(connContext.sessionId)
       })
 
@@ -60,7 +60,7 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
 
     case HeartbeatPacket =>
       heartbeatTimeout foreach (_.cancel)
-      heartbeatTimeout = Some(context.system.scheduler.scheduleOnce((socketio.heartbeatTimeout).seconds) {
+      heartbeatTimeout = Some(context.system.scheduler.scheduleOnce((socketio.Settings.HeartbeatTimeout).seconds) {
         namespaces ! Namespace.HeartbeatTimeout(connContext.sessionId)
       })
 

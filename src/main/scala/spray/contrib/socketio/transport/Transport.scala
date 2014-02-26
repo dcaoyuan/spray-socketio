@@ -86,20 +86,20 @@ trait Transport {
     }
   }
 
-  protected def dispatch(serverConnection: ActorRef, payload: String)
+  protected def write(serverConnection: ActorRef, payload: String)
 
   /**
-   * It seems XHR-Pollong client does not support batch dispatched packets.
+   * It seems XHR-Pollong client does not support multile packets.
    */
-  protected def batchDispatch(serverConnection: ActorRef) {
+  protected def writeMultiple(serverConnection: ActorRef) {
     if (connContext.pendingPackets.isEmpty) {
       // do nothing
     } else if (connContext.pendingPackets.tail.isEmpty) {
       val head = connContext.pendingPackets.head
       connContext.pendingPackets = connContext.pendingPackets.tail
       val payload = head.render.utf8String
-      log.debug("Dispatching {}, to {}", payload, serverConnection)
-      dispatch(serverConnection, payload)
+      log.debug("Writing {}, to {}", payload, serverConnection)
+      write(serverConnection, payload)
     } else {
       var totalLength = 0
       val sb = new StringBuilder()
@@ -117,12 +117,12 @@ trait Transport {
         prev = curr
       }
       val payload = sb.toString
-      log.debug("Dispatching {}, to {}", payload, serverConnection)
-      dispatch(serverConnection, payload)
+      log.debug("Writing {}, to {}", payload, serverConnection)
+      write(serverConnection, payload)
     }
   }
 
-  protected def singleDispatch(serverConnection: ActorRef) {
+  protected def writeSingle(serverConnection: ActorRef) {
     if (connContext.pendingPackets.isEmpty) {
       // do nothing
     } else {
@@ -130,7 +130,7 @@ trait Transport {
       connContext.pendingPackets = connContext.pendingPackets.tail
       val payload = head.render.utf8String
       log.debug("Dispatching {}, to {}", payload, serverConnection)
-      dispatch(serverConnection, payload)
+      write(serverConnection, payload)
     }
   }
 }
@@ -146,10 +146,10 @@ final case class WebSocket(system: ActorSystem, connection: ActorRef) extends Tr
 
   override def sendPacket(packets: Packet*) {
     super.sendPacket(packets: _*)
-    batchDispatch(connection)
+    writeMultiple(connection)
   }
 
-  def dispatch(serverConnection: ActorRef, payload: String) {
+  def write(serverConnection: ActorRef, payload: String) {
     serverConnection ! FrameCommand(TextFrame(ByteString(payload)))
   }
 }
@@ -162,16 +162,16 @@ final case class XhrPolling(system: ActorSystem) extends Transport {
     if (connContext.pendingPackets.isEmpty) {
       sendPacket(NoopPacket)
     }
-    singleDispatch(serverConnection)
+    writeSingle(serverConnection)
   }
 
   def onPost(serverConnection: ActorRef, payload: ByteString) {
     // response an empty entity to release POST before message processing
-    dispatch(serverConnection, "")
+    write(serverConnection, "")
     onPayload(serverConnection, payload)
   }
 
-  protected def dispatch(connection: ActorRef, payload: String) {
+  protected def write(connection: ActorRef, payload: String) {
     val originsHeaders = List(
       HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(connContext.origins)),
       HttpHeaders.`Access-Control-Allow-Credentials`(true))
@@ -184,7 +184,7 @@ object XhrMultipart extends Transport.Id {
   val ID = "xhr-multipart"
 }
 final case class XhrMultipart(system: ActorSystem) extends Transport {
-  protected def dispatch(serverConnection: ActorRef, payload: String) {
+  protected def write(serverConnection: ActorRef, payload: String) {
     // TODO
   }
 }
@@ -193,7 +193,7 @@ object HtmlFile extends Transport.Id {
   val ID = "htmlfile"
 }
 final case class HtmlFile(system: ActorSystem) extends Transport {
-  protected def dispatch(serverConnection: ActorRef, payload: String) {
+  protected def write(serverConnection: ActorRef, payload: String) {
     // TODO
   }
 }
@@ -202,7 +202,7 @@ object FlashSocket extends Transport.Id {
   val ID = "flashsocket"
 }
 final case class FlashSocket(system: ActorSystem) extends Transport {
-  protected def dispatch(serverConnection: ActorRef, payload: String) {
+  protected def write(serverConnection: ActorRef, payload: String) {
     // TODO
   }
 }
@@ -211,7 +211,7 @@ object JsonpPolling extends Transport.Id {
   val ID = "jsonp-polling"
 }
 final case class JsonpPolling(system: ActorSystem) extends Transport {
-  protected def dispatch(serverConnection: ActorRef, payload: String) {
+  protected def write(serverConnection: ActorRef, payload: String) {
     // TODO
   }
 }

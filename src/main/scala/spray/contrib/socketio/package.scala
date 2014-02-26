@@ -44,7 +44,7 @@ package object socketio {
 
   object HandshakeRequest {
     def unapply(req: HttpRequest): Option[HandshakeState] = req match {
-      case HttpRequest(GET, uri, headers, _, _) =>
+      case HttpRequest(_, uri, headers, _, _) =>
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion) =>
             val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)

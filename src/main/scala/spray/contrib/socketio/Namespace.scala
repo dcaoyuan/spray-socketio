@@ -25,6 +25,27 @@ import spray.http.HttpOrigin
 import spray.http.Uri
 import spray.json.JsValue
 
+/**
+ *
+ *
+ * [client1 events] [client2 events]  ... [clientN events]
+ *        |               |                      |
+ *        |               |                      |
+ *        V               V                      V
+ * +-----------------------------------------------------+
+ * |                   namespaces                        |
+ * +-----------------------------------------------------+
+ *           |                             |
+ *           |                             |
+ *           V                             V
+ *      [namespace1]                  [namespace2]
+ *         |
+ *         |
+ *         +---> [************] -->             (channel1)
+ *         +---> [+++++++++] -->                (channel2)
+ *         +---> [$$$$$$$] -->                  (channelN)
+ *
+ */
 object Namespace {
   val DEFAULT_NAMESPACE = "socket.io"
   val NAMESPACES = "socketio-namespaces"

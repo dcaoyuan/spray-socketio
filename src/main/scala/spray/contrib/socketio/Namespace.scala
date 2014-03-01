@@ -2,10 +2,8 @@ package spray.contrib.socketio
 
 import akka.actor.Actor
 import akka.actor.ActorLogging
-import akka.actor.ActorRef
 import akka.actor.Cancellable
 import akka.actor.Props
-import akka.actor.Terminated
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
 import scala.collection.concurrent.TrieMap
@@ -20,7 +18,6 @@ import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.packet.Packet
 import spray.contrib.socketio.transport.Transport
-import spray.contrib.socketio.transport.WebSocket
 import spray.http.HttpOrigin
 import spray.http.Uri
 import spray.json.JsValue
@@ -80,7 +77,6 @@ object Namespace {
   class Namespaces extends Actor with ActorLogging {
     import context.dispatcher
 
-    private val connectionActiveToSessionId = new TrieMap[ActorRef, String]()
     private val authorizedSessionIds = new TrieMap[String, (Option[Cancellable], Option[ConnectionContext])]()
 
     def authorize(connecting: Connecting): Boolean = {
@@ -144,7 +140,6 @@ object Namespace {
           }
 
           authorizedSessionIds(sessionId) = (None, Some(connContext))
-          connectionActiveToSessionId(connContext.connectionActive) = sessionId
 
           sender() ! Some(connContext)
         } else {
@@ -163,10 +158,7 @@ object Namespace {
 
       case x @ OnPacket(packet @ DisconnectPacket(endpoint), sessionId) =>
         if (endpoint == "") {
-          connectionContextFor(sessionId) foreach { ctx =>
-            authorizedSessionIds -= sessionId
-            connectionActiveToSessionId -= ctx.connectionActive
-          }
+          authorizedSessionIds -= sessionId
         }
         dispatch(endpoint, x)
 
@@ -197,7 +189,6 @@ object Namespace {
           authorizedSessionIds(sessionId) = (
             Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
               authorizedSessionIds -= sessionId
-              connectionActiveToSessionId -= connContext.connectionActive
               //connContext.serverConnection ! Tcp.Close
               context.stop(connContext.connectionActive)
               log.info("{}: Disconnected.", sessionId)

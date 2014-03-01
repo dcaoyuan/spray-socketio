@@ -2,6 +2,7 @@ package spray.contrib
 
 import akka.actor.ActorRef
 import akka.actor.ActorSystem
+import akka.event.LoggingAdapter
 import akka.pattern._
 import akka.pattern.ask
 import com.typesafe.config.Config
@@ -40,6 +41,14 @@ package object socketio {
     val NamespaceDispatcher = config.getString("namespace-dispatcher")
   }
 
+  private[socketio] final class SoConnectingContext(
+    var sessionId: String,
+    val serverConnection: ActorRef,
+    val namespaces: ActorRef,
+    val log: LoggingAdapter,
+    val system: ActorSystem,
+    implicit val ec: ExecutionContext)
+
   case class HandshakeState(response: HttpResponse, sessionId: String, qurey: Uri.Query, origins: Seq[HttpOrigin])
 
   object HandshakeRequest {
@@ -70,17 +79,16 @@ package object socketio {
     }
   }
 
-  case class SoConnectingContext(serverConnection: ActorRef, namespaces: ActorRef, system: ActorSystem, implicit val ec: ExecutionContext)
-
-  def wsConnected(req: HttpRequest)(implicit soConnContext: SoConnectingContext): Option[Boolean] = {
+  def wsConnected(req: HttpRequest)(implicit ctx: SoConnectingContext): Option[Boolean] = {
     val query = req.uri.query
     val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
     req.uri.path.toString.split("/") match {
       case Array("", SOCKET_IO, protocalVersion, WebSocket.ID, sessionId) =>
-        import soConnContext.ec
-        val connecting = Namespace.Connecting(sessionId, query, origins, new WebSocket(soConnContext.system, soConnContext.serverConnection))
+        ctx.sessionId = sessionId
+        import ctx.ec
+        val connecting = Namespace.Connecting(sessionId, query, origins, new WebSocket(ctx.system, ctx.serverConnection))
         for {
-          connContextOpt <- soConnContext.namespaces.ask(connecting)(5.seconds).mapTo[Option[ConnectionContext]]
+          connContextOpt <- ctx.namespaces.ask(connecting)(5.seconds).mapTo[Option[ConnectionContext]]
           connContext <- connContextOpt
         } {
           connContext.transport.asInstanceOf[WebSocket].sendPacket(ConnectPacket())
@@ -96,14 +104,15 @@ package object socketio {
    * Test websocket frame under socketio
    */
   object WsFrame {
-    def unapply(frame: TextFrame)(implicit soConnContext: SoConnectingContext): Option[Boolean] = frame match {
+    def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = frame match {
       case TextFrame(payload) =>
-        import soConnContext.ec
+        ctx.log.debug("WebSocket with sessionId: {} ", ctx.sessionId) // ctx.sessionId should not be null
+        import ctx.ec
         for {
-          connContextOpt <- soConnContext.namespaces.ask(Namespace.AskConnectionContext(Right(soConnContext.serverConnection)))(5.seconds).mapTo[Option[ConnectionContext]]
+          connContextOpt <- ctx.namespaces.ask(Namespace.AskConnectionContext(ctx.sessionId))(5.seconds).mapTo[Option[ConnectionContext]]
           connContext <- connContextOpt
         } {
-          connContext.transport.asInstanceOf[WebSocket].onPayload(soConnContext.serverConnection, payload)
+          connContext.transport.asInstanceOf[WebSocket].onPayload(ctx.serverConnection, payload)
         }
         Some(true)
       case _ => None
@@ -114,28 +123,28 @@ package object socketio {
    * Test http get request under socketio
    */
   object HttpGet {
-    def unapply(req: HttpRequest)(implicit soConnContext: SoConnectingContext): Option[Boolean] = req match {
+    def unapply(req: HttpRequest)(implicit ctx: SoConnectingContext): Option[Boolean] = req match {
       case HttpRequest(HttpMethods.GET, uri, _, _, HttpProtocols.`HTTP/1.1`) =>
         val query = req.uri.query
         val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, XhrPolling.ID, sessionId) =>
-            import soConnContext.ec
+            import ctx.ec
             for {
-              connContextOpt <- soConnContext.namespaces.ask(Namespace.AskConnectionContext(Left(sessionId)))(5.seconds).mapTo[Option[ConnectionContext]]
+              connContextOpt <- ctx.namespaces.ask(Namespace.AskConnectionContext(sessionId))(5.seconds).mapTo[Option[ConnectionContext]]
             } {
               connContextOpt match {
                 case Some(connContext) =>
-                  connContext.transport.asInstanceOf[XhrPolling].onGet(soConnContext.serverConnection)
+                  connContext.transport.asInstanceOf[XhrPolling].onGet(ctx.serverConnection)
 
                 case None =>
-                  val connecting = Namespace.Connecting(sessionId, query, origins, new XhrPolling(soConnContext.system))
+                  val connecting = Namespace.Connecting(sessionId, query, origins, new XhrPolling(ctx.system))
                   for {
-                    connContextOpt <- soConnContext.namespaces.ask(connecting)(5.seconds).mapTo[Option[ConnectionContext]]
+                    connContextOpt <- ctx.namespaces.ask(connecting)(5.seconds).mapTo[Option[ConnectionContext]]
                     connContext <- connContextOpt
                   } {
                     connContext.transport.asInstanceOf[XhrPolling].sendPacket(ConnectPacket())
-                    connContext.transport.asInstanceOf[XhrPolling].onGet(soConnContext.serverConnection)
+                    connContext.transport.asInstanceOf[XhrPolling].onGet(ctx.serverConnection)
                     connContext.connectionActive ! Awake
                   }
               }
@@ -151,17 +160,17 @@ package object socketio {
    * Test http post request under socketio
    */
   object HttpPost {
-    def unapply(req: HttpRequest)(implicit soConnContext: SoConnectingContext): Option[Boolean] = req match {
+    def unapply(req: HttpRequest)(implicit ctx: SoConnectingContext): Option[Boolean] = req match {
       case HttpRequest(HttpMethods.POST, uri, _, entity, HttpProtocols.`HTTP/1.1`) =>
         val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, XhrPolling.ID, sessionId) =>
-            import soConnContext.ec
+            import ctx.ec
             for {
-              connContextOpt <- soConnContext.namespaces.ask(Namespace.AskConnectionContext(Left(sessionId)))(5.seconds).mapTo[Option[ConnectionContext]]
+              connContextOpt <- ctx.namespaces.ask(Namespace.AskConnectionContext(sessionId))(5.seconds).mapTo[Option[ConnectionContext]]
               connContext <- connContextOpt
             } {
-              connContext.transport.asInstanceOf[XhrPolling].onPost(soConnContext.serverConnection, entity.data.toByteString)
+              connContext.transport.asInstanceOf[XhrPolling].onPost(ctx.serverConnection, entity.data.toByteString)
             }
             Some(true)
           case _ => None

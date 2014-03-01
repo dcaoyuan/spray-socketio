@@ -54,7 +54,7 @@ object Namespace {
   final case class RemoveNamespace(namespace: String)
   final case class Session(sessionId: String)
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transport: Transport)
-  final case class AskConnectionContext(sessionIdOrServerConnection: Either[String, ActorRef])
+  final case class AskConnectionContext(sessionId: String)
   final case class OnConnectPacket(packet: ConnectPacket, sessionId: String, connContext: ConnectionContext)
   final case class OnPacket[T <: Packet](packet: T, sessionId: String)
   final case class Subscribe[T <: OnData](endpoint: String, observer: Observer[T])(implicit val tag: TypeTag[T])
@@ -80,9 +80,6 @@ object Namespace {
   class Namespaces extends Actor with ActorLogging {
     import context.dispatcher
 
-    private val serverConnectionToSessionId = new TrieMap[ActorRef, String]() // used by websocket only
-    private val sessionIdToServerConnection = new TrieMap[String, ActorRef]() // used by websocket only
-
     private val connectionActiveToSessionId = new TrieMap[ActorRef, String]()
     private val authorizedSessionIds = new TrieMap[String, (Option[Cancellable], Option[ConnectionContext])]()
 
@@ -104,7 +101,6 @@ object Namespace {
       }
     }
 
-    def connectionContextFor(serverConnection: ActorRef): Option[ConnectionContext] = serverConnectionToSessionId.get(serverConnection).map(connectionContextFor(_)).getOrElse(None)
     def connectionContextFor(sessionId: String): Option[ConnectionContext] = authorizedSessionIds.get(sessionId).map(_._2).getOrElse(None)
 
     def tryDispatch(endpoint: String, msg: Any) {
@@ -149,24 +145,14 @@ object Namespace {
 
           authorizedSessionIds(sessionId) = (None, Some(connContext))
           connectionActiveToSessionId(connContext.connectionActive) = sessionId
-          transport match {
-            case WebSocket(_, connection) =>
-              context.watch(connection)
-              serverConnectionToSessionId(connection) = sessionId
-              sessionIdToServerConnection(sessionId) = connection
-            case _ =>
-          }
 
           sender() ! Some(connContext)
         } else {
           sender() ! None
         }
 
-      case AskConnectionContext(Left(sessionId)) =>
+      case AskConnectionContext(sessionId) =>
         sender() ! connectionContextFor(sessionId)
-
-      case AskConnectionContext(Right(severConnection)) =>
-        sender() ! connectionContextFor(severConnection)
 
       case x @ OnPacket(packet @ ConnectPacket(endpoint, args), sessionId) =>
         connectionContextFor(sessionId) foreach { ctx =>
@@ -180,10 +166,6 @@ object Namespace {
           connectionContextFor(sessionId) foreach { ctx =>
             authorizedSessionIds -= sessionId
             connectionActiveToSessionId -= ctx.connectionActive
-            sessionIdToServerConnection.get(sessionId) foreach { serverConnection =>
-              serverConnectionToSessionId -= serverConnection
-            }
-            sessionIdToServerConnection -= sessionId
           }
         }
         dispatch(endpoint, x)
@@ -204,13 +186,6 @@ object Namespace {
         dispatch(packet.endpoint, x)
 
       case HeartbeatTimeout(sessionId) => scheduleCloseConnection(sessionId)
-
-      case Terminated(serverConnection) =>
-        serverConnectionToSessionId.get(serverConnection) foreach { sessionId =>
-          sessionIdToServerConnection -= sessionId
-          dispatch("", OnPacket(DisconnectPacket(), sessionId))
-        }
-        serverConnectionToSessionId -= serverConnection
     }
 
     def scheduleCloseConnection(sessionId: String) {

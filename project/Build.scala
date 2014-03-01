@@ -31,10 +31,10 @@ object Build extends sbt.Build {
 
 object Dependencies {
   val spray_websocket = "com.wandoulabs" % "spray-websocket_2.10" % "0.1"
-  val spray_can = "io.spray" % "spray-can" % "1.3-RC1"
+  val spray_can = "io.spray" % "spray-can" % "1.3-RC4"
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % "2.3.0-RC4"
   val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.5"
-  val parboiled2 = "org.parboiled" %% "parboiled" % "2.0-M2" //changing () 
+  val parboiled2 = "org.parboiled" %% "parboiled" % "2.0-M2" //changing ()
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % "2.3.0-RC4" % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.0" % "test"
   val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.16.1"

@@ -45,6 +45,7 @@ import spray.json.JsValue
  * (channel2)    +---> [+++++++++] -->
  * (channelN)    +---> [$$$$$$$] -->
  *
+ * @Note Akka can do millions of messages per second per actor per core.
  */
 object Namespace {
   val DEFAULT_NAMESPACE = "socket.io"

@@ -29,7 +29,7 @@ import spray.contrib.socketio
  *                      |                   |
  *                      |                   |
  *                      |1                  |1..n
- *               Ws Connection       Http Connection
+ *               Ws Connection       Http Connections
  *
  */
 trait SocketIOConnection extends Actor with ActorLogging {
@@ -59,9 +59,7 @@ trait SocketIOConnection extends Actor with ActorLogging {
     case req @ websocket.HandshakeRequest(state) =>
       state match {
         case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
-        case wsContext: websocket.HandshakeContext =>
-          log.debug("{}: websocket handshake successed.", serverConnection)
-          sender() ! UHttp.Upgrade(websocket.pipelineStage(self, wsContext), wsContext)
+        case wsContext: websocket.HandshakeContext => sender() ! UHttp.Upgrade(websocket.pipelineStage(self, wsContext), wsContext)
       }
 
     case UHttp.Upgraded(wsContext) =>

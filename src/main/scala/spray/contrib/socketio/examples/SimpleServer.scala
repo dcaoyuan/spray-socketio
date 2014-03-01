@@ -29,20 +29,21 @@ object SimpleServer extends App with MySslConfiguration {
   }
 
   class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOConnection {
+    val WebRoot = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>
-        val content = renderTextFile("/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples/socketio.html")
+        val content = renderTextFile(WebRoot + "/socketio.html")
         val entity = HttpEntity(ContentType(MediaTypes.`text/html`), content)
         sender() ! HttpResponse(entity = entity)
 
       case HttpRequest(HttpMethods.GET, Uri.Path("/jquery-1.7.2.min.js"), _, _, _) =>
-        val content = renderTextFile("/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples/jquery-1.7.2.min.js")
+        val content = renderTextFile(WebRoot + "/jquery-1.7.2.min.js")
         val entity = HttpEntity(ContentType(MediaTypes.`application/javascript`), content)
         sender() ! HttpResponse(entity = entity)
 
       case HttpRequest(HttpMethods.GET, Uri.Path("/socket.io.js"), _, _, _) =>
-        val content = renderTextFile("/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples/socket.io.js")
+        val content = renderTextFile(WebRoot + "/socket.io.js")
         val entity = HttpEntity(ContentType(MediaTypes.`application/javascript`), content)
         sender() ! HttpResponse(entity = entity)
 

@@ -27,6 +27,7 @@ import spray.contrib.socketio
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOConnection
+import spray.contrib.socketio.packet.EventPacket
 import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, ContentType, MediaTypes }
 import spray.json.DefaultJsonProtocol
 
@@ -43,20 +44,21 @@ object SimpleServer extends App with MySslConfiguration {
   }
 
   class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOConnection {
+    val WebRoot = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>
-        val content = renderTextFile("/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples/socketio.html")
+        val content = renderTextFile(WebRoot + "/socketio.html")
         val entity = HttpEntity(ContentType(MediaTypes.`text/html`), content)
         sender() ! HttpResponse(entity = entity)
 
       case HttpRequest(HttpMethods.GET, Uri.Path("/jquery-1.7.2.min.js"), _, _, _) =>
-        val content = renderTextFile("/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples/jquery-1.7.2.min.js")
+        val content = renderTextFile(WebRoot + "/jquery-1.7.2.min.js")
         val entity = HttpEntity(ContentType(MediaTypes.`application/javascript`), content)
         sender() ! HttpResponse(entity = entity)
 
       case HttpRequest(HttpMethods.GET, Uri.Path("/socket.io.js"), _, _, _) =>
-        val content = renderTextFile("/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples/socket.io.js")
+        val content = renderTextFile(WebRoot + "/socket.io.js")
         val entity = HttpEntity(ContentType(MediaTypes.`application/javascript`), content)
         sender() ! HttpResponse(entity = entity)
 
@@ -85,7 +87,7 @@ object SimpleServer extends App with MySslConfiguration {
   import TheJsonProtocol._
 
   implicit val system = ActorSystem()
-  val namespaces = system.actorOf(Props[Namespace.Namespaces], name = Namespace.NAMESPACES)
+  val namespaces = system.actorOf(Props(classOf[Namespace.Namespaces]).withDispatcher(socketio.Settings.NamespacesDispatcher), name = Namespace.NAMESPACES)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -94,6 +96,10 @@ object SimpleServer extends App with MySslConfiguration {
           println("observed: " + next.name + ", " + next.args)
           next.replyEvent("welcome", Msg("Greeting from spray-socketio").toJson)
           next.replyEvent("time", Now((new java.util.Date).toString).toJson)
+          // batched packets
+          next.reply(
+            EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Greeting from spray-socketio").toJson)),
+            EventPacket(-1L, false, "testendpoint", "time", List(Now((new java.util.Date).toString).toJson)))
         case OnEvent("time", args, context) =>
           println("observed: " + next.name + ", " + next.args)
         case _ =>

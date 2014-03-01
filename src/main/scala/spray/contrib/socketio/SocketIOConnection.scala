@@ -9,6 +9,29 @@ import spray.can.server.UHttp
 import spray.can.websocket
 import spray.contrib.socketio
 
+/**
+ *
+ *             +--------------------------------------+
+ *             |     +---ConnectionActive(actor)      |
+ *             |     |                                | -----------  virtual connection (identified by sessionId etc.)
+ *             |     +---ConnectionContext            |
+ *             +--------------------------------------+
+ *                                |1
+ *                                |
+ *                                |1..n
+ *                   +--------------------------+
+ *                   |       Transport          |
+ *                   +--------------------------+
+ *                                |1
+ *                                |
+ *                    websocket   |   xhr-polling
+ *                      +---------+---------+
+ *                      |                   |
+ *                      |                   |
+ *                      |1                  |1..n
+ *               Ws Connection       Http Connection
+ *
+ */
 trait SocketIOConnection extends Actor with ActorLogging {
   def serverConnection: ActorRef
   def namespaces: ActorRef

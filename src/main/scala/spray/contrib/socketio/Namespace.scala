@@ -28,22 +28,22 @@ import spray.json.JsValue
 /**
  *
  *
- * [client1 events] [client2 events]  ... [clientN events]
- *        |               |                      |
- *        |               |                      |
- *        V               V                      V
- * +-----------------------------------------------------+
- * |                   namespaces                        |
- * +-----------------------------------------------------+
- *           |                             |
- *           |                             |
- *           V                             V
- *      [namespace1]                  [namespace2]
- *         |
- *         |
- *         +---> [************] -->             (channel1)
- *         +---> [+++++++++] -->                (channel2)
- *         +---> [$$$$$$$] -->                  (channelN)
+ *   [client1 events] [client2 events]  ... [clientN events]
+ *          |               |                      |
+ *          |               |                      |
+ *          V               V                      V
+ *   +-----------------------------------------------------+
+ *   |                   namespaces                        |
+ *   +-----------------------------------------------------+
+ *               |                             |
+ *               |                             |
+ *               V                             V
+ *         [namespace1]                  [namespace2]
+ *               |
+ *               |
+ * (channel1)    +---> [************] -->
+ * (channel2)    +---> [+++++++++] -->
+ * (channelN)    +---> [$$$$$$$] -->
  *
  */
 object Namespace {

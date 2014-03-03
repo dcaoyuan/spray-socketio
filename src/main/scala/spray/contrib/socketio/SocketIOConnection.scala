@@ -59,15 +59,16 @@ trait SocketIOConnection extends Actor with ActorLogging {
     case req @ websocket.HandshakeRequest(state) =>
       state match {
         case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
-        case wsContext: websocket.HandshakeContext => sender() ! UHttp.Upgrade(websocket.pipelineStage(self, wsContext), wsContext)
+        case wsContext: websocket.HandshakeContext =>
+          sender() ! UHttp.UpgradeServer(websocket.pipelineStage(self, wsContext), wsContext.response)
+          socketio.wsConnected(wsContext.request) foreach { _ =>
+            log.debug("{}: socketio on websocket connected.", serverConnection)
+          }
       }
 
-    case UHttp.Upgraded(wsContext) =>
+    case UHttp.Upgraded =>
       log.debug("{}: upgraded.", serverConnection)
       context.become(websocketLogic orElse closeLogic)
-      socketio.wsConnected(wsContext.request) foreach { _ =>
-        log.debug("{}: socketio on websocket connected.", serverConnection)
-      }
   }
 
   def websocketLogic: Receive = {

@@ -30,7 +30,7 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
 
   // It seems socket.io client may fire heartbeat only when it received heartbeat
   // from server, or, just bounce heartheat instead of firing heartbeat standalone.
-  var heartbeatFiring: Option[Cancellable] = None
+  var heartbeatHandler: Option[Cancellable] = None
   var heartbeatTimeout: Option[Cancellable] = None
 
   def receive = paused
@@ -38,13 +38,12 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
   def paused: Receive = {
     case Awake =>
       log.debug("{}: awaked.", self)
-      heartbeatFiring = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
-        connContext.transport.sendPacket(HeartbeatPacket)
-      })
-      heartbeatTimeout = Some(context.system.scheduler.scheduleOnce((socketio.Settings.HeartbeatTimeout).seconds) {
-        namespaces ! Namespace.HeartbeatTimeout(connContext.sessionId)
-      })
-
+      heartbeatHandler = Some(context.system.scheduler.schedule(
+        0.seconds, heartbeatInterval.seconds,
+        namespaces, Namespace.SendHeartbeat(connContext.sessionId)))
+      heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(
+        socketio.Settings.HeartbeatTimeout.seconds,
+        namespaces, Namespace.HeartbeatTimeout(connContext.sessionId)))
       //unstashAll()
       context.become(processing)
 
@@ -55,18 +54,18 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
   def processing: Receive = {
     case Pause =>
       log.debug("{}: paused.", self)
-      heartbeatFiring foreach (_.cancel)
+      heartbeatHandler foreach (_.cancel)
       context.become(paused)
 
     case HeartbeatPacket =>
       heartbeatTimeout foreach (_.cancel)
-      heartbeatTimeout = Some(context.system.scheduler.scheduleOnce((socketio.Settings.HeartbeatTimeout).seconds) {
-        namespaces ! Namespace.HeartbeatTimeout(connContext.sessionId)
-      })
+      heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(
+        socketio.Settings.HeartbeatTimeout.seconds,
+        namespaces, Namespace.HeartbeatTimeout(connContext.sessionId)))
 
     case ConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
 
-  }
 }
+  }
 

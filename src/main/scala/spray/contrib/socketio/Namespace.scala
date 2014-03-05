@@ -57,6 +57,7 @@ object Namespace {
   final case class Subscribe[T <: OnData](endpoint: String, observer: Observer[T])(implicit val tag: TypeTag[T])
   final case class Broadcast(packet: Packet)
 
+  final case class SendHeartbeat(sessionId: String)
   final case class HeartbeatTimeout(sessionId: String)
 
   // --- Observable data
@@ -177,6 +178,7 @@ object Namespace {
       case x @ Broadcast(packet) =>
         dispatch(packet.endpoint, x)
 
+      case SendHeartbeat(sessionId)    => connectionContextFor(sessionId) foreach { _.transport.sendPacket(HeartbeatPacket) }
       case HeartbeatTimeout(sessionId) => scheduleCloseConnection(sessionId)
     }
 
@@ -188,9 +190,9 @@ object Namespace {
 
           authorizedSessionIds(sessionId) = (
             Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
+              context.stop(connContext.connectionActive)
               authorizedSessionIds -= sessionId
               //connContext.serverConnection ! Tcp.Close
-              context.stop(connContext.connectionActive)
               log.info("{}: Disconnected.", sessionId)
             }), Some(connContext))
 

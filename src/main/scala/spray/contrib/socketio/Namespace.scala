@@ -56,6 +56,7 @@ object Namespace {
   final case class OnPacket[T <: Packet](packet: T, sessionId: String)
   final case class Subscribe[T <: OnData](endpoint: String, observer: Observer[T])(implicit val tag: TypeTag[T])
   final case class Broadcast(packet: Packet)
+  final case class DropSessionId(sessionId: String, isClosing: Boolean)
 
   final case class SendHeartbeat(sessionId: String)
   final case class HeartbeatTimeout(sessionId: String)
@@ -118,9 +119,9 @@ object Namespace {
 
       case Session(sessionId) =>
         authorizedSessionIds(sessionId) = (
-          Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-            authorizedSessionIds -= sessionId
-          }), None)
+          Some(context.system.scheduler.scheduleOnce(
+            socketio.Settings.CloseTimeout.seconds,
+            self, DropSessionId(sessionId, isClosing = false))), None)
 
       case x @ Connecting(sessionId, query, origins, transport) =>
         if (authorize(x)) {
@@ -180,6 +181,15 @@ object Namespace {
 
       case SendHeartbeat(sessionId)    => connectionContextFor(sessionId) foreach { _.transport.sendPacket(HeartbeatPacket) }
       case HeartbeatTimeout(sessionId) => scheduleCloseConnection(sessionId)
+      case DropSessionId(sessionId, isClosing) =>
+        if (isClosing) {
+          connectionContextFor(sessionId) foreach { connContext =>
+            context.stop(connContext.connectionActive)
+            //connContext.serverConnection ! Tcp.Close}
+          }
+        }
+        authorizedSessionIds -= sessionId
+        log.debug("{}: Disconnected.", sessionId)
     }
 
     def scheduleCloseConnection(sessionId: String) {
@@ -189,12 +199,9 @@ object Namespace {
           log.info("{} Will be disconnected in {} seconds.", sessionId, socketio.Settings.CloseTimeout)
 
           authorizedSessionIds(sessionId) = (
-            Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-              context.stop(connContext.connectionActive)
-              authorizedSessionIds -= sessionId
-              //connContext.serverConnection ! Tcp.Close
-              log.info("{}: Disconnected.", sessionId)
-            }), Some(connContext))
+            Some(context.system.scheduler.scheduleOnce(
+              socketio.Settings.CloseTimeout.seconds,
+              self, DropSessionId(sessionId, isClosing = true))), Some(connContext))
 
         case Some((Some(timeout), _)) => // has been scheduled closing
         case _                        =>

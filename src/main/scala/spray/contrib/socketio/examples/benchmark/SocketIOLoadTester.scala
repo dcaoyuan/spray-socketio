@@ -85,12 +85,12 @@ object SocketIOLoadTester {
     while (i < concurrencyLevels.length) {
       val concurrentConnections = concurrencyLevels(i)
 
-      val socketIOClients = system.actorOf(Props(new SocketIOLoadTester), "socketioclients")
+      val socketIOLordTester = system.actorOf(Props(new SocketIOLoadTester), "socketioclients")
 
-      val f = socketIOClients.ask(RoundBegin(concurrentConnections))(1000.seconds).mapTo[StatsSummary]
+      val f = socketIOLordTester.ask(RoundBegin(concurrentConnections))(1000.seconds).mapTo[StatsSummary]
       val summaryStats = Await.result(f, Duration.Inf).stats
 
-      system.stop(socketIOClients)
+      system.stop(socketIOLordTester)
 
       for ((messageRate, stats) <- summaryStats) {
         try {

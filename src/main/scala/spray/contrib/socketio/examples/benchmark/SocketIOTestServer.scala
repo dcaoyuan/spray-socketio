@@ -12,7 +12,6 @@ import spray.contrib.socketio
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOServerConnection
-import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, ContentType, MediaTypes }
 import spray.json.DefaultJsonProtocol
 
 object SocketIOTestServer extends App {
@@ -27,37 +26,10 @@ object SocketIOTestServer extends App {
     }
   }
 
-  val WEB_ROOT = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
-
   class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
-      case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>
-        val content = renderTextFile(WEB_ROOT + "/socketio.html")
-        val entity = HttpEntity(ContentType(MediaTypes.`text/html`), content)
-        sender() ! HttpResponse(entity = entity)
-
-      case HttpRequest(HttpMethods.GET, Uri.Path("/jquery-1.7.2.min.js"), _, _, _) =>
-        val content = renderTextFile(WEB_ROOT + "/jquery-1.7.2.min.js")
-        val entity = HttpEntity(ContentType(MediaTypes.`application/javascript`), content)
-        sender() ! HttpResponse(entity = entity)
-
-      case HttpRequest(HttpMethods.GET, Uri.Path("/socket.io.js"), _, _, _) =>
-        val content = renderTextFile(WEB_ROOT + "/socket.io.js")
-        val entity = HttpEntity(ContentType(MediaTypes.`application/javascript`), content)
-        sender() ! HttpResponse(entity = entity)
-
-      case x: HttpRequest =>
-        log.info("Got http req uri = {}", x.uri.path.toString.split("/").toList)
-
       case x: Frame =>
-    }
-
-    def renderTextFile(path: String) = {
-      val source = scala.io.Source.fromFile(path)
-      val lines = source.getLines mkString "\n"
-      source.close()
-      lines
     }
   }
 

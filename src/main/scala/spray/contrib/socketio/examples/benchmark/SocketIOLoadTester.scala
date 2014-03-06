@@ -37,7 +37,7 @@ object SocketIOLoadTester {
   val connect = Http.Connect(host, port)
 
   protected var concurrencyLevels = Array(
-    10, 100, 500, 1000, 2000, 5000)
+    10, 100, 500, 1000, 2000, 5000, 10000, 30000)
 
   implicit val system = ActorSystem()
 
@@ -49,11 +49,6 @@ object SocketIOLoadTester {
 
   def main(args: Array[String]) {
     run(args.map(_.toInt))
-
-    readLine("Hit ENTER to exit ...\n")
-    system.shutdown()
-    system.awaitTermination()
-
   }
 
   def run(concurrencies: Array[Int]) {

@@ -7,7 +7,8 @@ object Build extends sbt.Build {
     "spray-socketio",
     file("."),
     settings = commonSettings ++ Seq(
-      libraryDependencies ++= Dependencies.all))
+      libraryDependencies ++= Dependencies.all,
+      distTask))
 
   def commonSettings = Defaults.defaultSettings ++
     Seq(
@@ -27,6 +28,14 @@ object Build extends sbt.Build {
         "Typesafe repo" at "http://repo.typesafe.com/typesafe/releases/",
         "spray" at "http://repo.spray.io",
         "spray nightly" at "http://nightlies.spray.io/"))
+
+  lazy val distDependencies = TaskKey[Unit]("dist")
+  def distTask = distDependencies <<= (packageBin in Compile, update, crossTarget, scalaVersion) map { (bin, updateReport, out, scalaVer) =>
+    (bin :: updateReport.allFiles.toList) foreach { srcPath =>
+      val destPath = out / "libs" / srcPath.getName
+      IO.copyFile(srcPath, destPath, preserveLastModified = true)
+    }
+  }
 }
 
 object Dependencies {

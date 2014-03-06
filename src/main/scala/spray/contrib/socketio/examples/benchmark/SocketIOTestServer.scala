@@ -39,7 +39,6 @@ object SocketIOTestServer extends App {
     (next: OnEvent) => {
       next match {
         case OnEvent("chat", args, context) =>
-          //println("observed: " + next.name + ", " + next.args)
           next.replyEvent("chat", args: _*)
         case _ =>
           println("observed: " + next.name + ", " + next.args)
@@ -52,8 +51,4 @@ object SocketIOTestServer extends App {
   val server = system.actorOf(Props(classOf[SocketIOServer], namespaces), "socketio")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)
-
-  readLine("Hit ENTER to exit ...\n")
-  system.shutdown()
-  system.awaitTermination()
 }

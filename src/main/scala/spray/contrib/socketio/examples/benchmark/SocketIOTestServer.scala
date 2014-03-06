@@ -12,7 +12,6 @@ import spray.contrib.socketio
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOServerConnection
-import spray.json.DefaultJsonProtocol
 
 object SocketIOTestServer extends App {
 
@@ -32,16 +31,6 @@ object SocketIOTestServer extends App {
       case x: Frame =>
     }
   }
-
-  // --- json protocals for socketio messages:
-  case class Msg(test: String)
-  case class Now(time: String)
-  object TheJsonProtocol extends DefaultJsonProtocol {
-    implicit val msgFormat = jsonFormat1(Msg)
-    implicit val nowFormat = jsonFormat1(Now)
-  }
-  import spray.json._
-  import TheJsonProtocol._
 
   implicit val system = ActorSystem()
   val namespaces = system.actorOf(Props(classOf[Namespace.Namespaces]).withDispatcher(socketio.Settings.NamespacesDispatcher), name = Namespace.NAMESPACES)

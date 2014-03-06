@@ -37,8 +37,7 @@ object SocketIOLoadTester {
   val connect = Http.Connect(host, port)
 
   protected var concurrencyLevels = Array(
-    5000 /* , 10, 25, 50, 75, 100, 200, 300,
-  400, 500, 750, 1000, 1250, 1500, 2000 */ )
+    10, 100, 500, 1000, 2000, 5000)
 
   implicit val system = ActorSystem()
 

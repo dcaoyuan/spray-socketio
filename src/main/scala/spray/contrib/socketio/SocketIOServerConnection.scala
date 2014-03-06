@@ -32,7 +32,7 @@ import spray.contrib.socketio
  *               Ws Connection       Http Connections
  *
  */
-trait SocketIOConnection extends Actor with ActorLogging {
+trait SocketIOServerConnection extends Actor with ActorLogging {
   def serverConnection: ActorRef
   def namespaces: ActorRef
 

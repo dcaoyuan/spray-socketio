@@ -1,4 +1,4 @@
-package spray.contrib.socketio.examples
+package spray.contrib.socketio.examples.benchmark
 
 import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
@@ -11,12 +11,11 @@ import spray.can.websocket.frame.Frame
 import spray.contrib.socketio
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.SocketIOConnection
-import spray.contrib.socketio.packet.EventPacket
+import spray.contrib.socketio.SocketIOServerConnection
 import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, ContentType, MediaTypes }
 import spray.json.DefaultJsonProtocol
 
-object SimpleServer extends App with MySslConfiguration {
+object SocketIOTestServer extends App {
 
   class SocketIOServer(namespaces: ActorRef) extends Actor with ActorLogging {
     def receive = {
@@ -30,7 +29,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   val WEB_ROOT = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
-  class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>
@@ -63,7 +62,7 @@ object SimpleServer extends App with MySslConfiguration {
   }
 
   // --- json protocals for socketio messages:
-  case class Msg(message: String)
+  case class Msg(test: String)
   case class Now(time: String)
   object TheJsonProtocol extends DefaultJsonProtocol {
     implicit val msgFormat = jsonFormat1(Msg)
@@ -78,21 +77,14 @@ object SimpleServer extends App with MySslConfiguration {
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
-        case OnEvent("Hi!", args, context) =>
-          println("observed: " + next.name + ", " + next.args)
-          next.replyEvent("welcome", Msg("Greeting from spray-socketio").toJson)
-          next.replyEvent("time", Now((new java.util.Date).toString).toJson)
-          // batched packets
-          next.reply(
-            EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Greeting from spray-socketio").toJson)),
-            EventPacket(-1L, false, "testendpoint", "time", List(Now((new java.util.Date).toString).toJson)))
-        case OnEvent("time", args, context) =>
-          println("observed: " + next.name + ", " + next.args)
+        case OnEvent("chat", args, context) =>
+          //println("observed: " + next.name + ", " + next.args)
+          next.replyEvent("chat", args: _*)
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }
     })
-  namespaces ! Namespace.Subscribe("testendpoint", observer)
+  namespaces ! Namespace.Subscribe("", observer)
 
   import system.dispatcher
 

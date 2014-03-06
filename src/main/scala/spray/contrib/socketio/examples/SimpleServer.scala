@@ -11,7 +11,7 @@ import spray.can.websocket.frame.Frame
 import spray.contrib.socketio
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.SocketIOConnection
+import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
 import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, ContentType, MediaTypes }
 import spray.json.DefaultJsonProtocol
@@ -30,7 +30,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   val WEB_ROOT = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
-  class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>

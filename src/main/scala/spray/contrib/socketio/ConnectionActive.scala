@@ -6,7 +6,6 @@ import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.actor.Cancellable
 import akka.actor.Props
-import akka.actor.ReceiveTimeout
 import akka.util.ByteString
 import org.parboiled2.ParseError
 import scala.collection.immutable
@@ -65,10 +64,12 @@ class ConnectionActive extends Actor with ActorLogging {
   import ConnectionActive._
   import context.dispatcher
 
-  context.setReceiveTimeout(socketio.Settings.CloseTimeout.seconds)
-
   var connectionContext: Option[ConnectionContext] = None
   var transportConnection: ActorRef = _
+
+  var closeTimeout: Option[Cancellable] = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
+    doCloseTimeout()
+  })
 
   // It seems socket.io client may fire heartbeat only when it received heartbeat
   // from server, or, just bounce heartheat instead of firing heartbeat standalone.
@@ -85,6 +86,9 @@ class ConnectionActive extends Actor with ActorLogging {
 
   def processing: Receive = {
     case Connecting(sessionId, query, origins, transportConn, transport) =>
+      closeTimeout foreach (_.cancel)
+      closeTimeout = None
+
       log.debug("Connecting request: {}", sessionId)
       transportConnection = transportConn
       connectionContext match {
@@ -96,28 +100,20 @@ class ConnectionActive extends Actor with ActorLogging {
           connectionContext = Some(newContext)
       }
 
-      enqueueAndMaySendPacket(ConnectPacket())
+      sendPacket(ConnectPacket())
 
       if (heartbeatHandler.isEmpty) {
         heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
-          enqueueAndMaySendPacket(HeartbeatPacket)
           sendPacket(HeartbeatPacket)
         })
       }
 
       heartbeatTimeout foreach (_.cancel)
       heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.HeartbeatTimeout.seconds) {
-        context.setReceiveTimeout(socketio.Settings.CloseTimeout.seconds)
+        doHeartbeatTimeout()
       })
 
     case Pause =>
-      log.debug("{}: paused.", self.path)
-      heartbeatHandler foreach (_.cancel)
-      heartbeatHandler = None
-
-    case ReceiveTimeout =>
-      log.debug("{} stoped dure to ReceiveTimeout", self.path)
-      context.stop(self)
 
     case OnPayload(transportConnection, payload) => onPayload(transportConnection, payload)
     case OnGet(payload)                          => onGet(payload)
@@ -132,6 +128,33 @@ class ConnectionActive extends Actor with ActorLogging {
       sender() ! System.currentTimeMillis - startTime
   }
 
+  def doHeartbeatTimeout() {
+    heartbeatHandler foreach (_.cancel)
+    heartbeatHandler = None
+    log.debug("{}: heartbeat timeout, will close in {} seconds", self.path, socketio.Settings.CloseTimeout)
+    closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
+      doCloseTimeout()
+    })
+  }
+
+  def doCloseTimeout() {
+    log.debug("{}: stoped due to close timeout", self.path)
+    context.stop(self)
+  }
+
+  def pauseHeartbeat {
+    log.debug("{}: heartbeat paused.", self.path)
+    heartbeatHandler foreach (_.cancel)
+    heartbeatHandler = None
+  }
+
+  def resumeHeartbeat {
+    log.debug("{}: heartbeat resumed.", self.path)
+    heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
+      sendPacket(HeartbeatPacket)
+    })
+  }
+
   def onPayload(transportConnection: ActorRef, payload: ByteString) {
     try {
       PacketParser(payload) foreach onPacket
@@ -143,9 +166,11 @@ class ConnectionActive extends Actor with ActorLogging {
   def onPacket(packet: Packet) {
     packet match {
       case HeartbeatPacket =>
+        closeTimeout foreach (_.cancel)
+        closeTimeout = None
         heartbeatTimeout foreach (_.cancel)
         heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.HeartbeatTimeout.seconds) {
-          context.setReceiveTimeout(socketio.Settings.CloseTimeout.seconds)
+          doHeartbeatTimeout()
         })
 
       case ConnectPacket(endpoint, args) =>
@@ -177,8 +202,8 @@ class ConnectionActive extends Actor with ActorLogging {
   }
 
   def onPost(transportConnection: ActorRef, payload: ByteString) {
-    // response an empty entity to release POST before message processing
     connectionContext foreach { ctx =>
+      // response an empty entity to release POST before message processing
       ctx.transport.write(ctx, transportConnection, "")
     }
     onPayload(transportConnection, payload)
@@ -188,17 +213,17 @@ class ConnectionActive extends Actor with ActorLogging {
 
   def sendMessage(msg: String, endpoint: String) {
     val packet = MessagePacket(-1L, false, properEndpoint(endpoint), msg)
-    enqueueAndMaySendPacket(packet)
+    sendPacket(packet)
   }
 
   def sendJson(json: JsValue, endpoint: String) {
     val packet = JsonPacket(-1L, false, properEndpoint(endpoint), json)
-    enqueueAndMaySendPacket(packet)
+    sendPacket(packet)
   }
 
   def sendEvent(name: String, args: List[JsValue], endpoint: String) {
     val packet = EventPacket(-1L, false, properEndpoint(endpoint), name, args)
-    enqueueAndMaySendPacket(packet)
+    sendPacket(packet)
   }
 
   def sendPacket(packets: Packet*) {

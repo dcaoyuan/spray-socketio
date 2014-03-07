@@ -24,21 +24,16 @@ import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 object SocketIOLoadTester {
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
 
-  val STARTING_MESSAGES_PER_SECOND_RATE = 1
-
-  val SECONDS_TO_TEST_EACH_LOAD_STATE = 10
-
-  val SECONDS_BETWEEN_TESTS = 2
-
-  val MESSAGES_RECEIVED_PER_SECOND_RAMP = 100
-
-  val POST_TEST_RECEPTION_TIMEOUT_WINDOW = config.getInt("POST_TEST_RECEPTION_TIMEOUT_WINDOW") //5
-
-  val MAX_MESSAGES_PER_SECOND_SENT = 200000
+  val postTestReceptionTimeout = config.getInt("post-test-reception-timeout")
+  val initailMessagesPerSecond = config.getInt("initail-messages-per-second")
+  val secondsToTestEachLoadState = config.getInt("seconds-to-test-each-load-state")
+  val secondsBetweenRounds = config.getInt("seconds-between-rounds")
+  val messageReceivedPerSecondRamp = config.getInt("message-received-per-second-ramp")
+  val maxMessagesPerSecond = config.getInt("max-messages-per-second")
 
   val host = config.getString("host")
   val port = config.getInt("port")
-  protected var concurrencyLevels = config.getIntList("concurrencyLevels")
+  var concurrencyLevels = config.getIntList("concurrencyLevels")
 
   val connect = Http.Connect(host, port)
 
@@ -55,7 +50,6 @@ object SocketIOLoadTester {
   }
 
   def run(concurrencies: Array[Int]) {
-
     var file: BufferedWriter = null
     try {
       file = new BufferedWriter(new FileWriter(System.currentTimeMillis + ".log"))
@@ -122,7 +116,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
   private var concurrentConnections = 0
 
-  private var currentMessagesPerSecond = STARTING_MESSAGES_PER_SECOND_RATE
+  private var currentMessagesPerSecond = initailMessagesPerSecond
 
   private var isConnectionLost = false
 
@@ -169,7 +163,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     case MessageArrived(roundtripTime: Long) =>
       roundtripTimes += roundtripTime
 
-      if (roundtripTimes.size >= SECONDS_TO_TEST_EACH_LOAD_STATE * currentMessagesPerSecond - 2) {
+      if (roundtripTimes.size >= secondsToTestEachLoadState * currentMessagesPerSecond - 2) {
         isPostTestTimeout = false
         roundContext match {
           case null =>
@@ -178,7 +172,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
             goon(statistics, overallEffectiveRate)
         }
       } else {
-        log.debug("Expected: " + SECONDS_TO_TEST_EACH_LOAD_STATE * currentMessagesPerSecond + ", got: " + roundtripTimes.size)
+        log.debug("Expected: " + secondsToTestEachLoadState * currentMessagesPerSecond + ", got: " + roundtripTimes.size)
       }
 
   }
@@ -188,7 +182,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
     testRunning = true
 
-    currentMessagesPerSecond = STARTING_MESSAGES_PER_SECOND_RATE
+    currentMessagesPerSecond = initailMessagesPerSecond
     triggerMessages(statistics, 0.0)
   }
 
@@ -197,13 +191,13 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
     println(concurrentConnections + " connections at currentMessagesPerSecond " + currentMessagesPerSecond + ": ")
 
-    roundtripTimes = new mutable.ArrayBuffer[Double](SECONDS_TO_TEST_EACH_LOAD_STATE * currentMessagesPerSecond)
+    roundtripTimes = new mutable.ArrayBuffer[Double](secondsToTestEachLoadState * currentMessagesPerSecond)
 
     val t0 = System.currentTimeMillis
     val expectedDutationPerSend = 1000 / currentMessagesPerSecond
     var count = 0
     var i = 0
-    while (i < SECONDS_TO_TEST_EACH_LOAD_STATE) {
+    while (i < secondsToTestEachLoadState) {
       // usually we hope triggerChatMessages will be processed in extractly 1 second.
       val messageSendStartTime = System.currentTimeMillis
       val effectiveRate = triggerChatMessages(currentMessagesPerSecond)
@@ -216,16 +210,16 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     }
     println(count + " messages sent in " + (System.currentTimeMillis - t0) + "ms")
 
-    overallEffectiveRate = overallEffectiveRate / SECONDS_TO_TEST_EACH_LOAD_STATE
+    overallEffectiveRate = overallEffectiveRate / secondsToTestEachLoadState
     println("Rate: %.3f ".format(overallEffectiveRate))
 
     import system.dispatcher
     isPostTestTimeout = true
     roundContext = RoundContext(
-      Some(system.scheduler.scheduleOnce(POST_TEST_RECEPTION_TIMEOUT_WINDOW.seconds) {
+      Some(system.scheduler.scheduleOnce(postTestReceptionTimeout.seconds) {
         if (isPostTestTimeout) {
-          println("Failed - not all messages received in " + POST_TEST_RECEPTION_TIMEOUT_WINDOW + "s")
-          println("Expected: " + SECONDS_TO_TEST_EACH_LOAD_STATE * currentMessagesPerSecond + ", got: " + roundtripTimes.size)
+          println("Failed - not all messages received in " + postTestReceptionTimeout + "s")
+          println("Expected: " + secondsToTestEachLoadState * currentMessagesPerSecond + ", got: " + roundtripTimes.size)
         } else {
           goon(statistics, overallEffectiveRate)
         }
@@ -234,11 +228,11 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
   private def goon(statistics: mutable.Map[Double, SummaryStatistics], overallEffectiveRate: Double) {
     statistics.put(overallEffectiveRate, processRoundtripStats)
-    currentMessagesPerSecond += Math.max(100, MESSAGES_RECEIVED_PER_SECOND_RAMP / concurrentConnections)
+    currentMessagesPerSecond += Math.max(100, messageReceivedPerSecondRamp / concurrentConnections)
 
-    if (!isConnectionLost && !isPostTestTimeout && currentMessagesPerSecond < MAX_MESSAGES_PER_SECOND_SENT) {
+    if (!isConnectionLost && !isPostTestTimeout && currentMessagesPerSecond < maxMessagesPerSecond) {
       import system.dispatcher
-      system.scheduler.scheduleOnce(SECONDS_BETWEEN_TESTS.seconds) {
+      system.scheduler.scheduleOnce(secondsBetweenRounds.seconds) {
         triggerMessages(statistics, overallEffectiveRate)
       }
     } else {

@@ -55,13 +55,13 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
         socketio.Settings.HeartbeatTimeout.seconds,
         namespaces, Namespace.HeartbeatTimeout(connContext.sessionId)))
       //unstashAll()
-      context.become(sending orElse processing)
+      context.become(sending orElse working)
 
     case msg =>
     //stash()
   }
 
-  def processing: Receive = {
+  def working: Receive = {
     case Pause =>
       log.debug("{}: paused.", self)
       heartbeatHandler foreach (_.cancel)
@@ -124,8 +124,10 @@ class ConnectionActive(connContext: ConnectionContext, namespaces: ActorRef) ext
   }
 
   private def writeSingle(serverConnection: ActorRef, isSendingNoopWhenEmpty: Boolean) {
-    if (pendingPackets.isEmpty && isSendingNoopWhenEmpty) {
-      connContext.transport.write(serverConnection, NoopPacket.render.utf8String)
+    if (pendingPackets.isEmpty) {
+      if (isSendingNoopWhenEmpty) {
+        connContext.transport.write(serverConnection, NoopPacket.utf8String)
+      }
     } else {
       val head = pendingPackets.head
       pendingPackets = pendingPackets.tail

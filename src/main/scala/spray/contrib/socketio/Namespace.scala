@@ -57,8 +57,6 @@ object Namespace {
   final case class Subscribe[T <: OnData](endpoint: String, observer: Observer[T])(implicit val tag: TypeTag[T])
   final case class Broadcast(packet: Packet)
   final case class DropSessionId(sessionId: String, isClosing: Boolean)
-
-  final case class SendHeartbeat(sessionId: String)
   final case class HeartbeatTimeout(sessionId: String)
 
   // --- Observable data
@@ -167,20 +165,11 @@ object Namespace {
       case x @ OnPacket(HeartbeatPacket, sessionId) =>
         connectionContextFor(sessionId) foreach { _.connectionActive ! HeartbeatPacket }
 
-      case x @ OnPacket(packet, sessionId) =>
-        log.debug("Got {}", x)
-        dispatch(packet.endpoint, x)
+      case x @ OnPacket(packet, sessionId) => dispatch(packet.endpoint, x)
+      case x @ Broadcast(packet)           => dispatch(packet.endpoint, x)
 
-      case RemoveNamespace(namespace) =>
-        val ns = context.actorSelection(namespace)
-        ns ! Broadcast(DisconnectPacket(namespace))
-      //context.stop(ns)
+      case HeartbeatTimeout(sessionId)     => scheduleCloseConnection(sessionId)
 
-      case x @ Broadcast(packet) =>
-        dispatch(packet.endpoint, x)
-
-      case SendHeartbeat(sessionId)    => connectionContextFor(sessionId) foreach { _.transport.sendPacket(HeartbeatPacket) }
-      case HeartbeatTimeout(sessionId) => scheduleCloseConnection(sessionId)
       case DropSessionId(sessionId, isClosing) =>
         if (isClosing) {
           connectionContextFor(sessionId) foreach { connContext =>
@@ -190,13 +179,19 @@ object Namespace {
         }
         authorizedSessionIds -= sessionId
         log.debug("{}: Disconnected.", sessionId)
+
+      case RemoveNamespace(namespace) =>
+        val ns = context.actorSelection(namespace)
+        ns ! Broadcast(DisconnectPacket(namespace))
+      //context.stop(ns)
+
     }
 
     def scheduleCloseConnection(sessionId: String) {
       authorizedSessionIds.get(sessionId) match {
         case Some((None, Some(connContext))) =>
           connContext.connectionActive ! ConnectionActive.Pause
-          log.info("{} Will be disconnected in {} seconds.", sessionId, socketio.Settings.CloseTimeout)
+          log.debug("{} Will be disconnected in {} seconds.", sessionId, socketio.Settings.CloseTimeout)
 
           authorizedSessionIds(sessionId) = (
             Some(context.system.scheduler.scheduleOnce(

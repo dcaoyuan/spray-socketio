@@ -88,7 +88,7 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
         PacketParser(payload) foreach {
           case ConnectPacket(endpoint, args) => onConnected(endpoint, args)
           case DisconnectPacket(endpoint)    => onDisconnected(endpoint)
-          case HeartbeatPacket               => connection ! TextFrame(HeartbeatPacket.render)
+          case HeartbeatPacket               => connection ! TextFrame(HeartbeatPacket.utf8String)
           case packet =>
             log.debug("Got {}", packet)
             onPacket(packet)

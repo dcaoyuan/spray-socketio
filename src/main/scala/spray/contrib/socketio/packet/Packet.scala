@@ -103,7 +103,8 @@ case object HeartbeatPacket extends Packet {
   def code = '2'
   def endpoint = ""
 
-  val render = ByteString("2::")
+  val utf8String = "2::"
+  val render = ByteString(utf8String)
 }
 
 trait DataPacket extends Packet {
@@ -278,5 +279,6 @@ case object NoopPacket extends Packet {
   def code = '8'
   def endpoint = ""
 
-  val render = ByteString("8::")
+  val utf8String = "8::"
+  val render = ByteString(utf8String)
 }

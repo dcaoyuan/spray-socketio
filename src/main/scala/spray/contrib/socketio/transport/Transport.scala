@@ -8,6 +8,7 @@ import org.parboiled2.ParseError
 import spray.can.Http
 import spray.can.websocket.FrameCommand
 import spray.can.websocket.frame.TextFrame
+import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionActive.SendPackets
 import spray.contrib.socketio.ConnectionActive.WriteMultiple
 import spray.contrib.socketio.ConnectionActive.WriteSingle
@@ -84,7 +85,7 @@ trait Transport {
       case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
     }
   }
-  
+
 }
 
 object WebSocket extends Transport.Id {

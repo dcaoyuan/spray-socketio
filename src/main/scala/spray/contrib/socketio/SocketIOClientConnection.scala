@@ -77,7 +77,8 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
         }
       } catch {
         case ex: Throwable =>
-          log.warning(ex.getMessage, ex.getCause)
+        case ex: Throwable =>
+          log.warning("{}: {}", ex.getMessage, ex.getCause)
           connection ! CloseFrame(StatusCode.InternalError, ex.getMessage)
       }
   }
@@ -94,7 +95,7 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
             onPacket(packet)
         }
       } catch {
-        case ex: Throwable => log.warning(ex.getMessage, ex.getCause)
+        case ex: Throwable => log.warning("{}: {}", ex.getMessage, ex.getCause)
       }
   }
 

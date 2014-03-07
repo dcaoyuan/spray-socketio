@@ -32,7 +32,7 @@ object Build extends sbt.Build {
   lazy val distDependencies = TaskKey[Unit]("dist")
   def distTask = distDependencies <<= (packageBin in Compile, update, crossTarget, scalaVersion) map { (bin, updateReport, out, scalaVer) =>
     (bin :: updateReport.allFiles.toList) foreach { srcPath =>
-      val destPath = out / "libs" / srcPath.getName
+      val destPath = out / "dist/libs" / srcPath.getName
       IO.copyFile(srcPath, destPath, preserveLastModified = true)
     }
   }

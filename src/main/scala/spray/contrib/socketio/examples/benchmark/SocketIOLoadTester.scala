@@ -6,6 +6,7 @@ import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.actor.Props
 import akka.pattern.ask
+import com.typesafe.config.ConfigFactory
 import java.io.BufferedWriter
 import java.io.FileNotFoundException
 import java.io.FileWriter
@@ -20,6 +21,8 @@ import spray.can.websocket
 import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 
 object SocketIOLoadTester {
+  val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
+
   val STARTING_MESSAGES_PER_SECOND_RATE = 1
 
   val SECONDS_TO_TEST_EACH_LOAD_STATE = 10
@@ -32,12 +35,11 @@ object SocketIOLoadTester {
 
   private val MAX_MESSAGES_PER_SECOND_SENT = 200000
 
-  val host = "localhost"
-  val port = 8080
-  val connect = Http.Connect(host, port)
+  val host = config.getString("host")
+  val port = config.getInt("port")
+  protected var concurrencyLevels = config.getIntList("concurrencyLevels")
 
-  protected var concurrencyLevels = Array(
-    10, 100, 500, 1000, 2000, 5000, 10000, 30000)
+  val connect = Http.Connect(host, port)
 
   implicit val system = ActorSystem()
 
@@ -63,7 +65,7 @@ object SocketIOLoadTester {
 
     if (concurrencies.size > 0) {
       print("Using custom concurrency levels: ")
-      concurrencyLevels = Array.ofDim[Int](concurrencies.size)
+      concurrencyLevels = new java.util.ArrayList[Integer]()
       println
       var i = 0
       for (concurrency <- concurrencies) {

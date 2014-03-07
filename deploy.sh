@@ -1,8 +1,11 @@
 #!/bin/sh
 
-rm -r target/scala-2.10/bin
-rm -r target/scala-2.10/conf
+rm -r target/scala-2.10/dist/bin
+rm -r target/scala-2.10/dist/conf
+rm -r target/scala-2.10/dist/logs
 
-cp -r src/main/resources/bin target/scala-2.10/bin
-cp -r src/main/resources/conf target/scala-2.10/conf
+mkdir target/scala-2.10/dist
+cp -r src/main/resources/bin target/scala-2.10/dist/bin
+cp -r src/main/resources/conf target/scala-2.10/dist/conf
+mkdir target/scala-2.10/dist/logs
 

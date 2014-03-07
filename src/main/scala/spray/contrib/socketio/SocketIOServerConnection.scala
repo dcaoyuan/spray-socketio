@@ -34,9 +34,8 @@ import spray.contrib.socketio
  */
 trait SocketIOServerConnection extends Actor with ActorLogging {
   def serverConnection: ActorRef
-  def namespaces: ActorRef
 
-  implicit val soConnContext = new socketio.SoConnectingContext(null, serverConnection, namespaces, log, context.system, context.dispatcher)
+  implicit val soConnContext = new socketio.SoConnectingContext(null, serverConnection, log, context.system, context.dispatcher)
 
   import context.dispatcher
 
@@ -45,14 +44,12 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
   def closeLogic: Receive = {
     case x: Http.ConnectionClosed =>
       context.stop(self)
-      log.debug("{}: stopped due to {}.", serverConnection, x)
+      log.debug("{}: stopped due to {}.", serverConnection.path, x)
   }
 
   def socketioHandshake: Receive = {
-    case socketio.HandshakeRequest(state) =>
-      log.debug("{}: socketio handshake", serverConnection)
-      namespaces ! Namespace.Session(state.sessionId)
-      sender() ! state.response
+    case socketio.HandshakeRequest(ok) =>
+      log.debug("{}: socketio handshaked.", serverConnection.path)
   }
 
   def websocketConnecting: Receive = {
@@ -61,13 +58,13 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
         case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
         case wsContext: websocket.HandshakeContext =>
           sender() ! UHttp.UpgradeServer(websocket.pipelineStage(self, wsContext), wsContext.response)
-          socketio.wsConnected(wsContext.request) foreach { _ =>
-            log.debug("{}: socketio on websocket connected.", serverConnection)
+          socketio.wsConnecting(wsContext.request) foreach { _ =>
+            log.debug("{}: socketio on websocket connected.", serverConnection.path)
           }
       }
 
     case UHttp.Upgraded =>
-      log.debug("{}: upgraded.", serverConnection)
+      log.debug("{}: upgraded.", serverConnection.path)
       context.become(websocketLogic orElse closeLogic)
   }
 
@@ -78,10 +75,10 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
 
   def xrhpollingConnecting: Receive = {
     case req @ socketio.HttpGet(ok) =>
-      log.debug("{}: socketio GET {}", serverConnection, req.entity)
+      log.debug("{}: socketio GET {}", serverConnection.path, req.entity)
 
     case req @ socketio.HttpPost(ok) =>
-      log.debug("{}: socketio POST {}", serverConnection, req.entity)
+      log.debug("{}: socketio POST {}", serverConnection.path, req.entity)
   }
 
   def genericLogic: Receive

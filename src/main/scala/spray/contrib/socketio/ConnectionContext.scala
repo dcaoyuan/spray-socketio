@@ -20,20 +20,11 @@ import spray.http.Uri
  *
  * connectionActive <1--1> connContext <1--n> transport <1--1..n> serverConnection
  */
-class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin], val namespaces: ActorRef) {
-
+class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin], val connectionActive: ActorRef) {
   private var _transport: Transport = _
   def transport = _transport
   def bindTransport(transport: Transport) = {
     _transport = transport
-    _transport.bindConnContext(this)
-    this
-  }
-
-  private var _connectionActive: ActorRef = _
-  def connectionActive = _connectionActive
-  private[socketio] def bindConnectionActive(connectionActive: ActorRef) = {
-    _connectionActive = connectionActive
     this
   }
 }

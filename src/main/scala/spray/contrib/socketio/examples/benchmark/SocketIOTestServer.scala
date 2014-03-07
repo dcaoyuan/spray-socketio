@@ -15,25 +15,22 @@ import spray.contrib.socketio.SocketIOServerConnection
 
 object SocketIOTestServer extends App {
 
-  class SocketIOServer(namespaces: ActorRef) extends Actor with ActorLogging {
+  class SocketIOServer extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, namespaces))
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection))
         serverConnection ! Http.Register(conn)
     }
   }
 
-  class SocketIOWorker(val serverConnection: ActorRef, val namespaces: ActorRef) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case x: Frame =>
     }
   }
-
-  implicit val system = ActorSystem()
-  val namespaces = system.actorOf(Props(classOf[Namespace.Namespaces]).withDispatcher(socketio.Settings.NamespacesDispatcher), name = Namespace.NAMESPACES)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -44,11 +41,12 @@ object SocketIOTestServer extends App {
           println("observed: " + next.name + ", " + next.args)
       }
     })
-  namespaces ! Namespace.Subscribe("", observer)
 
+  implicit val system = ActorSystem()
   import system.dispatcher
 
-  val server = system.actorOf(Props(classOf[SocketIOServer], namespaces), "socketio")
+  Namespace.subscribe("", observer)(system)
+  val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)
 }

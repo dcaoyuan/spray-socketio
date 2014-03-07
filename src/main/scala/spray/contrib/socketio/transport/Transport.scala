@@ -1,31 +1,21 @@
 package spray.contrib.socketio.transport
 
 import akka.actor.ActorRef
-import akka.actor.ActorSystem
-import akka.event.Logging
 import akka.util.ByteString
-import org.parboiled2.ParseError
 import spray.can.Http
 import spray.can.websocket.FrameCommand
 import spray.can.websocket.frame.TextFrame
-import spray.contrib.socketio
-import spray.contrib.socketio.ConnectionActive.SendPackets
-import spray.contrib.socketio.ConnectionActive.WriteMultiple
-import spray.contrib.socketio.ConnectionActive.WriteSingle
 import spray.contrib.socketio.ConnectionContext
-import spray.contrib.socketio.Namespace
-import spray.contrib.socketio.packet.EventPacket
-import spray.contrib.socketio.packet.JsonPacket
-import spray.contrib.socketio.packet.MessagePacket
+import spray.contrib.socketio.packet.HeartbeatPacket
+import spray.contrib.socketio.packet.NoopPacket
 import spray.contrib.socketio.packet.Packet
-import spray.contrib.socketio.packet.PacketParser
 import spray.http.ContentType
 import spray.http.HttpEntity
 import spray.http.HttpHeaders
 import spray.http.HttpResponse
 import spray.http.MediaTypes
 import spray.http.SomeOrigins
-import spray.json.JsValue
+import scala.collection.immutable
 
 object Transport {
   trait Id { def ID: String }
@@ -46,142 +36,143 @@ object Transport {
  * Specically, for websocket, we'll keep serverConnection
  */
 trait Transport {
-  def system: ActorSystem
-  protected val log = Logging.getLogger(system, this)
+  def ID: String
 
-  private var _connContext: ConnectionContext = _
-  def connContext = _connContext
-  def bindConnContext(connContext: ConnectionContext) = {
-    _connContext = connContext
-    this
-  }
+  protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet]
 
-  private def properEndpoint(endpoint: String) = if (endpoint == Namespace.DEFAULT_NAMESPACE) "" else endpoint
-
-  def sendMessage(msg: String, endpoint: String) {
-    val packet = MessagePacket(-1L, false, properEndpoint(endpoint), msg)
-    sendPacket(packet)
-  }
-
-  def sendJson(json: JsValue, endpoint: String) {
-    val packet = JsonPacket(-1L, false, properEndpoint(endpoint), json)
-    sendPacket(packet)
-  }
-
-  def sendEvent(name: String, args: List[JsValue], endpoint: String) {
-    val packet = EventPacket(-1L, false, properEndpoint(endpoint), name, args)
-    sendPacket(packet)
-  }
-
-  def sendPacket(packets: Packet*)
-
-  protected[socketio] def write(serverConnection: ActorRef, payload: String)
-
-  protected def onPayload(serverConnection: ActorRef, payload: ByteString) {
-    try {
-      val packets = PacketParser(payload)
-      packets foreach { connContext.namespaces ! Namespace.OnPacket(_, connContext.sessionId) }
-    } catch {
-      case ex: ParseError => log.error(ex, "Error in parsing packet: {}" + ex.getMessage)
-    }
-  }
-
-}
-
-object WebSocket extends Transport.Id {
-  val ID = "websocket"
-}
-final case class WebSocket(system: ActorSystem, connection: ActorRef) extends Transport {
+  protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String)
 
   /**
-   * Override to public method
+   * It seems XHR-Pollong client does not support multile packets.
    */
-  override def onPayload(serverConnection: ActorRef, payload: ByteString) {
-    super.onPayload(serverConnection, payload)
+  protected[socketio] def writeMultiple(connContext: ConnectionContext, transportConnection: ActorRef, _pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
+    var pendingPackets = _pendingPackets
+    if (pendingPackets.isEmpty) {
+      // do nothing
+    } else if (pendingPackets.tail.isEmpty) {
+      val head = pendingPackets.head
+      pendingPackets = pendingPackets.tail
+      val payload = head.render.utf8String
+      write(connContext, transportConnection, payload)
+    } else {
+      var totalLength = 0
+      val sb = new StringBuilder()
+      var prev: Packet = null
+      while (pendingPackets.nonEmpty) {
+        val curr = pendingPackets.head
+        curr match {
+          case NoopPacket | HeartbeatPacket if curr == prev => // keep one is enough
+          case _ =>
+            val msg = curr.render.utf8String
+            totalLength += msg.length
+            sb.append('\ufffd').append(msg.length.toString).append('\ufffd').append(msg)
+        }
+        pendingPackets = pendingPackets.tail
+        prev = curr
+      }
+      val payload = sb.toString
+      write(connContext, transportConnection, payload)
+    }
+
+    pendingPackets
   }
 
-  override def sendPacket(packets: Packet*) {
-    connContext.connectionActive ! SendPackets(packets)
-    connContext.connectionActive ! WriteMultiple(connection)
+  protected[socketio] def writeSingle(connContext: ConnectionContext, transportConnection: ActorRef, isSendingNoopWhenEmpty: Boolean, _pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
+    var pendingPackets = _pendingPackets
+    if (pendingPackets.isEmpty) {
+      if (isSendingNoopWhenEmpty) {
+        write(connContext, transportConnection, NoopPacket.utf8String)
+      }
+    } else {
+      val head = pendingPackets.head
+      pendingPackets = pendingPackets.tail
+      val payload = head.render.utf8String
+      //println("Write {}, to {}", payload, transportConnection)
+      write(connContext, transportConnection, payload)
+    }
+    pendingPackets
   }
 
-  protected[socketio] def write(serverConnection: ActorRef, payload: String) {
-    serverConnection ! FrameCommand(TextFrame(ByteString(payload)))
+}
+
+object WebSocket extends Transport {
+  val ID = "websocket"
+
+  protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
+    writeMultiple(connContext, transportConnection, pendingPackets)
+  }
+
+  protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
+    transportConnection ! FrameCommand(TextFrame(ByteString(payload)))
   }
 }
 
-object XhrPolling extends Transport.Id {
+object XhrPolling extends Transport {
   val ID = "xhr-polling"
-}
-final case class XhrPolling(system: ActorSystem) extends Transport {
-  def onGet(serverConnection: ActorRef) {
-    connContext.connectionActive ! WriteSingle(serverConnection, isSendingNoopWhenEmpty = true)
+
+  protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
+    // will wait for onGet
+    pendingPackets
   }
 
-  def onPost(serverConnection: ActorRef, payload: ByteString) {
-    // response an empty entity to release POST before message processing
-    write(serverConnection, "")
-    onPayload(serverConnection, payload)
-  }
-
-  def sendPacket(packets: Packet*) {
-    connContext.connectionActive ! SendPackets(packets)
-  }
-
-  protected[socketio] def write(connection: ActorRef, payload: String) {
+  protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
     val originsHeaders = List(
       HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(connContext.origins)),
       HttpHeaders.`Access-Control-Allow-Credentials`(true))
     val headers = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
-    connection ! Http.MessageCommand(HttpResponse(headers = headers, entity = HttpEntity(ContentType(MediaTypes.`text/plain`), payload)))
+    transportConnection ! Http.MessageCommand(HttpResponse(headers = headers, entity = HttpEntity(ContentType(MediaTypes.`text/plain`), payload)))
   }
+
 }
 
-object XhrMultipart extends Transport.Id {
+object XhrMultipart extends Transport {
   val ID = "xhr-multipart"
-}
-final case class XhrMultipart(system: ActorSystem) extends Transport {
-  def sendPacket(packets: Packet*) {
+
+  protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
     // TODO
+    pendingPackets
   }
 
-  protected[socketio] def write(serverConnection: ActorRef, payload: String) {
+  protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
     // TODO
   }
 }
 
-object HtmlFile extends Transport.Id {
+object HtmlFile extends Transport {
   val ID = "htmlfile"
-}
-final case class HtmlFile(system: ActorSystem) extends Transport {
-  def sendPacket(packets: Packet*) {
+
+  protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
     // TODO
+    pendingPackets
   }
-  protected[socketio] def write(serverConnection: ActorRef, payload: String) {
+
+  protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
     // TODO
   }
 }
 
-object FlashSocket extends Transport.Id {
+object FlashSocket extends Transport {
   val ID = "flashsocket"
-}
-final case class FlashSocket(system: ActorSystem) extends Transport {
-  def sendPacket(packets: Packet*) {
+
+  protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
     // TODO
+    pendingPackets
   }
-  protected[socketio] def write(serverConnection: ActorRef, payload: String) {
+
+  protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
     // TODO
   }
 }
 
-object JsonpPolling extends Transport.Id {
+object JsonpPolling extends Transport {
   val ID = "jsonp-polling"
-}
-final case class JsonpPolling(system: ActorSystem) extends Transport {
-  def sendPacket(packets: Packet*) {
+
+  protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
     // TODO
+    pendingPackets
   }
-  protected[socketio] def write(serverConnection: ActorRef, payload: String) {
+
+  protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
     // TODO
   }
 }

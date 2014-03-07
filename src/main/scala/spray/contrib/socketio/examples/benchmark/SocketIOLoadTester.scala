@@ -81,7 +81,7 @@ object SocketIOLoadTester {
 
       val socketIOLordTester = system.actorOf(Props(new SocketIOLoadTester), "socketioclients")
 
-      val f = socketIOLordTester.ask(RoundBegin(concurrentConnections))(1000.seconds).mapTo[StatsSummary]
+      val f = socketIOLordTester.ask(RoundBegin(concurrentConnections))(100.minutes).mapTo[StatsSummary]
       val summaryStats = Await.result(f, Duration.Inf).stats
 
       system.stop(socketIOLordTester)

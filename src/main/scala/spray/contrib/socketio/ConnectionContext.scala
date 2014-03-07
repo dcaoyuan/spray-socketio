@@ -1,8 +1,6 @@
 package spray.contrib.socketio
 
 import akka.actor.ActorRef
-import scala.collection.immutable.Queue
-import spray.contrib.socketio.packet.Packet
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
@@ -23,7 +21,6 @@ import spray.http.Uri
  * connectionActive <1--1> connContext <1--n> transport <1--1..n> serverConnection
  */
 class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin], val namespaces: ActorRef) {
-  var pendingPackets = Queue[Packet]()
 
   private var _transport: Transport = _
   def transport = _transport

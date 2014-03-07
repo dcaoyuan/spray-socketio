@@ -12,6 +12,7 @@ import spray.contrib.socketio
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOServerConnection
+import com.typesafe.config.ConfigFactory
 
 object SocketIOTestServer extends App {
 
@@ -48,5 +49,8 @@ object SocketIOTestServer extends App {
   Namespace.subscribe("", observer)(system)
   val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")
 
-  IO(UHttp) ! Http.Bind(server, "localhost", 8080)
+  val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
+  val host = config.getString("host")
+  val port = config.getInt("port")
+  IO(UHttp) ! Http.Bind(server, host, port)
 }

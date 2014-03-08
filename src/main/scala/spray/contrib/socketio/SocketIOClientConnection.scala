@@ -3,6 +3,7 @@ package spray.contrib.socketio
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
+import org.parboiled2.ParseError
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket
@@ -76,10 +77,11 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
           case _ =>
         }
       } catch {
+        case ex: ParseError =>
+          log.warning("Invalide socket.io packet {}", payload)
+          connection ! CloseFrame(StatusCode.InternalError, "Invalide socket.io packet")
         case ex: Throwable =>
-        case ex: Throwable =>
-          log.warning("{}: {}", ex.getMessage, ex.getCause)
-          connection ! CloseFrame(StatusCode.InternalError, ex.getMessage)
+          log.warning("Exception during parse socket.io packet {}", ex.getMessage)
       }
   }
 
@@ -95,7 +97,11 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
             onPacket(packet)
         }
       } catch {
-        case ex: Throwable => log.warning("{}: {}", ex.getMessage, ex.getCause)
+        case ex: ParseError =>
+          log.warning("Invalide socket.io packet {}", payload)
+          connection ! CloseFrame(StatusCode.InternalError, "Invalide socket.io packet")
+        case ex: Throwable =>
+          log.warning("Exception during parse socket.io packet {}", ex.getMessage)
       }
   }
 

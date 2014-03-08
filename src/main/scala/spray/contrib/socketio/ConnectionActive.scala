@@ -163,7 +163,7 @@ class ConnectionActive extends Actor with ActorLogging {
       PacketParser(payload) foreach onPacket
     } catch {
       case ex: ParseError => log.warning("Invalid socket.io packet: {}", ex.formatTraces)
-      case _: Throwable   =>
+      case ex: Throwable  => log.warning("Exception during parse socket.io packet {}", ex.getMessage)
     }
   }
 

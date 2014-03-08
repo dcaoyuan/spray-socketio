@@ -42,18 +42,20 @@ object ConnectionActive {
   final case class OnGet(transportConnection: ActorRef)
   final case class OnPost(transportConnection: ActorRef, payload: ByteString)
 
+  val actorResolveTimeout = socketio.config.getInt("server.actor-selection-resolve-timeout")
+
   def actorPath(sessionId: String) = "/user/" + sessionId
 
   def selectOrCreateConnectionActive(system: ActorSystem, sessionId: String): Future[ActorRef] = {
     import system.dispatcher
-    system.actorSelection(actorPath(sessionId)).resolveOne(5.seconds).recover {
+    system.actorSelection(actorPath(sessionId)).resolveOne(actorResolveTimeout.seconds).recover {
       case _: Throwable => system.actorOf(Props(classOf[ConnectionActive]), name = sessionId)
     }
   }
 
   def selectConnectionActive(system: ActorSystem, sessionId: String): Future[ActorRef] = {
     import system.dispatcher
-    system.actorSelection(actorPath(sessionId)).resolveOne(5.seconds)
+    system.actorSelection(actorPath(sessionId)).resolveOne(actorResolveTimeout.seconds)
   }
 }
 

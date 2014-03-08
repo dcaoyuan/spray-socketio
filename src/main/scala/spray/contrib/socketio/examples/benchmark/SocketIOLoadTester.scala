@@ -163,7 +163,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     case MessageArrived(roundtripTime: Long) =>
       roundtripTimes += roundtripTime
 
-      if (roundtripTimes.size >= secondsToTestEachLoadState * currentMessagesPerSecond - 2) {
+      if (roundtripTimes.size >= secondsToTestEachLoadState * currentMessagesPerSecond) {
         isPostTestTimeout = false
         roundContext match {
           case null =>

@@ -31,7 +31,8 @@ import spray.http.Uri
 package object socketio {
   val SOCKET_IO = "socket.io"
 
-  val Settings = new Settings(ConfigFactory.load().getConfig("spray.socketio"))
+  val config = ConfigFactory.load().getConfig("spray.socketio")
+  val Settings = new Settings(config)
   class Settings(config: Config) {
     val SupportedTransports = config.getString("server.supported-transports")
     val HeartbeatTimeout = config.getInt("server.heartbeat-timeout")

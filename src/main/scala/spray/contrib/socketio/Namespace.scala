@@ -46,6 +46,7 @@ import spray.json.JsValue
 object Namespace {
   val DEFAULT_NAMESPACE = "socket.io"
   val NAMESPACES = "socketio-namespaces"
+  val actorResolveTimeout = socketio.config.getInt("server.actor-selection-resolve-timeout")
 
   final case class RemoveNamespace(namespace: String)
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transport: Transport)
@@ -79,7 +80,7 @@ object Namespace {
   def tryDispatch(system: ActorSystem, endpoint: String, msg: Any) {
     val namespace = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
     import system.dispatcher
-    system.actorSelection(actorPath(namespace)).resolveOne(5.seconds).recover {
+    system.actorSelection(actorPath(namespace)).resolveOne(actorResolveTimeout.seconds).recover {
       case _: Throwable => system.actorOf(Props(classOf[Namespace], namespace), name = namespace)
     } map (_ ! msg)
   }

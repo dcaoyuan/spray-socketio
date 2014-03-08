@@ -126,18 +126,16 @@ package object socketio {
    * Test websocket frame under socketio
    */
   object WsFrame {
-    def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = frame match {
-      case TextFrame(payload) =>
-        import ctx.ec
-        // ctx.sessionId should have been set during wsConnected
-        ConnectionActive.selectConnectionActive(ctx.system, ctx.sessionId).onComplete {
-          case Success(connActive) =>
-            connActive ! ConnectionActive.OnPayload(ctx.serverConnection, payload)
-          case Failure(ex) =>
-            ctx.log.warning("Failed to get connectionActive: {} ", ctx.sessionId)
-        }
-        Some(true)
-      case _ => None
+    def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = {
+      import ctx.ec
+      // ctx.sessionId should have been set during wsConnected
+      ConnectionActive.selectConnectionActive(ctx.system, ctx.sessionId).onComplete {
+        case Success(connActive) =>
+          connActive ! ConnectionActive.OnFrame(ctx.serverConnection, frame)
+        case Failure(ex) =>
+          ctx.log.warning("Failed to get connectionActive: {} ", ctx.sessionId)
+      }
+      Some(true)
     }
   }
 

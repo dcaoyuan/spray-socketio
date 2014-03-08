@@ -18,7 +18,7 @@ import spray.http.Uri
  * @Note let this context not to be final, so business application can store more
  * states in it.
  *
- * connectionActive <1--1> connContext <1--n> transport <1--1..n> serverConnection
+ * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
 class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin], val connectionActive: ActorRef) {
   private var _transport: Transport = _

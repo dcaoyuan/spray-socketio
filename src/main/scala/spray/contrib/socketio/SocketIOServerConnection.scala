@@ -20,7 +20,7 @@ import spray.contrib.socketio
  *                                |
  *                                |1..n
  *                   +--------------------------+
- *                   |       Transport          |
+ *                   |   transportConnection    |
  *                   +--------------------------+
  *                                |1
  *                                |

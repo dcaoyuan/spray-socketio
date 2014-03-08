@@ -11,6 +11,7 @@ import org.parboiled2.ParseError
 import scala.collection.immutable
 import scala.concurrent.Future
 import scala.concurrent.duration._
+import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
@@ -37,7 +38,7 @@ object ConnectionActive {
   final case class SendEvent(name: String, args: List[JsValue], endpoint: String)
   final case class SendPackets(packets: Seq[Packet])
 
-  final case class OnPayload(transportConnection: ActorRef, payload: ByteString)
+  final case class OnFrame(transportConnection: ActorRef, frame: TextFrame)
   final case class OnGet(transportConnection: ActorRef)
   final case class OnPost(transportConnection: ActorRef, payload: ByteString)
 
@@ -58,7 +59,7 @@ object ConnectionActive {
 
 /**
  *
- * connectionActive <1--1> connContext <1--n> transport <1--1..n> serverConnection
+ * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
 class ConnectionActive extends Actor with ActorLogging {
   import ConnectionActive._
@@ -113,16 +114,16 @@ class ConnectionActive extends Actor with ActorLogging {
         doHeartbeatTimeout()
       })
 
-    case Pause =>
+    case Pause                                =>
 
-    case OnPayload(transportConnection, payload) => onPayload(transportConnection, payload)
-    case OnGet(payload)                          => onGet(payload)
-    case OnPost(transportConnection, payload)    => onPost(transportConnection, payload)
+    case OnFrame(transportConnection, frame)  => onFrame(transportConnection, frame)
+    case OnGet(transportConnection)           => onGet(transportConnection)
+    case OnPost(transportConnection, payload) => onPost(transportConnection, payload)
 
-    case SendMessage(msg, endpoint)              => sendMessage(msg, endpoint)
-    case SendJson(json, endpoint)                => sendJson(json, endpoint)
-    case SendEvent(name, args, endpoint)         => sendEvent(name, args, endpoint)
-    case SendPackets(packets)                    => enqueueAndMaySendPacket(packets: _*)
+    case SendMessage(msg, endpoint)           => sendMessage(msg, endpoint)
+    case SendJson(json, endpoint)             => sendJson(json, endpoint)
+    case SendEvent(name, args, endpoint)      => sendEvent(name, args, endpoint)
+    case SendPackets(packets)                 => enqueueAndMaySendPacket(packets: _*)
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
@@ -138,7 +139,7 @@ class ConnectionActive extends Actor with ActorLogging {
   }
 
   def doCloseTimeout() {
-    log.debug("{}: stoped due to close timeout", self.path)
+    log.warning("{}: stoped due to close timeout", self.path)
     context.stop(self)
   }
 
@@ -155,15 +156,16 @@ class ConnectionActive extends Actor with ActorLogging {
     })
   }
 
-  def onPayload(transportConnection: ActorRef, payload: ByteString) {
+  private def onPayload(transportConnection: ActorRef, payload: ByteString) {
     try {
       PacketParser(payload) foreach onPacket
     } catch {
-      case ex: ParseError => log.warning("Error in parsing packet: {}", ex.formatTraces)
+      case ex: ParseError => log.warning("Invalid socket.io packet: {}", ex.formatTraces)
+      case _: Throwable   =>
     }
   }
 
-  def onPacket(packet: Packet) {
+  private def onPacket(packet: Packet) {
     packet match {
       case HeartbeatPacket =>
         closeTimeout foreach (_.cancel)
@@ -193,6 +195,10 @@ class ConnectionActive extends Actor with ActorLogging {
           Namespace.dispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
         }
     }
+  }
+
+  def onFrame(transportConnection: ActorRef, frame: TextFrame) {
+    onPayload(transportConnection, frame.payload)
   }
 
   def onGet(transportConnection: ActorRef) {

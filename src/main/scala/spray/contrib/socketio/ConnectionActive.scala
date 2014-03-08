@@ -1,15 +1,11 @@
 package spray.contrib.socketio
 
-import akka.actor.Actor
-import akka.actor.ActorLogging
-import akka.actor.ActorRef
-import akka.actor.ActorSystem
-import akka.actor.Cancellable
-import akka.actor.Props
-import akka.util.ByteString
+import akka.actor._
+import akka.util.{Timeout, ByteString}
+import akka.pattern.ask
 import org.parboiled2.ParseError
 import scala.collection.immutable
-import scala.concurrent.Future
+import scala.concurrent.{Promise, ExecutionContext, Future}
 import scala.concurrent.duration._
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
@@ -25,45 +21,86 @@ import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
 import spray.json.JsValue
+import akka.contrib.pattern.{DistributedPubSubMediator, DistributedPubSubExtension, ShardRegion, ClusterSharding}
+import akka.persistence.EventsourcedProcessor
+import spray.contrib.socketio.packet.JsonPacket
+import scala.Some
+import org.parboiled2.ParseError
+import spray.contrib.socketio.packet.DisconnectPacket
+import spray.contrib.socketio.packet.ConnectPacket
+import spray.contrib.socketio.packet.MessagePacket
+import akka.persistence.journal.leveldb.SharedLeveldbJournal
 
 object ConnectionActive {
   case object AskConnectedTime
 
   case object Pause
   case object Awake
-  final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport)
 
-  final case class SendMessage(msg: String, endpoint: String)
-  final case class SendJson(json: JsValue, endpoint: String)
-  final case class SendEvent(name: String, args: List[JsValue], endpoint: String)
-  final case class SendPackets(packets: Seq[Packet])
+  sealed trait Command {
+    def sessionId: String
+  }
+  final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command
 
-  final case class OnFrame(transportConnection: ActorRef, frame: TextFrame)
-  final case class OnGet(transportConnection: ActorRef)
-  final case class OnPost(transportConnection: ActorRef, payload: ByteString)
+  final case class SendMessage(sessionId: String, msg: String, endpoint: String) extends Command
+  final case class SendJson(sessionId: String, json: JsValue, endpoint: String) extends Command
+  final case class SendEvent(sessionId: String, name: String, args: List[JsValue], endpoint: String) extends Command
+  final case class SendPackets(sessionId: String, packets: Seq[Packet]) extends Command
 
-  def actorPath(sessionId: String) = "/user/" + sessionId
+  final case class OnPayload(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
+  final case class OnGet(sessionId: String, transportConnection: ActorRef) extends Command
+  final case class OnPost(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
+  final case class OnFrame(sessionId: String, transportConnection: ActorRef, frame: TextFrame) extends Command
 
-  def selectOrCreateConnectionActive(system: ActorSystem, sessionId: String): Future[ActorRef] = {
-    import system.dispatcher
-    system.actorSelection(actorPath(sessionId)).resolveOne(5.seconds).recover {
-      case _: Throwable => system.actorOf(Props(classOf[ConnectionActive]), name = sessionId)
+  sealed trait Event
+  final case class Connected(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin]) extends Event
+
+
+  val idExtractor: ShardRegion.IdExtractor = {
+    case cmd: Command => (cmd.sessionId, cmd)
+  }
+
+  val shardResolver: ShardRegion.ShardResolver = msg => msg match {
+    case cmd: Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
+  }
+
+  val shardName: String = "ConnectionActive"
+
+  def selectOrCreateConnectionActive(system: ActorSystem, sessionId: String)(implicit ec: ExecutionContext): Future[ActorRef] = {
+    val connectionActiveRegion = selectConnectionActive(system, sessionId)
+    val p = Promise[ActorRef]()
+
+    implicit val timeout = Timeout(1.minute)
+    val f = connectionActiveRegion ? Identify(None)
+    f.onSuccess {
+      case ActorIdentity(_, Some(ref)) => p.success(connectionActiveRegion)
+      case _ => p.failure(new RuntimeException())
     }
+    f.onFailure {
+      case e =>
+        p.failure(e)
+    }
+    p.future
   }
 
-  def selectConnectionActive(system: ActorSystem, sessionId: String): Future[ActorRef] = {
-    import system.dispatcher
-    system.actorSelection(actorPath(sessionId)).resolveOne(5.seconds)
+  def selectConnectionActive(system: ActorSystem, sessionId: String): ActorRef = {
+    val connectionActiveRegion = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
+    connectionActiveRegion
   }
+
 }
 
 /**
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-class ConnectionActive extends Actor with ActorLogging {
+class ConnectionActive extends EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
   import context.dispatcher
+
+  import DistributedPubSubMediator.Publish
+  // activate the extension
+  val mediator = DistributedPubSubExtension(context.system).mediator
 
   var connectionContext: Option[ConnectionContext] = None
   var transportConnection: ActorRef = _
@@ -83,10 +120,36 @@ class ConnectionActive extends Actor with ActorLogging {
 
   def heartbeatInterval = socketio.Settings.HeartbeatTimeout * 0.618
 
-  def receive = processing
+  def connected() {
+    sendPacket(ConnectPacket())
+
+    if (heartbeatHandler.isEmpty) {
+      heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
+        sendPacket(HeartbeatPacket)
+      })
+    }
+
+    heartbeatTimeout foreach (_.cancel)
+    heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.HeartbeatTimeout.seconds) {
+      doHeartbeatTimeout()
+    })
+  }
+
+  def update(event: Event) = {
+    event match {
+      case Connected(sessionId, query, origins) => connectionContext = Some(new ConnectionContext(sessionId, query, origins))
+    }
+  }
+
+  override def receiveRecover: Receive = {
+    case event: Event => update(event)
+  }
+
+  override def receiveCommand: Receive = processing
+
 
   def processing: Receive = {
-    case Connecting(sessionId, query, origins, transportConn, transport) =>
+    case conn @ Connecting(sessionId, query, origins, transportConn, transport) =>
       closeTimeout foreach (_.cancel)
       closeTimeout = None
 
@@ -95,18 +158,14 @@ class ConnectionActive extends Actor with ActorLogging {
       connectionContext match {
         case Some(existed) =>
           existed.bindTransport(transport)
+          connected()
         case None =>
-          val newContext = new ConnectionContext(sessionId, query, origins, self)
-          newContext.bindTransport(transport)
-          connectionContext = Some(newContext)
-      }
-
-      sendPacket(ConnectPacket())
-
-      if (heartbeatHandler.isEmpty) {
-        heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
-          sendPacket(HeartbeatPacket)
-        })
+          persist(Connected(sessionId, query, origins)) {
+            event =>
+              update(event)
+              connectionContext.foreach(_.bindTransport(transport))
+              connected()
+          }
       }
 
       heartbeatTimeout foreach (_.cancel)
@@ -116,14 +175,14 @@ class ConnectionActive extends Actor with ActorLogging {
 
     case Pause                                =>
 
-    case OnFrame(transportConnection, frame)  => onFrame(transportConnection, frame)
-    case OnGet(transportConnection)           => onGet(transportConnection)
-    case OnPost(transportConnection, payload) => onPost(transportConnection, payload)
+    case OnFrame(sessionId, transportConnection, frame)  => onFrame(transportConnection, frame)
+    case OnGet(sessionId, transportConnection)           => onGet(transportConnection)
+    case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)
 
-    case SendMessage(msg, endpoint)           => sendMessage(msg, endpoint)
-    case SendJson(json, endpoint)             => sendJson(json, endpoint)
-    case SendEvent(name, args, endpoint)      => sendEvent(name, args, endpoint)
-    case SendPackets(packets)                 => enqueueAndMaySendPacket(packets: _*)
+    case SendMessage(sessionId, msg, endpoint)           => sendMessage(msg, endpoint)
+    case SendJson(sessionId, json, endpoint)             => sendJson(json, endpoint)
+    case SendEvent(sessionId, name, args, endpoint)      => sendEvent(name, args, endpoint)
+    case SendPackets(sessionId, packets)                 => enqueueAndMaySendPacket(packets: _*)
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
@@ -179,12 +238,14 @@ class ConnectionActive extends Actor with ActorLogging {
         connectionContext foreach { ctx =>
           // bounce connect packet back to client
           sendPacket(packet)
-          Namespace.tryDispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
+          mediator ! Publish(Namespace.namespace(packet.endpoint), Namespace.OnPacket(packet, ctx))
+          //Namespace.tryDispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
         }
 
       case DisconnectPacket(endpoint) =>
         connectionContext foreach { ctx =>
-          Namespace.tryDispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
+          mediator ! Publish(Namespace.namespace(packet.endpoint), Namespace.OnPacket(packet, ctx))
+          //Namespace.tryDispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
         }
         if (endpoint == "") {
           context.stop(self)
@@ -192,7 +253,8 @@ class ConnectionActive extends Actor with ActorLogging {
 
       case _ =>
         connectionContext foreach { ctx =>
-          Namespace.dispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
+          mediator ! Publish(Namespace.namespace(packet.endpoint), Namespace.OnPacket(packet, ctx))
+          //Namespace.dispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
         }
     }
   }

@@ -1,11 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.Actor
-import akka.actor.ActorLogging
-import akka.actor.ActorSystem
-import akka.actor.Props
-import rx.lang.scala.Observer
-import rx.lang.scala.Subject
+import akka.actor._
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
@@ -20,6 +15,14 @@ import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
 import spray.json.JsValue
+import akka.contrib.pattern.{DistributedPubSubExtension, DistributedPubSubMediator}
+import akka.actor.Actor.Receive
+import spray.contrib.socketio.packet.JsonPacket
+import spray.contrib.socketio.packet.DisconnectPacket
+import spray.contrib.socketio.packet.ConnectPacket
+import spray.contrib.socketio.packet.MessagePacket
+import rx.lang.scala.{Observer, Subject}
+import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
 
 /**
  *
@@ -58,10 +61,10 @@ object Namespace {
     def context: ConnectionContext
     def endpoint: String
 
-    def replyMessage(msg: String) = context.connectionActive ! ConnectionActive.SendMessage(msg, endpoint)
-    def replyJson(json: JsValue) = context.connectionActive ! ConnectionActive.SendJson(json, endpoint)
-    def replyEvent(name: String, args: JsValue*) = context.connectionActive ! ConnectionActive.SendEvent(name, args.toList, endpoint)
-    def reply(packets: Packet*) = context.connectionActive ! ConnectionActive.SendPackets(packets)
+    def replyMessage(msg: String)(implicit system: ActorSystem) = ConnectionActive.selectConnectionActive(system, context.sessionId) ! ConnectionActive.SendMessage(context.sessionId, msg, endpoint)
+    def replyJson(json: JsValue)(implicit system: ActorSystem) = ConnectionActive.selectConnectionActive(system, context.sessionId) ! ConnectionActive.SendJson(context.sessionId, json, endpoint)
+    def replyEvent(name: String, args: JsValue*)(implicit system: ActorSystem) = ConnectionActive.selectConnectionActive(system, context.sessionId) ! ConnectionActive.SendEvent(context.sessionId, name, args.toList, endpoint)
+    def reply(packets: Packet*)(implicit system: ActorSystem) = ConnectionActive.selectConnectionActive(system, context.sessionId) ! ConnectionActive.SendPackets(context.sessionId, packets)
     def broadcast(packet: Packet) {} //TODO
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val endpoint: String) extends OnData
@@ -74,20 +77,22 @@ object Namespace {
     tryDispatch(system, endpoint, Subscribe(system, endpoint, observer))
   }
 
+  def namespace(endpoint: String): String = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
+
   def actorPath(namespace: String) = "/user/" + namespace
 
   def tryDispatch(system: ActorSystem, endpoint: String, msg: Any) {
-    val namespace = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
+    val ns = namespace(endpoint)
     import system.dispatcher
-    system.actorSelection(actorPath(namespace)).resolveOne(5.seconds).recover {
-      case _: Throwable => system.actorOf(Props(classOf[Namespace], namespace), name = namespace)
+    system.actorSelection(actorPath(ns)).resolveOne(5.seconds).recover {
+      case _: Throwable => system.actorOf(Props(classOf[Namespace], ns), name = ns)
     } map (_ ! msg)
   }
 
   def dispatch(system: ActorSystem, endpoint: String, msg: Any) {
-    val namespace = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
+    val ns = namespace(endpoint)
     import system.dispatcher
-    system.actorSelection(actorPath(namespace)) ! msg
+    system.actorSelection(actorPath(ns)) ! msg
   }
 
 }
@@ -100,6 +105,7 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
 
   private val connections = new TrieMap[String, ConnectionContext]()
 
+  val mediator = DistributedPubSubExtension(context.system).mediator
   val connectChannel = Subject[OnConnect]()
   val disconnectChannel = Subject[OnDisconnect]()
   val messageChannel = Subject[OnMessage]()
@@ -114,6 +120,8 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
     case OnPacket(packet: EventPacket, connContext)      => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
 
     case x @ Subscribe(_, _, observer) =>
+      mediator ! akka.contrib.pattern.DistributedPubSubMediator.Subscribe(endpoint, self)
+
       x.tag.tpe match {
         case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
         case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])
@@ -122,6 +130,10 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
         case t if t =:= typeOf[OnEvent]      => eventChannel(observer.asInstanceOf[Observer[OnEvent]])
         case _                               =>
       }
+
+    case SubscribeAck(s) => {
+      log.info("subscribe: {}" + s.topic)
+    }
 
     case Broadcast(packet) =>
       gossip(packet)

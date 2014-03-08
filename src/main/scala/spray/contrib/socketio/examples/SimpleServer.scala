@@ -77,12 +77,12 @@ object SimpleServer extends App with MySslConfiguration {
       next match {
         case OnEvent("Hi!", args, context) =>
           println("observed: " + next.name + ", " + next.args)
-          next.replyEvent("welcome", Msg("Greeting from spray-socketio").toJson)
-          next.replyEvent("time", Now((new java.util.Date).toString).toJson)
+          next.replyEvent("welcome", Msg("Greeting from spray-socketio").toJson)(system)
+          next.replyEvent("time", Now((new java.util.Date).toString).toJson)(system)
           // batched packets
           next.reply(
             EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio").toJson)),
-            EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString).toJson)))
+            EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString).toJson)))(system)
         case OnEvent("time", args, context) =>
           println("observed: " + next.name + ", " + next.args)
         case _ =>

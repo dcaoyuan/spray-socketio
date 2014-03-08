@@ -109,13 +109,7 @@ package object socketio {
     req.uri.path.toString.split("/") match {
       case Array("", SOCKET_IO, protocalVersion, transport.WebSocket.ID, sessionId) =>
         ctx.sessionId = sessionId
-        import ctx.ec
-        ConnectionActive.selectConnectionActive(ctx.system, sessionId).onComplete {
-          case Success(connActive) =>
-            connActive ! ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket)
-          case Failure(ex) =>
-            ctx.log.warning("Failed to get connectionActive: {} ", sessionId)
-        }
+        ConnectionActive.selectConnectionActive(ctx.system, sessionId) ! ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket)
         Some(true)
       case _ =>
         None
@@ -127,14 +121,8 @@ package object socketio {
    */
   object WsFrame {
     def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = {
-      import ctx.ec
       // ctx.sessionId should have been set during wsConnected
-      ConnectionActive.selectConnectionActive(ctx.system, ctx.sessionId).onComplete {
-        case Success(connActive) =>
-          connActive ! ConnectionActive.OnFrame(ctx.serverConnection, frame)
-        case Failure(ex) =>
-          ctx.log.warning("Failed to get connectionActive: {} ", ctx.sessionId)
-      }
+      ConnectionActive.selectConnectionActive(ctx.system, ctx.sessionId) ! ConnectionActive.OnFrame(ctx.sessionId, ctx.serverConnection, frame)
       Some(true)
     }
   }
@@ -149,14 +137,9 @@ package object socketio {
         val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
-            import ctx.ec
-            ConnectionActive.selectConnectionActive(ctx.system, sessionId).onComplete {
-              case Success(connActive) =>
-                connActive ! ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling)
-                connActive ! ConnectionActive.OnGet(ctx.serverConnection)
-              case Failure(ex) =>
-                ctx.log.warning("Failed to get connectionActive: {} ", sessionId)
-            }
+            val connActive = ConnectionActive.selectConnectionActive(ctx.system, sessionId)
+            connActive ! ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling)
+            connActive ! ConnectionActive.OnGet(sessionId, ctx.serverConnection)
             Some(true)
           case _ => None
         }
@@ -173,13 +156,7 @@ package object socketio {
         val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
-            import ctx.ec
-            ConnectionActive.selectConnectionActive(ctx.system, sessionId).onComplete {
-              case Success(connActive) =>
-                connActive ! ConnectionActive.OnPost(ctx.serverConnection, entity.data.toByteString)
-              case Failure(ex) =>
-                ctx.log.warning("Failed to get connectionActive: {} ", sessionId)
-            }
+            ConnectionActive.selectConnectionActive(ctx.system, sessionId) ! ConnectionActive.OnPost(ctx.sessionId, ctx.serverConnection, entity.data.toByteString)
             Some(true)
           case _ => None
         }

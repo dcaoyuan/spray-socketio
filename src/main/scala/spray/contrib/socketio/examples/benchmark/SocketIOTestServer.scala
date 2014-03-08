@@ -1,18 +1,21 @@
 package spray.contrib.socketio.examples.benchmark
 
 import akka.io.IO
-import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
-import rx.lang.scala.Observer
+import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef, ActorIdentity, Identify }
 import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
-import spray.can.websocket
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio
-import spray.contrib.socketio.Namespace
-import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.SocketIOServerConnection
+import spray.contrib.socketio.{ConnectionActive, Namespace, SocketIOServerConnection}
 import com.typesafe.config.ConfigFactory
+import spray.contrib.socketio.Namespace.OnEvent
+import akka.pattern.ask
+import akka.persistence.Persistence
+import akka.persistence.journal.leveldb.{SharedLeveldbJournal, SharedLeveldbStore}
+import akka.util.Timeout
+import akka.contrib.pattern.{ClusterSharding}
+import akka.cluster.Cluster
+import rx.lang.scala.Observer
 
 object SocketIOTestServer extends App {
 
@@ -33,18 +36,60 @@ object SocketIOTestServer extends App {
     }
   }
 
+  def startupSharedJournal(system: ActorSystem, startStore: Boolean, name: String, path: String) {
+    // Start the shared journal on one node (don't crash this SPOF)
+    // This will not be needed with a distributed journal
+    if (startStore)
+      system.actorOf(Props[SharedLeveldbStore], name)
+    // register the shared journal
+    import system.dispatcher
+    implicit val timeout = Timeout(1.minute)
+    val f = (system.actorSelection(path) ? Identify(None))
+    f.onSuccess {
+      case ActorIdentity(_, Some(ref)) => SharedLeveldbJournal.setStore(ref, system)
+      case _ =>
+        system.log.error("Shared journal not started at {}", path)
+        system.shutdown()
+    }
+    f.onFailure {
+      case _ =>
+        system.log.error("Lookup of shared journal at {} timed out", path)
+        system.shutdown()
+    }
+  }
+
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
         case OnEvent("chat", args, context) =>
-          next.replyEvent("chat", args: _*)
+          next.replyEvent("chat", args: _*)(system)
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }
     })
 
-  implicit val system = ActorSystem()
+  val clusterPort = 2551
+
+  // Override the configuration of the port
+  val systemConfig = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + clusterPort).
+    withFallback(ConfigFactory.load())
+
+  implicit val system = ActorSystem("ClusterSystem", systemConfig)
   import system.dispatcher
+  val clusterSystem = Cluster(system)
+
+  // start the Persistence extension
+  Persistence(system)
+  startupSharedJournal(system, clusterSystem.selfAddress.port == Some(clusterPort), "store", clusterSystem.selfAddress + "/user/store")
+
+  // join to cluster
+  clusterSystem.join(clusterSystem.selfAddress)
+
+  ClusterSharding(system).start(
+    typeName = ConnectionActive.shardName,
+    entryProps = Some(Props[ConnectionActive]),
+    idExtractor = ConnectionActive.idExtractor,
+    shardResolver = ConnectionActive.shardResolver)
 
   Namespace.subscribe("", observer)(system)
   val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")

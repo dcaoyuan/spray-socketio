@@ -39,15 +39,18 @@ object Build extends sbt.Build {
 }
 
 object Dependencies {
+  val AKKA_VERSION = "2.3.0-RC4"
+
   val spray_websocket = "com.wandoulabs" % "spray-websocket_2.10" % "0.1"
   val spray_can = "io.spray" % "spray-can" % "1.3-RC4"
-  val akka_actor = "com.typesafe.akka" %% "akka-actor" % "2.3.0-RC4"
+  val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
+  val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
   val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.5"
   val parboiled2 = "org.parboiled" %% "parboiled" % "2.0-M2" //changing ()
-  val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % "2.3.0-RC4" % "test"
+  val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.0" % "test"
   val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.16.1"
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
 
-  val all = Seq(spray_websocket, spray_can, akka_actor, parboiled2, rxscala, akka_testkit, scalatest, apache_math)
+  val all = Seq(spray_websocket, spray_can, akka_actor, akka_contrib, parboiled2, rxscala, akka_testkit, scalatest, apache_math)
 }

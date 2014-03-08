@@ -60,7 +60,7 @@ object Namespace {
     def endpoint: String
 
     def replyMessage(msg: String) = context.connectionActive ! ConnectionActive.SendMessage(msg, endpoint)
-    def replyJson(json: JsValue) = context.connectionActive ! ConnectionActive.SendJson(json, endpoint)
+    def replyJson(json: String) = context.connectionActive ! ConnectionActive.SendJson(json, endpoint)
     def replyEvent(name: String, args: JsValue*) = context.connectionActive ! ConnectionActive.SendEvent(name, args.toList, endpoint)
     def reply(packets: Packet*) = context.connectionActive ! ConnectionActive.SendPackets(packets)
     def broadcast(packet: Packet) {} //TODO

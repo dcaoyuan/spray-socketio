@@ -72,13 +72,12 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
         PacketParser(payload).headOption match {
           case Some(ConnectPacket(_, _)) =>
             onOpen()
-            log.debug("socket.io connection opened")
             context.become(businessLogic orElse socketioLogic orElse closeLogic)
           case _ =>
         }
       } catch {
         case ex: ParseError =>
-          log.warning("Invalide socket.io packet {}", payload)
+          log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
           connection ! CloseFrame(StatusCode.InternalError, "Invalide socket.io packet")
         case ex: Throwable =>
           log.warning("Exception during parse socket.io packet {}", ex.getMessage)
@@ -98,7 +97,7 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
         }
       } catch {
         case ex: ParseError =>
-          log.warning("Invalide socket.io packet {}", payload)
+          log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
           connection ! CloseFrame(StatusCode.InternalError, "Invalide socket.io packet")
         case ex: Throwable =>
           log.warning("Exception during parse socket.io packet {}", ex.getMessage)
@@ -108,7 +107,7 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
   def businessLogic: Receive
 
   def onOpen() {
-    //connection ! TextFrame(ConnectPacket().render)
+
   }
 
   def onConnected(endpoint: String, args: Seq[(String, String)]) {

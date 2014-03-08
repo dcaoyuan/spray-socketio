@@ -10,7 +10,7 @@ import spray.json.JsonParser
 class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
 
   def Packets = rule {
-    (oneOrMore(DelimitedPacket) | Packet ~ zeroOrMore(DelimitedPacket) ~> (_ +: _)) ~ EOI
+    (oneOrMore(DelimitedPacket) | { Packet ~> (List(_)) /* ~ zeroOrMore(DelimitedPacket) ~> (_ +: _) */ }) ~ EOI
   }
 
   def DelimitedPacket =
@@ -41,9 +41,9 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
   def Message =
     rule { "3:" ~ GenericMessagePre ~ ":" ~ StrData ~> MessagePacket }
   def JsonMessage =
-    rule { "4:" ~ GenericMessagePre ~ ":" ~ JsonData ~> JsonPacket }
+    rule { "4:" ~ GenericMessagePre ~ ":" ~ StrData ~> JsonPacket }
   def Event =
-    rule { "5:" ~ GenericMessagePre ~ ":" ~ JsonData ~> (EventPacket(_, _, _, _)) }
+    rule { "5:" ~ GenericMessagePre ~ ":" ~ StrData ~> (EventPacket(_, _, _, _)) }
   def Ack =
     rule { "6:::" ~ MessageId ~ { optional("+" ~ StrData) ~> (_.getOrElse("")) } ~> AckPacket }
   def Error =
@@ -55,8 +55,7 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
     ~ { optional("+" ~ push(true)) ~> (_.getOrElse(false)) } ~ ":"
     ~ { optional(optional("/") ~ Endpoint) ~> (_.getOrElse("")) })
 
-  def JsonData = rule { StrData ~> (JsonParser(_)) }
-  def StrData = rule { clearSB() ~ zeroOrMore(ANY ~ append()) ~ push(sb.toString) }
+  def StrData = rule { clearSB() ~ zeroOrMore(!anyOf("\ufffd") ~ ANY ~ append()) ~ push(sb.toString) }
 
   def MessageId = rule { Digits ~> (_.toLong) }
 
@@ -148,6 +147,7 @@ object PacketParser {
       apply("""5:21312312:test:{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),
       apply("""6:::140"""),
       apply("""\ufffd16\ufffd1::/testendpoint\ufffd17\ufffd1::/testendpoint2"""),
+      apply(ByteString(-17, -65, -67, 53, 55, -17, -65, -67, 53, 58, 58, 58, 123, 34, 110, 97, 109, 101, 34, 58, 34, 99, 104, 97, 116, 34, 44, 34, 97, 114, 103, 115, 34, 58, 91, 123, 34, 116, 101, 120, 116, 34, 58, 34, 50, 56, 49, 44, 49, 51, 57, 52, 50, 57, 48, 55, 49, 53, 49, 54, 54, 34, 125, 93, 125, -17, -65, -67, 51, -17, -65, -67, 50, 58, 58)),
       apply(testBatch)) foreach println
   }
 }

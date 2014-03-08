@@ -159,8 +159,9 @@ final case class MessagePacket(id: Long, isAckRequested: Boolean, endpoint: Stri
 /**
  * A JSON encoded message.
  */
-final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String, json: JsValue) extends DataPacket {
+final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String, jsonStr: String) extends DataPacket {
   def code = '4'
+  val json = JsonParser(jsonStr)
 
   def render = {
     val builder = renderHead
@@ -177,18 +178,21 @@ final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String,
  * is a string and args an array.
  */
 object EventPacket {
-  def apply(id: Long, isAckRequested: Boolean, endpoint: String, json: JsValue): EventPacket = json match {
-    case JsObject(fields) =>
-      val name = fields.get("name") match {
-        case Some(JsString(value)) => value
-        case _                     => throw new Exception("Event packet is must have name field.")
-      }
-      val args = fields.get("args") match {
-        case Some(JsArray(xs)) => xs
-        case _                 => List()
-      }
-      apply(id, isAckRequested, endpoint, name, args)
-    case _ => throw new Exception("Event packet is not a Json object.")
+  def apply(id: Long, isAckRequested: Boolean, endpoint: String, jsonStr: String): EventPacket = {
+    val json = JsonParser(jsonStr)
+    json match {
+      case JsObject(fields) =>
+        val name = fields.get("name") match {
+          case Some(JsString(value)) => value
+          case _                     => throw new Exception("Event packet is must have name field.")
+        }
+        val args = fields.get("args") match {
+          case Some(JsArray(xs)) => xs
+          case _                 => List()
+        }
+        apply(id, isAckRequested, endpoint, name, args)
+      case _ => throw new Exception("Event packet is not a Json object.")
+    }
   }
 
   def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: List[JsValue]): EventPacket =

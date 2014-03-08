@@ -34,7 +34,7 @@ object ConnectionActive {
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport)
 
   final case class SendMessage(msg: String, endpoint: String)
-  final case class SendJson(json: JsValue, endpoint: String)
+  final case class SendJson(json: String, endpoint: String)
   final case class SendEvent(name: String, args: List[JsValue], endpoint: String)
   final case class SendPackets(packets: Seq[Packet])
 
@@ -162,7 +162,7 @@ class ConnectionActive extends Actor with ActorLogging {
     try {
       PacketParser(payload) foreach onPacket
     } catch {
-      case ex: ParseError => log.warning("Invalid socket.io packet: {}", ex.formatTraces)
+      case ex: ParseError => log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
       case ex: Throwable  => log.warning("Exception during parse socket.io packet {}", ex.getMessage)
     }
   }
@@ -224,7 +224,7 @@ class ConnectionActive extends Actor with ActorLogging {
     sendPacket(packet)
   }
 
-  def sendJson(json: JsValue, endpoint: String) {
+  def sendJson(json: String, endpoint: String) {
     val packet = JsonPacket(-1L, false, properEndpoint(endpoint), json)
     sendPacket(packet)
   }

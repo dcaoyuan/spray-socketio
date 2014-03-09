@@ -1,4 +1,4 @@
-package spray.contrib
+package spray.contrib.cluster
 
 import akka.actor.ActorRef
 import akka.actor.ActorSystem

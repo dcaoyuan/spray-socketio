@@ -1,4 +1,4 @@
-package spray.contrib.socketio
+package spray.contrib.socketio.cluster
 
 import akka.actor.ActorRef
 import spray.contrib.socketio.transport.Transport

@@ -1,4 +1,4 @@
-package spray.contrib.socketio
+package spray.contrib.socketio.clsuter
 
 import akka.actor._
 import akka.util.{Timeout, ByteString}

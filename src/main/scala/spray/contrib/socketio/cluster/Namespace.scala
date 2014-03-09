@@ -1,4 +1,4 @@
-package spray.contrib.socketio
+package spray.contrib.socketio.cluster
 
 import akka.actor._
 import scala.collection.concurrent.TrieMap
@@ -15,13 +15,13 @@ import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
 import spray.json.JsValue
-import akka.contrib.pattern.{DistributedPubSubExtension, DistributedPubSubMediator}
+import akka.contrib.pattern.{ DistributedPubSubExtension, DistributedPubSubMediator }
 import akka.actor.Actor.Receive
 import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.MessagePacket
-import rx.lang.scala.{Observer, Subject}
+import rx.lang.scala.{ Observer, Subject }
 import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
 
 /**

@@ -20,7 +20,7 @@ import spray.http.Uri
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin]) {
+class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin]) extends Serializable {
   private var _transport: Transport = _
   def transport = _transport
   def bindTransport(transport: Transport) = {

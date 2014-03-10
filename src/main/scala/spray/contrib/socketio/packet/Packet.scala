@@ -37,7 +37,7 @@ object Packet {
   }
 }
 
-sealed trait Packet {
+sealed trait Packet extends Serializable {
   def code: Byte
   def endpoint: String
 

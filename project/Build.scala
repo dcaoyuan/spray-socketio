@@ -1,14 +1,16 @@
 import sbt._
 import sbt.Keys._
+import com.typesafe.sbt.SbtMultiJvm
+import com.typesafe.sbt.SbtMultiJvm.MultiJvmKeys.MultiJvm
 
 object Build extends sbt.Build {
 
   lazy val proj = Project(
     "spray-socketio",
     file("."),
-    settings = commonSettings ++ Seq(
+    settings = commonSettings ++ SbtMultiJvm.multiJvmSettings ++ Seq(
       libraryDependencies ++= Dependencies.all,
-      distTask))
+      distTask) ++ multiJvmSettings) configs (MultiJvm)
 
   def commonSettings = Defaults.defaultSettings ++
     Seq(
@@ -29,6 +31,25 @@ object Build extends sbt.Build {
         "spray" at "http://repo.spray.io",
         "spray nightly" at "http://nightlies.spray.io/"))
 
+  def multiJvmSettings = Seq(
+    // make sure that MultiJvm test are compiled by the default test compilation
+    compile in MultiJvm <<= (compile in MultiJvm) triggeredBy (compile in Test),
+    // disable parallel tests
+    parallelExecution in Test := false,
+    // make sure that MultiJvm tests are executed by the default test target,
+    // and combine the results from ordinary test and multi-jvm tests
+    executeTests in Test <<= (executeTests in Test, executeTests in MultiJvm) map {
+      case (testResults, multiNodeResults)  =>
+        val overall =
+          if (testResults.overall.id < multiNodeResults.overall.id)
+            multiNodeResults.overall
+          else
+            testResults.overall
+        Tests.Output(overall,
+          testResults.events ++ multiNodeResults.events,
+          testResults.summaries ++ multiNodeResults.summaries)
+    })
+
   lazy val distDependencies = TaskKey[Unit]("dist")
   def distTask = distDependencies <<= (packageBin in Compile, update, crossTarget, scalaVersion) map { (bin, updateReport, out, scalaVer) =>
     (bin :: updateReport.allFiles.toList) foreach { srcPath =>
@@ -48,9 +69,10 @@ object Dependencies {
   val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.5"
   val parboiled2 = "org.parboiled" %% "parboiled" % "2.0-M2" //changing ()
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % "test"
+  val akka_multinode_testkit = "com.typesafe.akka" %% "akka-multi-node-testkit" % AKKA_VERSION % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.0" % "test"
   val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.16.1"
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
 
-  val all = Seq(spray_websocket, spray_can, akka_actor, akka_contrib, parboiled2, rxscala, akka_testkit, scalatest, apache_math)
+  val all = Seq(spray_websocket, spray_can, akka_actor, akka_contrib, parboiled2, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math)
 }

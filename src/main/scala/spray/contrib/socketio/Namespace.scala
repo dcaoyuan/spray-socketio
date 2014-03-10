@@ -9,6 +9,9 @@ import rx.lang.scala.Subject
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
+import scala.concurrent.Future
+import scala.util.Failure
+import scala.util.Success
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
@@ -59,11 +62,11 @@ object Namespace {
     def context: ConnectionContext
     def endpoint: String
 
-    def replyMessage(msg: String) = context.connectionActive ! ConnectionActive.SendMessage(msg, endpoint)
-    def replyJson(json: String) = context.connectionActive ! ConnectionActive.SendJson(json, endpoint)
-    def replyEvent(name: String, args: JsValue*) = context.connectionActive ! ConnectionActive.SendEvent(name, args.toList, endpoint)
-    def reply(packets: Packet*) = context.connectionActive ! ConnectionActive.SendPackets(packets)
-    def broadcast(packet: Packet) {} //TODO
+    def replyMessage(msg: String)(implicit system: ActorSystem) = ConnectionActive.dispatch(ConnectionActive.SendMessage(context.sessionId, msg, endpoint))
+    def replyJson(json: String)(implicit system: ActorSystem) = ConnectionActive.dispatch(ConnectionActive.SendJson(context.sessionId, json, endpoint))
+    def replyEvent(name: String, args: JsValue*)(implicit system: ActorSystem) = ConnectionActive.dispatch(ConnectionActive.SendEvent(context.sessionId, name, args.toList, endpoint))
+    def reply(packets: Packet*)(implicit system: ActorSystem) = ConnectionActive.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
+    def broadcast(packet: Packet)(implicit system: ActorSystem) {} //TODO
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnDisconnect(context: ConnectionContext)(implicit val endpoint: String) extends OnData
@@ -79,11 +82,16 @@ object Namespace {
 
   def actorPath(namespace: String) = "/user/" + namespace
 
+  private var namespaceClazz: Class[_ <: Namespace] = _
+  def init(_namespaceClazz: Class[_ <: Namespace]) {
+    namespaceClazz = _namespaceClazz
+  }
+
   def tryDispatch(system: ActorSystem, endpoint: String, msg: Any) {
     val namespace = namespaceFor(endpoint)
     import system.dispatcher
     system.actorSelection(actorPath(namespace)).resolveOne(actorResolveTimeout.seconds).recover {
-      case _: Throwable => system.actorOf(Props(classOf[Namespace], namespace), name = namespace)
+      case _: Throwable => system.actorOf(Props(namespaceClazz, namespace), name = namespace)
     } map (_ ! msg)
   }
 
@@ -95,12 +103,17 @@ object Namespace {
 
 }
 
+class GeneralNamespace(implicit val endpoint: String) extends Namespace
+
 /**
  * Namespace is refered to endpoint fo packets
  */
-class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
-  import Namespace._
+trait Namespace extends Actor with ActorLogging {
 
+  import Namespace._
+  import context.dispatcher
+
+  implicit def endpoint: String
   private val connections = new TrieMap[String, ConnectionContext]()
 
   val connectChannel = Subject[OnConnect]()
@@ -108,6 +121,10 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
   val messageChannel = Subject[OnMessage]()
   val jsonChannel = Subject[OnJson]()
   val eventChannel = Subject[OnEvent]()
+
+  def noticeSubscribe(endpoint: String): Future[Any] = {
+    Future.successful(true)
+  }
 
   def receive: Receive = {
     case OnPacket(packet: ConnectPacket, connContext)    => connectChannel.onNext(OnConnect(packet.args, connContext))
@@ -117,13 +134,18 @@ class Namespace(implicit val endpoint: String) extends Actor with ActorLogging {
     case OnPacket(packet: EventPacket, connContext)      => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
 
     case x @ Subscribe(_, _, observer) =>
-      x.tag.tpe match {
-        case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
-        case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])
-        case t if t =:= typeOf[OnMessage]    => messageChannel(observer.asInstanceOf[Observer[OnMessage]])
-        case t if t =:= typeOf[OnJson]       => jsonChannel(observer.asInstanceOf[Observer[OnJson]])
-        case t if t =:= typeOf[OnEvent]      => eventChannel(observer.asInstanceOf[Observer[OnEvent]])
-        case _                               =>
+      noticeSubscribe(endpoint).onComplete {
+        case Success(_) =>
+          x.tag.tpe match {
+            case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
+            case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])
+            case t if t =:= typeOf[OnMessage]    => messageChannel(observer.asInstanceOf[Observer[OnMessage]])
+            case t if t =:= typeOf[OnJson]       => jsonChannel(observer.asInstanceOf[Observer[OnJson]])
+            case t if t =:= typeOf[OnEvent]      => eventChannel(observer.asInstanceOf[Observer[OnEvent]])
+            case _                               =>
+          }
+        case Failure(ex) =>
+          log.warning("Failed on subscribe {}. due to {}", observer, ex.getMessage)
       }
 
     case Broadcast(packet) =>

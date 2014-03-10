@@ -1,4 +1,4 @@
-package spray.contrib.socketio.examples.benchmark.cluster
+package spray.contrib.socketio.examples.benchmark
 
 import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef, ActorIdentity, Identify }
@@ -12,14 +12,17 @@ import com.typesafe.config.ConfigFactory
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
+import spray.contrib.socketio.ConnectionActive
 import spray.contrib.socketio.SocketIOServerConnection
-import spray.contrib.socketio.cluster.ConnectionActive
-import spray.contrib.socketio.cluster.Namespace
-import spray.contrib.socketio.cluster.Namespace.OnEvent
+import spray.contrib.socketio.Namespace
+import spray.contrib.socketio.Namespace.OnEvent
+import spray.contrib.socketio.cluster.ClusterConnectionActive
+import spray.contrib.socketio.cluster.ClusterConnectionActiveSelector
+import spray.contrib.socketio.cluster.ClusterNamespace
 import rx.lang.scala.Observer
 import scala.concurrent.duration._
 
-object SocketIOTestServer extends App {
+object SocketIOClusterTestServer extends App {
 
   class SocketIOServer extends Actor with ActorLogging {
     def receive = {
@@ -89,9 +92,12 @@ object SocketIOTestServer extends App {
 
   ClusterSharding(system).start(
     typeName = ConnectionActive.shardName,
-    entryProps = Some(Props[ConnectionActive]),
-    idExtractor = ConnectionActive.idExtractor,
-    shardResolver = ConnectionActive.shardResolver)
+    entryProps = Some(Props[ClusterConnectionActive]),
+    idExtractor = ClusterConnectionActiveSelector.idExtractor,
+    shardResolver = ClusterConnectionActiveSelector.shardResolver)
+
+  ConnectionActive.init(new ClusterConnectionActiveSelector(system))
+  Namespace.init(classOf[ClusterNamespace])
 
   Namespace.subscribe("", observer)(system)
   val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")

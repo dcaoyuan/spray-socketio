@@ -9,6 +9,9 @@ import spray.can.server.UHttp
 import spray.can.websocket
 import spray.can.websocket.frame.Frame
 import spray.contrib.socketio
+import spray.contrib.socketio.ConnectionActive
+import spray.contrib.socketio.GeneralConnectionActiveSelector
+import spray.contrib.socketio.GeneralNamespace
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOServerConnection
@@ -72,6 +75,7 @@ object SimpleServer extends App with MySslConfiguration {
   import spray.json._
   import TheJsonProtocol._
 
+  implicit val system = ActorSystem()
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
@@ -90,8 +94,10 @@ object SimpleServer extends App with MySslConfiguration {
       }
     })
 
-  implicit val system = ActorSystem()
   import system.dispatcher
+
+  ConnectionActive.init(new GeneralConnectionActiveSelector(system))
+  Namespace.init(classOf[GeneralNamespace])
 
   Namespace.subscribe("testendpoint", observer)(system)
   val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")

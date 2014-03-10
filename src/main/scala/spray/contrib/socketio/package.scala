@@ -8,11 +8,8 @@ import akka.pattern.ask
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import java.util.UUID
-import scala.concurrent.Await
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scala.util.Failure
-import scala.util.Success
 import spray.can.Http
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio.transport
@@ -58,26 +55,22 @@ package object socketio {
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion) =>
             val sessionId = UUID.randomUUID.toString
-            import ctx.ec
-            ConnectionActive.selectOrCreateConnectionActive(ctx.system, sessionId).onComplete {
-              case Success(connActive) =>
-                val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
-                val originsHeaders = List(
-                  HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(origins)),
-                  HttpHeaders.`Access-Control-Allow-Credentials`(true))
+            ConnectionActive.createActive(sessionId)(ctx.system)
 
-                val respHeaders = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
-                val respEntity = List(sessionId, Settings.HeartbeatTimeout, Settings.CloseTimeout, Settings.SupportedTransports).mkString(":")
-                val resp = HttpResponse(
-                  status = StatusCodes.OK,
-                  entity = respEntity,
-                  headers = respHeaders)
+            val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
+            val originsHeaders = List(
+              HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(origins)),
+              HttpHeaders.`Access-Control-Allow-Credentials`(true))
 
-                ctx.serverConnection ! Http.MessageCommand(resp)
+            val respHeaders = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
+            val respEntity = List(sessionId, Settings.HeartbeatTimeout, Settings.CloseTimeout, Settings.SupportedTransports).mkString(":")
+            val resp = HttpResponse(
+              status = StatusCodes.OK,
+              entity = respEntity,
+              headers = respHeaders)
 
-              case Failure(ex) =>
-                ctx.log.warning("socket.io handshake failure, the failure message is: {} ", ex.getMessage)
-            }
+            ctx.serverConnection ! Http.MessageCommand(resp)
+
             Some(true)
 
           case _ => None
@@ -111,12 +104,7 @@ package object socketio {
       case Array("", SOCKET_IO, protocalVersion, transport.WebSocket.ID, sessionId) =>
         ctx.sessionId = sessionId
         import ctx.ec
-        ConnectionActive.selectConnectionActive(ctx.system, sessionId).onComplete {
-          case Success(connActive) =>
-            connActive ! ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket)
-          case Failure(ex) =>
-            ctx.log.warning("Failed to get connectionActive: {} ", sessionId)
-        }
+        ConnectionActive.dispatch(ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket))(ctx.system)
         Some(true)
       case _ =>
         None
@@ -130,12 +118,7 @@ package object socketio {
     def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = {
       import ctx.ec
       // ctx.sessionId should have been set during wsConnected
-      ConnectionActive.selectConnectionActive(ctx.system, ctx.sessionId).onComplete {
-        case Success(connActive) =>
-          connActive ! ConnectionActive.OnFrame(ctx.serverConnection, frame)
-        case Failure(ex) =>
-          ctx.log.warning("Failed to get connectionActive: {} ", ctx.sessionId)
-      }
+      ConnectionActive.dispatch(ConnectionActive.OnFrame(ctx.sessionId, ctx.serverConnection, frame))(ctx.system)
       Some(true)
     }
   }
@@ -151,13 +134,8 @@ package object socketio {
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
-            ConnectionActive.selectConnectionActive(ctx.system, sessionId).onComplete {
-              case Success(connActive) =>
-                connActive ! ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling)
-                connActive ! ConnectionActive.OnGet(ctx.serverConnection)
-              case Failure(ex) =>
-                ctx.log.warning("Failed to get connectionActive: {} ", sessionId)
-            }
+            ConnectionActive.dispatch(ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling))(ctx.system)
+            ConnectionActive.dispatch(ConnectionActive.OnGet(sessionId, ctx.serverConnection))(ctx.system)
             Some(true)
           case _ => None
         }
@@ -175,16 +153,13 @@ package object socketio {
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
-            ConnectionActive.selectConnectionActive(ctx.system, sessionId).onComplete {
-              case Success(connActive) =>
-                connActive ! ConnectionActive.OnPost(ctx.serverConnection, entity.data.toByteString)
-              case Failure(ex) =>
-                ctx.log.warning("Failed to get connectionActive: {} ", sessionId)
-            }
+            ConnectionActive.dispatch(ConnectionActive.OnPost(sessionId, ctx.serverConnection, entity.data.toByteString))(ctx.system)
             Some(true)
           case _ => None
         }
       case _ => None
     }
   }
+
 }
+

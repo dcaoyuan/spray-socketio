@@ -9,6 +9,9 @@ import spray.can.server.UHttp
 import spray.can.websocket
 import spray.can.websocket.frame.Frame
 import spray.contrib.socketio
+import spray.contrib.socketio.ConnectionActive
+import spray.contrib.socketio.GeneralConnectionActiveSelector
+import spray.contrib.socketio.GeneralNamespace
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOServerConnection
@@ -33,6 +36,7 @@ object SocketIOTestServer extends App {
     }
   }
 
+  implicit val system = ActorSystem()
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
@@ -43,8 +47,10 @@ object SocketIOTestServer extends App {
       }
     })
 
-  implicit val system = ActorSystem()
   import system.dispatcher
+
+  ConnectionActive.init(new GeneralConnectionActiveSelector(system))
+  Namespace.init(classOf[GeneralNamespace])
 
   Namespace.subscribe("", observer)(system)
   val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")

@@ -18,8 +18,6 @@ import spray.http.SomeOrigins
 import scala.collection.immutable
 
 object Transport {
-  trait Id { def ID: String }
-
   val transportIds = Set(
     XhrPolling,
     XhrMultipart,

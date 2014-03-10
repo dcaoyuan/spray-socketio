@@ -33,7 +33,7 @@ object Transport {
  * We should keep none states in Transport, if there are some common states, just keep in ConnectionContext
  * Specically, for websocket, we'll keep serverConnection
  */
-trait Transport {
+trait Transport extends Serializable {
   def ID: String
 
   protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet]

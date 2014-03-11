@@ -258,8 +258,8 @@ object EventPacket {
     new EventPacket(id, isAckRequested, endpoint, name, args)
   }
 
-  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: String): EventPacket =
-    new EventPacket(id, isAckRequested, endpoint, name, args)
+  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: String*): EventPacket =
+    new EventPacket(id, isAckRequested, endpoint, name, args.mkString("[", ",", "]"))
 
   def unapply(x: EventPacket): Option[(String, String)] = Option(x.name, x.args)
 }

@@ -60,11 +60,11 @@ object Namespace {
     def context: ConnectionContext
     def endpoint: String
 
-    def replyMessage(msg: String)(implicit selection: ConnectionActiveSelector) = selection.dispatch(ConnectionActive.SendMessage(context.sessionId, endpoint, msg))
-    def replyJson(json: String)(implicit selection: ConnectionActiveSelector) = selection.dispatch(ConnectionActive.SendJson(context.sessionId, endpoint, json))
-    def replyEvent(name: String, args: String)(implicit selection: ConnectionActiveSelector) = selection.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, args))
-    def reply(packets: Packet*)(implicit selection: ConnectionActiveSelector) = selection.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
-    def broadcast(packet: Packet)(implicit selection: ConnectionActiveSelector) {} //TODO
+    def replyMessage(msg: String)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendMessage(context.sessionId, endpoint, msg))
+    def replyJson(json: String)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendJson(context.sessionId, endpoint, json))
+    def replyEvent(name: String, args: String*)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, args))
+    def reply(packets: Packet*)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
+    def broadcast(packet: Packet)(implicit selector: ConnectionActiveSelector) {} //TODO
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnDisconnect(context: ConnectionContext)(implicit val endpoint: String) extends OnData

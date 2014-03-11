@@ -1,6 +1,5 @@
 package spray.contrib.socketio
 
-import akka.actor.ActorRef
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri

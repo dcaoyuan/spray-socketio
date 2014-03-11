@@ -80,7 +80,7 @@ object ConnectionActive {
 
   final case class SendMessage(sessionId: String, endpoint: String, msg: String) extends Command
   final case class SendJson(sessionId: String, endpoint: String, json: String) extends Command
-  final case class SendEvent(sessionId: String, endpoint: String, name: String, args: String) extends Command
+  final case class SendEvent(sessionId: String, endpoint: String, name: String, args: Seq[String]) extends Command
   final case class SendPackets(sessionId: String, packets: Seq[Packet]) extends Command
 
   final case class OnPayload(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
@@ -179,7 +179,7 @@ trait ConnectionActive { actor: Actor =>
     case SendMessage(sessionId, endpoint, msg) => sendMessage(endpoint, msg)
     case SendJson(sessionId, endpoint, json) => sendJson(endpoint, json)
     case SendEvent(sessionId, endpoint, name, args) => sendEvent(endpoint, name, args)
-    case SendPackets(sessionId, packets) => enqueueAndMaySendPacket(packets: _*)
+    case SendPackets(sessionId, packets) => sendPacket(packets: _*)
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
@@ -293,16 +293,15 @@ trait ConnectionActive { actor: Actor =>
     sendPacket(packet)
   }
 
-  def sendEvent(endpoint: String, name: String, args: String) {
-    val packet = EventPacket(-1L, false, Namespace.endpointFor(endpoint), name, args)
+  def sendEvent(endpoint: String, name: String, args: Seq[String]) {
+    val packet = EventPacket(-1L, false, Namespace.endpointFor(endpoint), name, args: _*)
     sendPacket(packet)
   }
 
+  /**
+   * enqueue packets, and let tranport decide if flush them or pending flush
+   */
   def sendPacket(packets: Packet*) {
-    enqueueAndMaySendPacket(packets: _*)
-  }
-
-  private def enqueueAndMaySendPacket(packets: Packet*) {
     packets foreach { packet => pendingPackets = pendingPackets.enqueue(packet) }
     log.debug("Enqueued {}, pendingPackets: {}", packets, pendingPackets)
     connectionContext foreach { ctx =>

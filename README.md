@@ -18,34 +18,36 @@ package spray.contrib.socketio.examples
 import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import rx.lang.scala.Observer
-import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
-import spray.can.websocket
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio
+import spray.contrib.socketio.ConnectionActiveSelector
+import spray.contrib.socketio.GeneralConnectionActiveSelector
+import spray.contrib.socketio.GeneralNamespace
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
-import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, ContentType, MediaTypes }
+import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
+import spray.http.HttpRequest
+import spray.http.HttpResponse
 import spray.json.DefaultJsonProtocol
 
 object SimpleServer extends App with MySslConfiguration {
 
-  class SocketIOServer extends Actor with ActorLogging {
+  class SocketIOServer(selector: ConnectionActiveSelector) extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection))
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, selector))
         serverConnection ! Http.Register(conn)
     }
   }
 
   val WEB_ROOT = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
-  class SocketIOWorker(val serverConnection: ActorRef) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val selector: ConnectionActiveSelector) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>
@@ -87,17 +89,20 @@ object SimpleServer extends App with MySslConfiguration {
   import spray.json._
   import TheJsonProtocol._
 
+  implicit val system = ActorSystem()
+  implicit val selector = GeneralConnectionActiveSelector(system)
+
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
         case OnEvent("Hi!", args, context) =>
           println("observed: " + next.name + ", " + next.args)
-          next.replyEvent("welcome", Msg("Greeting from spray-socketio").toJson)
-          next.replyEvent("time", Now((new java.util.Date).toString).toJson)
+          next.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
+          next.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
           // batched packets
           next.reply(
-            EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio").toJson)),
-            EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString).toJson)))
+            EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio")).toJson.toString),
+            EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString)).toJson.toString))
         case OnEvent("time", args, context) =>
           println("observed: " + next.name + ", " + next.args)
         case _ =>
@@ -105,11 +110,8 @@ object SimpleServer extends App with MySslConfiguration {
       }
     })
 
-  implicit val system = ActorSystem()
-  import system.dispatcher
-
-  Namespace.subscribe("testendpoint", observer)(system)
-  val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")
+  Namespace.subscribe("testendpoint", observer)(system, Props(classOf[GeneralNamespace], "testendpoint"))
+  val server = system.actorOf(Props(classOf[SocketIOServer], selector), name = "socketio")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)
 
@@ -117,5 +119,6 @@ object SimpleServer extends App with MySslConfiguration {
   system.shutdown()
   system.awaitTermination()
 }
+
 
 ```

@@ -1,20 +1,20 @@
 package spray.contrib.socketio
 
-import akka.remote.testkit.{MultiNodeSpec, MultiNodeConfig}
+import akka.remote.testkit.{ MultiNodeSpec, MultiNodeConfig }
 import akka.testkit.ImplicitSender
 import java.io.File
 import org.iq80.leveldb.util.FileUtils
 import akka.cluster.Cluster
 import akka.actor._
-import akka.contrib.pattern.{ClusterReceptionistExtension, ClusterSharding}
-import akka.persistence.journal.leveldb.{SharedLeveldbJournal, SharedLeveldbStore}
+import akka.contrib.pattern.{ ClusterReceptionistExtension, ClusterSharding }
+import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import akka.persistence.Persistence
 import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
 import akka.io.IO
 import spray.can.server.UHttp
 import spray.can.Http
-import spray.contrib.socketio.examples.benchmark.{SocketIOTestClient, SocketIOTestServer}
+import spray.contrib.socketio.examples.benchmark.{ SocketIOTestClient, SocketIOTestServer }
 import akka.actor.ActorIdentity
 import akka.remote.testconductor.RoleName
 import scala.Some
@@ -22,7 +22,7 @@ import akka.actor.Identify
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
 import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.cluster.{ClusterNamespace, ClusterConnectionActiveSelector, ClusterConnectionActive}
+import spray.contrib.socketio.cluster.{ ClusterNamespace, ClusterConnectionActiveSelector, ClusterConnectionActive }
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -163,7 +163,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
           (next: OnEvent) => {
             next match {
               case OnEvent("chat", args, context) =>
-                next.replyEvent("chat", args: _*)(system)
+                next.replyEvent("chat", args)(system)
               case _ =>
                 println("observed: " + next.name + ", " + next.args)
             }

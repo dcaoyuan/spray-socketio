@@ -50,9 +50,9 @@ import spray.contrib.socketio
  */
 trait SocketIOServerConnection extends Actor with ActorLogging {
   def serverConnection: ActorRef
-  def selector: ConnectionActiveSelector
+  def resolver: ConnectionActiveResolver
 
-  implicit val soConnContext = new socketio.SoConnectingContext(null, serverConnection, log, selector, context.dispatcher)
+  implicit val soConnContext = new socketio.SoConnectingContext(null, serverConnection, log, resolver, context.dispatcher)
 
   import context.dispatcher
 

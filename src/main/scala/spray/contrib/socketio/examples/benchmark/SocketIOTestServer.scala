@@ -6,8 +6,8 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.ConnectionActiveSelector
-import spray.contrib.socketio.GeneralConnectionActiveSelector
+import spray.contrib.socketio.ConnectionActiveResolver
+import spray.contrib.socketio.GeneralConnectionActiveResolver
 import spray.contrib.socketio.GeneralNamespace
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
@@ -17,17 +17,17 @@ import spray.contrib.socketio.Namespace.OnEvent
 
 object SocketIOTestServer extends App {
 
-  class SocketIOServer(val selector: ConnectionActiveSelector) extends Actor with ActorLogging {
+  class SocketIOServer(val resolver: ConnectionActiveResolver) extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, selector))
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, resolver))
         serverConnection ! Http.Register(conn)
     }
   }
 
-  class SocketIOWorker(val serverConnection: ActorRef, val selector: ConnectionActiveSelector) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ConnectionActiveResolver) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case x: Frame =>
@@ -35,7 +35,7 @@ object SocketIOTestServer extends App {
   }
 
   implicit val system = ActorSystem()
-  implicit val selector = GeneralConnectionActiveSelector(system)
+  implicit val resolver = GeneralConnectionActiveResolver(system)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -49,7 +49,7 @@ object SocketIOTestServer extends App {
     })
 
   Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[GeneralNamespace], Namespace.DEFAULT_NAMESPACE))
-  val server = system.actorOf(Props(classOf[SocketIOServer], selector), name = "socketio")
+  val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val host = config.getString("host")

@@ -60,12 +60,12 @@ object Namespace {
     def context: ConnectionContext
     def endpoint: String
 
-    def replyMessage(msg: String)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendMessage(context.sessionId, endpoint, msg))
-    def replyJson(json: String)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendJson(context.sessionId, endpoint, json))
-    def replyEvent(name: String, args: String)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, Left(args)))
-    def replyEvent(name: String, args: Seq[String])(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, Right(args)))
-    def reply(packets: Packet*)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
-    def broadcast(packet: Packet)(implicit selector: ConnectionActiveSelector) {} //TODO
+    def replyMessage(msg: String)(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendMessage(context.sessionId, endpoint, msg))
+    def replyJson(json: String)(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendJson(context.sessionId, endpoint, json))
+    def replyEvent(name: String, args: String)(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, Left(args)))
+    def replyEvent(name: String, args: Seq[String])(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, Right(args)))
+    def reply(packets: Packet*)(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
+    def broadcast(packet: Packet)(implicit resolver: ConnectionActiveResolver) {} //TODO
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnDisconnect(context: ConnectionContext)(implicit val endpoint: String) extends OnData
@@ -78,8 +78,7 @@ object Namespace {
   }
 
   def namespaceFor(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
-  def endpointFor(namespace: String) = if (namespace == Namespace.DEFAULT_NAMESPACE) "" else namespace
-
+  def endpointFor(namespace: String) = if (namespace == DEFAULT_NAMESPACE) "" else namespace
   def actorPath(namespace: String) = "/user/" + namespace
 
   def tryDispatch(system: ActorSystem, props: Props, endpoint: String, msg: Any) {

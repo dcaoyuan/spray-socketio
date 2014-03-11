@@ -25,36 +25,35 @@ import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
 
-trait ConnectionActiveSelector {
+trait ConnectionActiveResolver {
   def createActive(sessionId: String)
   def dispatch(cmd: ConnectionActive.Command)
 }
 
-object GeneralConnectionActiveSelector {
-  def apply(system: ActorSystem) = new GeneralConnectionActiveSelector(system)
+object GeneralConnectionActiveResolver {
+  def apply(system: ActorSystem) = new GeneralConnectionActiveResolver(system)
 }
-final class GeneralConnectionActiveSelector(system: ActorSystem) extends ConnectionActiveSelector {
+final class GeneralConnectionActiveResolver(system: ActorSystem) extends ConnectionActiveResolver {
   import ConnectionActive._
 
-  private lazy val selector: ActorRef = system.actorOf(Props(new Selection()), name = shardName)
+  private lazy val resolverActor: ActorRef = system.actorOf(Props(new Resolver()), name = shardName)
 
   def createActive(sessionId: String) {
-    import system.dispatcher
-    selector ! sessionId
+    resolverActor ! sessionId
   }
 
   def dispatch(cmd: Command) {
-    selector ! cmd
+    resolverActor ! cmd
   }
 
-  class Selection extends Actor with ActorLogging {
+  class Resolver extends Actor with ActorLogging {
     import context.dispatcher
 
     def receive = {
       case sessionId: String =>
         context.child(sessionId) match {
           case Some(_) =>
-          case None    => context.actorOf(Props(classOf[GeneralConnectionActive], GeneralConnectionActiveSelector.this), name = sessionId)
+          case None    => context.actorOf(Props(classOf[GeneralConnectionActive], GeneralConnectionActiveResolver.this), name = sessionId)
         }
 
       case cmd: Command =>
@@ -97,7 +96,7 @@ object ConnectionActive {
 
 }
 
-class GeneralConnectionActive(val selector: ConnectionActiveSelector) extends ConnectionActive with Actor with ActorLogging {
+class GeneralConnectionActive(val resolver: ConnectionActiveResolver) extends ConnectionActive with Actor with ActorLogging {
 
   // have to call after log created
   enableCloseTimeout()
@@ -113,7 +112,7 @@ trait ConnectionActive { actor: Actor =>
   import ConnectionActive._
   import context.dispatcher
 
-  def selector: ConnectionActiveSelector
+  def resolver: ConnectionActiveResolver
 
   def log: LoggingAdapter
 
@@ -134,11 +133,11 @@ trait ConnectionActive { actor: Actor =>
   val heartbeatInterval = socketio.Settings.HeartbeatTimeout * 0.618
 
   def createActive(sessionId: String) {
-    selector.createActive(sessionId)
+    resolver.createActive(sessionId)
   }
 
   def dispatch(cmd: Command) {
-    selector.dispatch(cmd)
+    resolver.dispatch(cmd)
   }
 
   def connected() {

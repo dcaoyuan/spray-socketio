@@ -5,31 +5,30 @@ import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtens
 import akka.persistence.EventsourcedProcessor
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.Packet
-import spray.contrib.socketio.{Namespace, ConnectionContext, ConnectionActiveSelector, ConnectionActive}
+import spray.contrib.socketio.{Namespace, ConnectionContext, ConnectionActiveResolver, ConnectionActive}
 
-object ClusterConnectionActiveSelector {
+object ClusterConnectionActiveResolver {
   lazy val idExtractor: ShardRegion.IdExtractor = {
     case cmd: socketio.ConnectionActive.Command => (cmd.sessionId, cmd)
   }
 
-  lazy val shardResolver: ShardRegion.ShardResolver = msg => msg match {
+  lazy val shardResolver: ShardRegion.ShardResolver = {
     case cmd: socketio.ConnectionActive.Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
   }
 
-  def apply(system: ActorSystem) = new ClusterConnectionActiveSelector(system)
+  def apply(system: ActorSystem) = new ClusterConnectionActiveResolver(system)
 }
-
-final class ClusterConnectionActiveSelector(system: ActorSystem) extends socketio.ConnectionActiveSelector {
+final class ClusterConnectionActiveResolver(system: ActorSystem) extends socketio.ConnectionActiveResolver {
   import ConnectionActive._
 
-  private lazy val selector: ActorRef = ClusterSharding(system).shardRegion(shardName)
+  private lazy val resolverActor: ActorRef = ClusterSharding(system).shardRegion(shardName)
 
   def createActive(sessionId: String) {
-    // will be create automatically. TODO how to drop them when closed
+    // will be created automatically. TODO how to drop them when closed
   }
 
   def dispatch(cmd: Command) {
-    selector ! cmd
+    resolverActor ! cmd
   }
 }
 
@@ -37,7 +36,7 @@ final class ClusterConnectionActiveSelector(system: ActorSystem) extends socketi
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-class ClusterConnectionActive(val selector: ConnectionActiveSelector) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
+class ClusterConnectionActive(val resolver: ConnectionActiveResolver) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
   import context.dispatcher
 

@@ -22,7 +22,7 @@ import akka.actor.Identify
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
 import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.cluster.{ ClusterConnectionActiveResolver, ClusterNamespace, ClusterConnectionActive }
+import spray.contrib.socketio.cluster.{ ClusterNamespace, ClusterConnectionActive }
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -110,9 +110,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     // start shard region actor
     ClusterSharding(system).start(
       typeName = ConnectionActive.shardName,
-      entryProps = Some(Props(classOf[ClusterConnectionActive], new ClusterConnectionActiveResolver(system))),
-      idExtractor = ClusterConnectionActiveResolver.idExtractor,
-      shardResolver = ClusterConnectionActiveResolver.shardResolver)
+      entryProps = Some(Props(classOf[ClusterConnectionActive])),
+      idExtractor = ClusterConnectionActive.idExtractor,
+      shardResolver = ClusterConnectionActive.shardResolver)
 
     // optional: register cluster receptionist for cluster client
     ClusterReceptionistExtension(system).registerService(
@@ -149,19 +149,19 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "startup server" in within(15.seconds) {
       runOn(transport1) {
-        val resolver = new ClusterConnectionActiveResolver(system)
+        val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
         val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], resolver), "socketio")
         IO(UHttp) ! Http.Bind(server, host, port1)
       }
 
       runOn(transport2) {
-        val resolver = new ClusterConnectionActiveResolver(system)
+        val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
         val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], resolver), "socketio")
         IO(UHttp) ! Http.Bind(server, host, port2)
       }
 
       runOn(business1) {
-        implicit val resolver = new ClusterConnectionActiveResolver(system)
+        implicit val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
 
         val observer = Observer[OnEvent](
           (next: OnEvent) => {

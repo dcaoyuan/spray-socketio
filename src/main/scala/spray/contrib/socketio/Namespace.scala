@@ -2,6 +2,7 @@ package spray.contrib.socketio
 
 import akka.actor.Actor
 import akka.actor.ActorLogging
+import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.actor.Props
 import rx.lang.scala.Observer
@@ -60,12 +61,12 @@ object Namespace {
     def context: ConnectionContext
     def endpoint: String
 
-    def replyMessage(msg: String)(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendMessage(context.sessionId, endpoint, msg))
-    def replyJson(json: String)(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendJson(context.sessionId, endpoint, json))
-    def replyEvent(name: String, args: String)(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, Left(args)))
-    def replyEvent(name: String, args: Seq[String])(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, Right(args)))
-    def reply(packets: Packet*)(implicit resolver: ConnectionActiveResolver) = resolver.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
-    def broadcast(packet: Packet)(implicit resolver: ConnectionActiveResolver) {} //TODO
+    def replyMessage(msg: String)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendMessage(context.sessionId, endpoint, msg)
+    def replyJson(json: String)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendJson(context.sessionId, endpoint, json)
+    def replyEvent(name: String, args: String)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendEvent(context.sessionId, endpoint, name, Left(args))
+    def replyEvent(name: String, args: Seq[String])(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendEvent(context.sessionId, endpoint, name, Right(args))
+    def reply(packets: Packet*)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendPackets(context.sessionId, packets)
+    def broadcast(packet: Packet)(implicit resolver: ActorRef) {} //TODO
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnDisconnect(context: ConnectionContext)(implicit val endpoint: String) extends OnData

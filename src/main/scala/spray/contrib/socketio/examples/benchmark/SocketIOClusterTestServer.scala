@@ -9,20 +9,19 @@ import akka.persistence.Persistence
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
+import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.{ ConnectionActiveResolver, ConnectionActive, SocketIOServerConnection, Namespace }
+import spray.contrib.socketio.{ ConnectionActive, SocketIOServerConnection, Namespace }
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.cluster.ClusterConnectionActive
-import spray.contrib.socketio.cluster.ClusterConnectionActiveResolver
 import spray.contrib.socketio.cluster.ClusterNamespace
 import rx.lang.scala.Observer
-import scala.concurrent.duration._
 
 object SocketIOClusterTestServer extends App {
 
-  class SocketIOServer(resolver: ConnectionActiveResolver) extends Actor with ActorLogging {
+  class SocketIOServer(resolver: ActorRef) extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
@@ -32,7 +31,7 @@ object SocketIOClusterTestServer extends App {
     }
   }
 
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ConnectionActiveResolver) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case x: Frame =>
@@ -42,8 +41,9 @@ object SocketIOClusterTestServer extends App {
   def startupSharedJournal(system: ActorSystem, startStore: Boolean, name: String, path: String) {
     // Start the shared journal on one node (don't crash this SPOF)
     // This will not be needed with a distributed journal
-    if (startStore)
+    if (startStore) {
       system.actorOf(Props[SharedLeveldbStore], name)
+    }
     // register the shared journal
     import system.dispatcher
     implicit val timeout = Timeout(1.minute)
@@ -65,7 +65,7 @@ object SocketIOClusterTestServer extends App {
   // Override the configuration of the port
   val systemConfig = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + clusterPort).withFallback(ConfigFactory.load())
   implicit val system = ActorSystem("ClusterSystem", systemConfig)
-  implicit val resolver = ClusterConnectionActiveResolver(system)
+  implicit val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -90,9 +90,9 @@ object SocketIOClusterTestServer extends App {
 
   ClusterSharding(system).start(
     typeName = ConnectionActive.shardName,
-    entryProps = Some(Props(classOf[ClusterConnectionActive], resolver)),
-    idExtractor = ClusterConnectionActiveResolver.idExtractor,
-    shardResolver = ClusterConnectionActiveResolver.shardResolver)
+    entryProps = Some(Props(classOf[ClusterConnectionActive])),
+    idExtractor = ClusterConnectionActive.idExtractor,
+    shardResolver = ClusterConnectionActive.shardResolver)
 
   Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], ""))
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio")

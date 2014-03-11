@@ -5,9 +5,9 @@ import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtens
 import akka.persistence.EventsourcedProcessor
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.Packet
-import spray.contrib.socketio.{Namespace, ConnectionContext, ConnectionActiveResolver, ConnectionActive}
+import spray.contrib.socketio.{Namespace, ConnectionContext, ConnectionActive}
 
-object ClusterConnectionActiveResolver {
+object ClusterConnectionActive {
   lazy val idExtractor: ShardRegion.IdExtractor = {
     case cmd: socketio.ConnectionActive.Command => (cmd.sessionId, cmd)
   }
@@ -15,28 +15,13 @@ object ClusterConnectionActiveResolver {
   lazy val shardResolver: ShardRegion.ShardResolver = {
     case cmd: socketio.ConnectionActive.Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
   }
-
-  def apply(system: ActorSystem) = new ClusterConnectionActiveResolver(system)
-}
-final class ClusterConnectionActiveResolver(system: ActorSystem) extends socketio.ConnectionActiveResolver {
-  import ConnectionActive._
-
-  private lazy val resolverActor: ActorRef = ClusterSharding(system).shardRegion(shardName)
-
-  def createActive(sessionId: String) {
-    // will be created automatically. TODO how to drop them when closed
-  }
-
-  def dispatch(cmd: Command) {
-    resolverActor ! cmd
-  }
 }
 
 /**
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-class ClusterConnectionActive(val resolver: ConnectionActiveResolver) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
+class ClusterConnectionActive extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
   import context.dispatcher
 

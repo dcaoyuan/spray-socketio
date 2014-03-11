@@ -6,7 +6,7 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.ConnectionActiveResolver
+import spray.contrib.socketio.ConnectionActive
 import spray.contrib.socketio.GeneralConnectionActiveResolver
 import spray.contrib.socketio.GeneralNamespace
 import spray.contrib.socketio.Namespace
@@ -17,7 +17,7 @@ import spray.contrib.socketio.Namespace.OnEvent
 
 object SocketIOTestServer extends App {
 
-  class SocketIOServer(val resolver: ConnectionActiveResolver) extends Actor with ActorLogging {
+  class SocketIOServer(val resolver: ActorRef) extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
@@ -27,7 +27,7 @@ object SocketIOTestServer extends App {
     }
   }
 
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ConnectionActiveResolver) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case x: Frame =>
@@ -35,7 +35,7 @@ object SocketIOTestServer extends App {
   }
 
   implicit val system = ActorSystem()
-  implicit val resolver = GeneralConnectionActiveResolver(system)
+  implicit val resolver = system.actorOf(Props(classOf[GeneralConnectionActiveResolver]), name = ConnectionActive.shardName)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {

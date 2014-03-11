@@ -6,7 +6,7 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.ConnectionActiveResolver
+import spray.contrib.socketio.ConnectionActive
 import spray.contrib.socketio.GeneralConnectionActiveResolver
 import spray.contrib.socketio.GeneralNamespace
 import spray.contrib.socketio.Namespace
@@ -20,7 +20,7 @@ import spray.json.DefaultJsonProtocol
 
 object SimpleServer extends App with MySslConfiguration {
 
-  class SocketIOServer(resolver: ConnectionActiveResolver) extends Actor with ActorLogging {
+  class SocketIOServer(resolver: ActorRef) extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
@@ -32,7 +32,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   val WEB_ROOT = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ConnectionActiveResolver) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>
@@ -75,7 +75,7 @@ object SimpleServer extends App with MySslConfiguration {
   import TheJsonProtocol._
 
   implicit val system = ActorSystem()
-  implicit val resolver = GeneralConnectionActiveResolver(system)
+  implicit val resolver = system.actorOf(Props(classOf[GeneralConnectionActiveResolver]), name = ConnectionActive.shardName)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {

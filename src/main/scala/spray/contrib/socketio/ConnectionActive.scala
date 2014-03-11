@@ -3,7 +3,6 @@ package spray.contrib.socketio
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
-import akka.actor.ActorSystem
 import akka.actor.Cancellable
 import akka.actor.Props
 import akka.event.LoggingAdapter
@@ -25,50 +24,28 @@ import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
 
-trait ConnectionActiveResolver {
-  def createActive(sessionId: String)
-  def dispatch(cmd: ConnectionActive.Command)
-}
+class GeneralConnectionActiveResolver extends Actor with ActorLogging {
+  import context.dispatcher
 
-object GeneralConnectionActiveResolver {
-  def apply(system: ActorSystem) = new GeneralConnectionActiveResolver(system)
-}
-final class GeneralConnectionActiveResolver(system: ActorSystem) extends ConnectionActiveResolver {
-  import ConnectionActive._
+  def receive = {
+    case ConnectionActive.CreateSession(sessionId: String) =>
+      context.child(sessionId) match {
+        case Some(_) =>
+        case None    => context.actorOf(Props(classOf[GeneralConnectionActive]), name = sessionId)
+      }
 
-  private lazy val resolverActor: ActorRef = system.actorOf(Props(new Resolver()), name = shardName)
-
-  def createActive(sessionId: String) {
-    resolverActor ! sessionId
-  }
-
-  def dispatch(cmd: Command) {
-    resolverActor ! cmd
-  }
-
-  class Resolver extends Actor with ActorLogging {
-    import context.dispatcher
-
-    def receive = {
-      case sessionId: String =>
-        context.child(sessionId) match {
-          case Some(_) =>
-          case None    => context.actorOf(Props(classOf[GeneralConnectionActive], GeneralConnectionActiveResolver.this), name = sessionId)
-        }
-
-      case cmd: Command =>
-        context.child(cmd.sessionId) match {
-          case Some(ref) => ref forward cmd
-          case None      => log.warning("Failed to select actor {}", cmd.sessionId)
-        }
-    }
+    case cmd: ConnectionActive.Command =>
+      context.child(cmd.sessionId) match {
+        case Some(ref) => ref forward cmd
+        case None      => log.warning("Failed to select actor {}", cmd.sessionId)
+      }
   }
 }
 
 object ConnectionActive {
 
   val actorResolveTimeout = socketio.config.getInt("server.actor-selection-resolve-timeout")
-  val shardName: String = "connectionActive"
+  val shardName: String = "connectionActives"
 
   case object AskConnectedTime
 
@@ -78,6 +55,8 @@ object ConnectionActive {
   sealed trait Command {
     def sessionId: String
   }
+
+  final case class CreateSession(sessionId: String) extends Command
 
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command
 
@@ -96,7 +75,8 @@ object ConnectionActive {
 
 }
 
-class GeneralConnectionActive(val resolver: ConnectionActiveResolver) extends ConnectionActive with Actor with ActorLogging {
+
+class GeneralConnectionActive extends ConnectionActive with Actor with ActorLogging {
 
   // have to call after log created
   enableCloseTimeout()
@@ -111,8 +91,6 @@ class GeneralConnectionActive(val resolver: ConnectionActiveResolver) extends Co
 trait ConnectionActive { actor: Actor =>
   import ConnectionActive._
   import context.dispatcher
-
-  def resolver: ConnectionActiveResolver
 
   def log: LoggingAdapter
 
@@ -131,14 +109,6 @@ trait ConnectionActive { actor: Actor =>
   val startTime = System.currentTimeMillis
 
   val heartbeatInterval = socketio.Settings.HeartbeatTimeout * 0.618
-
-  def createActive(sessionId: String) {
-    resolver.createActive(sessionId)
-  }
-
-  def dispatch(cmd: Command) {
-    resolver.dispatch(cmd)
-  }
 
   def connected() {
     sendPacket(ConnectPacket())
@@ -160,6 +130,8 @@ trait ConnectionActive { actor: Actor =>
   }
 
   def working: Receive = {
+    case CreateSession(_) => // may be forwarded by resolver, just ignore it.
+
     case conn @ Connecting(sessionId, query, origins, transportConn, transport) =>
       log.debug("Connecting request: {}", sessionId)
       disableCloseTimeout()

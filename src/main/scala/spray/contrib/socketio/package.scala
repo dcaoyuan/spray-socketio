@@ -41,7 +41,7 @@ package object socketio {
     var sessionId: String,
     val serverConnection: ActorRef,
     val log: LoggingAdapter,
-    val resolver: ConnectionActiveResolver,
+    val resolver: ActorRef,
     implicit val ec: ExecutionContext)
 
   final case class HandshakeState(response: HttpResponse, sessionId: String, qurey: Uri.Query, origins: Seq[HttpOrigin])
@@ -54,7 +54,7 @@ package object socketio {
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion) =>
             val sessionId = UUID.randomUUID.toString
-            ctx.resolver.createActive(sessionId)
+            ctx.resolver ! ConnectionActive.CreateSession(sessionId)
 
             val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
             val originsHeaders = List(
@@ -103,7 +103,7 @@ package object socketio {
       case Array("", SOCKET_IO, protocalVersion, transport.WebSocket.ID, sessionId) =>
         ctx.sessionId = sessionId
         import ctx.ec
-        ctx.resolver.dispatch(ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket))
+        ctx.resolver ! ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket)
         Some(true)
       case _ =>
         None
@@ -117,7 +117,7 @@ package object socketio {
     def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = {
       import ctx.ec
       // ctx.sessionId should have been set during wsConnected
-      ctx.resolver.dispatch(ConnectionActive.OnFrame(ctx.sessionId, ctx.serverConnection, frame))
+      ctx.resolver ! ConnectionActive.OnFrame(ctx.sessionId, ctx.serverConnection, frame)
       Some(true)
     }
   }
@@ -133,8 +133,8 @@ package object socketio {
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
-            ctx.resolver.dispatch(ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling))
-            ctx.resolver.dispatch(ConnectionActive.OnGet(sessionId, ctx.serverConnection))
+            ctx.resolver ! ConnectionActive.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling)
+            ctx.resolver ! ConnectionActive.OnGet(sessionId, ctx.serverConnection)
             Some(true)
           case _ => None
         }
@@ -152,7 +152,7 @@ package object socketio {
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
-            ctx.resolver.dispatch(ConnectionActive.OnPost(sessionId, ctx.serverConnection, entity.data.toByteString))
+            ctx.resolver ! ConnectionActive.OnPost(sessionId, ctx.serverConnection, entity.data.toByteString)
             Some(true)
           case _ => None
         }

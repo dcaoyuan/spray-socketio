@@ -1,16 +1,11 @@
 package spray.contrib.socketio.cluster
 
-import akka.actor._
-import akka.pattern.ask
-import scala.collection.immutable
-import scala.concurrent.duration._
-import spray.contrib.socketio
-import spray.contrib.socketio.ConnectionActive
-import spray.contrib.socketio.ConnectionContext
-import spray.contrib.socketio.Namespace
-import spray.contrib.socketio.packet.Packet
+import akka.actor.{ActorLogging, ActorRef, ActorSystem}
 import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtension, ShardRegion, ClusterSharding }
 import akka.persistence.EventsourcedProcessor
+import spray.contrib.socketio
+import spray.contrib.socketio.packet.Packet
+import spray.contrib.socketio.{Namespace, ConnectionContext, ConnectionActiveSelector, ConnectionActive}
 
 object ClusterConnectionActiveSelector {
   lazy val idExtractor: ShardRegion.IdExtractor = {
@@ -21,16 +16,17 @@ object ClusterConnectionActiveSelector {
     case cmd: socketio.ConnectionActive.Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
   }
 }
+
 class ClusterConnectionActiveSelector(system: ActorSystem) extends socketio.ConnectionActiveSelector {
   import ConnectionActive._
 
-  private val selection: ActorRef = ClusterSharding(system).shardRegion(shardName)
+  private lazy val selection: ActorRef = ClusterSharding(system).shardRegion(shardName)
 
-  def createActive(sessionId: String)(implicit system: ActorSystem) {
+  def createActive(sessionId: String) {
     // will be create automatically. TODO how to drop them when closed
   }
 
-  def dispatch(cmd: Command)(implicit system: ActorSystem) {
+  def dispatch(cmd: Command) {
     selection ! cmd
   }
 }
@@ -39,11 +35,12 @@ class ClusterConnectionActiveSelector(system: ActorSystem) extends socketio.Conn
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-class ClusterConnectionActive extends ConnectionActive with EventsourcedProcessor with ActorLogging {
+class ClusterConnectionActive(val selection: ConnectionActiveSelector) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
   import context.dispatcher
 
   import DistributedPubSubMediator.Publish
+
   // activate the extension
   val mediator = DistributedPubSubExtension(context.system).mediator
 

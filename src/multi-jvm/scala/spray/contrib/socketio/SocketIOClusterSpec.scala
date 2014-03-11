@@ -22,7 +22,11 @@ import akka.actor.Identify
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
 import spray.contrib.socketio.Namespace.OnEvent
+<<<<<<< HEAD
 import spray.contrib.socketio.cluster.{ ClusterNamespace, ClusterConnectionActiveSelector, ClusterConnectionActive }
+=======
+import spray.contrib.socketio.cluster.{ClusterConnectionActiveSelector, ClusterNamespace, ClusterConnectionActive}
+>>>>>>> cowboy129-master
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -33,6 +37,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
   val connectionActive1 = role("connectionActive1")
   val connectionActive2 = role("connectionActive2")
   val business1 = role("business1")
+
   val client = role("client")
 
   val host = "127.0.0.1"
@@ -109,10 +114,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     // start shard region actor
     ClusterSharding(system).start(
       typeName = ConnectionActive.shardName,
-      entryProps = Some(Props[ClusterConnectionActive]),
+      entryProps = Some(Props(classOf[ClusterConnectionActive], new ClusterConnectionActiveSelector(system))),
       idExtractor = ClusterConnectionActiveSelector.idExtractor,
       shardResolver = ClusterConnectionActiveSelector.shardResolver)
-    ConnectionActive.init(new ClusterConnectionActiveSelector(system))
 
     // optional: register cluster receptionist for cluster client
     ClusterReceptionistExtension(system).registerService(
@@ -149,27 +153,35 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "startup server" in within(15.seconds) {
       runOn(transport1) {
-        val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer]), "socketio")
+        val selection = new ClusterConnectionActiveSelector(system)
+        val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], selection), "socketio")
         IO(UHttp) ! Http.Bind(server, host, port1)
       }
 
       runOn(transport2) {
-        val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer]), "socketio")
+        val selection = new ClusterConnectionActiveSelector(system)
+        val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], selection), "socketio")
         IO(UHttp) ! Http.Bind(server, host, port2)
       }
 
       runOn(business1) {
+        implicit val selection = new ClusterConnectionActiveSelector(system)
+
         val observer = Observer[OnEvent](
           (next: OnEvent) => {
             next match {
               case OnEvent("chat", args, context) =>
+<<<<<<< HEAD
                 next.replyEvent("chat", args)(system)
+=======
+                next.replyEvent("chat", args: _*)
+>>>>>>> cowboy129-master
               case _ =>
                 println("observed: " + next.name + ", " + next.args)
             }
           })
-        Namespace.init(classOf[ClusterNamespace])
-        Namespace.subscribe("", observer)(system)
+
+        Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], Namespace.DEFAULT_NAMESPACE))
       }
 
       enterBarrier("startup-server")
@@ -182,14 +194,13 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
 
         awaitAssert {
-          within(5.second) {
+          within(10.second) {
             client ! SocketIOTestClient.SendTimestampedChat
             expectMsgPF() {
               case MessageArrived(time) => println("round time: " + time)
             }
           }
         }
-
       }
 
       enterBarrier("finish")

@@ -24,7 +24,6 @@ import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
-import spray.json.JsValue
 
 trait ConnectionActiveSelector {
   def createActive(sessionId: String)(implicit system: ActorSystem)
@@ -79,9 +78,9 @@ object ConnectionActive {
   }
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command
 
-  final case class SendMessage(sessionId: String, msg: String, endpoint: String) extends Command
-  final case class SendJson(sessionId: String, json: String, endpoint: String) extends Command
-  final case class SendEvent(sessionId: String, name: String, args: List[JsValue], endpoint: String) extends Command
+  final case class SendMessage(sessionId: String, endpoint: String, msg: String) extends Command
+  final case class SendJson(sessionId: String, endpoint: String, json: String) extends Command
+  final case class SendEvent(sessionId: String, endpoint: String, name: String, args: String) extends Command
   final case class SendPackets(sessionId: String, packets: Seq[Packet]) extends Command
 
   final case class OnPayload(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
@@ -185,9 +184,9 @@ trait ConnectionActive { actor: Actor =>
     case OnGet(sessionId, transportConnection) => onGet(transportConnection)
     case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)
 
-    case SendMessage(sessionId, msg, endpoint) => sendMessage(msg, endpoint)
-    case SendJson(sessionId, json, endpoint) => sendJson(json, endpoint)
-    case SendEvent(sessionId, name, args, endpoint) => sendEvent(name, args, endpoint)
+    case SendMessage(sessionId, endpoint, msg) => sendMessage(endpoint, msg)
+    case SendJson(sessionId, endpoint, json) => sendJson(endpoint, json)
+    case SendEvent(sessionId, endpoint, name, args) => sendEvent(endpoint, name, args)
     case SendPackets(sessionId, packets) => enqueueAndMaySendPacket(packets: _*)
 
     case AskConnectedTime =>
@@ -292,20 +291,18 @@ trait ConnectionActive { actor: Actor =>
     onPayload(transportConnection, payload)
   }
 
-  private def endpointFor(namespace: String) = if (namespace == Namespace.DEFAULT_NAMESPACE) "" else namespace
-
-  def sendMessage(msg: String, endpoint: String) {
-    val packet = MessagePacket(-1L, false, endpointFor(endpoint), msg)
+  def sendMessage(endpoint: String, msg: String) {
+    val packet = MessagePacket(-1L, false, Namespace.endpointFor(endpoint), msg)
     sendPacket(packet)
   }
 
-  def sendJson(json: String, endpoint: String) {
-    val packet = JsonPacket(-1L, false, endpointFor(endpoint), json)
+  def sendJson(endpoint: String, json: String) {
+    val packet = JsonPacket(-1L, false, Namespace.endpointFor(endpoint), json)
     sendPacket(packet)
   }
 
-  def sendEvent(name: String, args: List[JsValue], endpoint: String) {
-    val packet = EventPacket(-1L, false, endpointFor(endpoint), name, args)
+  def sendEvent(endpoint: String, name: String, args: String) {
+    val packet = EventPacket(-1L, false, Namespace.endpointFor(endpoint), name, args)
     sendPacket(packet)
   }
 

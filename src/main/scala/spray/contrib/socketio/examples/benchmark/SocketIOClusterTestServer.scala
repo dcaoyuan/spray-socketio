@@ -67,7 +67,7 @@ object SocketIOClusterTestServer extends App {
     (next: OnEvent) => {
       next match {
         case OnEvent("chat", args, context) =>
-          next.replyEvent("chat", args: _*)(system)
+          next.replyEvent("chat", args)(system)
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }

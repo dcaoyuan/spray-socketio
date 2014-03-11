@@ -3,8 +3,6 @@ package spray.contrib.socketio.packet
 import akka.util.ByteString
 import akka.util.ByteStringBuilder
 import scala.annotation.tailrec
-import spray.json._
-import DefaultJsonProtocol._
 
 object Packet {
   val reservedEvents = Set(
@@ -111,7 +109,7 @@ trait DataPacket extends Packet {
   def id: Long
   def isAckRequested: Boolean
 
-  protected def renderHead = {
+  protected def renderPacketHead = {
     val builder = ByteString.newBuilder
 
     builder.putByte(code)
@@ -145,7 +143,7 @@ final case class MessagePacket(id: Long, isAckRequested: Boolean, endpoint: Stri
   def code = '3'
 
   def render = {
-    val builder = renderHead
+    val builder = renderPacketHead
 
     if (data != "") {
       builder.putByte(':')
@@ -159,15 +157,14 @@ final case class MessagePacket(id: Long, isAckRequested: Boolean, endpoint: Stri
 /**
  * A JSON encoded message.
  */
-final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String, jsonStr: String) extends DataPacket {
+final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String, json: String) extends DataPacket {
   def code = '4'
-  val json = JsonParser(jsonStr)
 
   def render = {
-    val builder = renderHead
+    val builder = renderPacketHead
 
     builder.putByte(':')
-    JsonRender(json, builder)
+    builder.putBytes(json.getBytes)
 
     builder.result.compact
   }
@@ -178,37 +175,107 @@ final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String,
  * is a string and args an array.
  */
 object EventPacket {
-  def apply(id: Long, isAckRequested: Boolean, endpoint: String, jsonStr: String): EventPacket = {
-    val json = JsonParser(jsonStr)
-    json match {
-      case JsObject(fields) =>
-        val name = fields.get("name") match {
-          case Some(JsString(value)) => value
-          case _                     => throw new Exception("Event packet is must have name field.")
+  private val nameHeading = "{\"name\":\""
+  private val argsHeading = "\",\"args\":"
+
+  private val namePart = nameHeading.getBytes
+  private val argsPart = argsHeading.getBytes
+  private val endsPart = "}".getBytes
+
+  def splitNameArgs(json: String): (String, String) = {
+    val nameStart = skip(json, 0, nameHeading, 0)
+    if (nameStart != -1) {
+      val nameEnd = eat(json, nameStart, '"')
+      val name = json.substring(nameStart, nameEnd)
+      val argsStart = skip(json, nameEnd, argsHeading, 0)
+      if (argsStart != -1) {
+        val argsEnd = stripEnds(json, json.length - 1, argsStart)
+        if (argsEnd != -1) {
+          val args = json.substring(argsStart, argsEnd)
+          (name, args)
+        } else {
+          (name, "[]")
         }
-        val args = fields.get("args") match {
-          case Some(JsArray(xs)) => xs
-          case _                 => List()
-        }
-        apply(id, isAckRequested, endpoint, name, args)
-      case _ => throw new Exception("Event packet is not a Json object.")
+      } else {
+        (name, "[]")
+      }
+    } else {
+      ("", "[]")
     }
   }
 
-  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: List[JsValue]): EventPacket =
+  @tailrec
+  private def skip(json: String, ix: Int, toSkip: String, skipIx: Int): Int = {
+    if (skipIx == toSkip.length) {
+      ix
+    } else {
+      val ix1 = skipWs(json, ix)
+      if (json(ix1) == toSkip(skipIx)) {
+        skip(json, ix1 + 1, toSkip, skipIx + 1)
+      } else {
+        -1
+      }
+    }
+  }
+
+  @tailrec
+  private def skipWs(json: String, ix: Int): Int = {
+    if (ix < json.length) {
+      json(ix) match {
+        case ' ' | '\t' => skipWs(json, ix + 1)
+        case _          => ix
+      }
+    } else {
+      json.length - 1
+    }
+  }
+
+  private def eat(json: String, ix: Int, until: Char): Int = {
+    var i = ix
+    while (i < json.length && json(i) != until) {
+      i += 1
+    }
+    i
+  }
+
+  @tailrec
+  private def stripEnds(json: String, ix: Int, until: Int): Int = {
+    if (ix > until) {
+      json(ix) match {
+        case ' ' | '\t' => stripEnds(json, ix - 1, until)
+        case '}'        => ix
+      }
+    } else {
+      -1
+    }
+  }
+
+  /**
+   * used by PacketParder only
+   */
+  private[packet] def apply(id: Long, isAckRequested: Boolean, endpoint: String, json: String): EventPacket = {
+    val (name, args) = splitNameArgs(json)
+    new EventPacket(id, isAckRequested, endpoint, name, args)
+  }
+
+  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: String): EventPacket =
     new EventPacket(id, isAckRequested, endpoint, name, args)
 
-  def unapply(x: EventPacket): Option[(String, List[JsValue])] = Some(x.name, x.args)
+  def unapply(x: EventPacket): Option[(String, String)] = Option(x.name, x.args)
 }
-final class EventPacket private (val id: Long, val isAckRequested: Boolean, val endpoint: String, val name: String, val args: List[JsValue]) extends DataPacket {
+final class EventPacket private (val id: Long, val isAckRequested: Boolean, val endpoint: String, val name: String, val args: String) extends DataPacket {
   def code = '5'
-  def json = JsObject(Map("name" -> JsString(name), "args" -> JsArray(args)))
 
   def render = {
-    val builder = renderHead
+    import EventPacket._
+    val builder = renderPacketHead
 
     builder.putByte(':')
-    JsonRender(json, builder)
+    builder.putBytes(namePart)
+    builder.putBytes(name.getBytes)
+    builder.putBytes(argsPart)
+    builder.putBytes(args.getBytes)
+    builder.putBytes(endsPart)
 
     builder.result.compact
   }

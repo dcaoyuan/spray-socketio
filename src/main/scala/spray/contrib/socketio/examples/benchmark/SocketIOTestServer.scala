@@ -41,7 +41,7 @@ object SocketIOTestServer extends App {
     (next: OnEvent) => {
       next match {
         case OnEvent("chat", args, context) =>
-          next.replyEvent("chat", args: _*)
+          next.replyEvent("chat", args)
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }

@@ -5,7 +5,6 @@ import org.parboiled2._
 import scala.collection.immutable.Queue
 import scala.util.Failure
 import scala.util.Success
-import spray.json.JsonParser
 
 class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
 
@@ -149,5 +148,7 @@ object PacketParser {
       apply("""\ufffd16\ufffd1::/testendpoint\ufffd17\ufffd1::/testendpoint2"""),
       apply(ByteString(-17, -65, -67, 53, 55, -17, -65, -67, 53, 58, 58, 58, 123, 34, 110, 97, 109, 101, 34, 58, 34, 99, 104, 97, 116, 34, 44, 34, 97, 114, 103, 115, 34, 58, 91, 123, 34, 116, 101, 120, 116, 34, 58, 34, 50, 56, 49, 44, 49, 51, 57, 52, 50, 57, 48, 55, 49, 53, 49, 54, 54, 34, 125, 93, 125, -17, -65, -67, 51, -17, -65, -67, 50, 58, 58)),
       apply(testBatch)) foreach println
+
+    println(EventPacket.splitNameArgs(""" { "name" : "edwald", "args" :[{"a": "b"},2,"3"] } """))
   }
 }

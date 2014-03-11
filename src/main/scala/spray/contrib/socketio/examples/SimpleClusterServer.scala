@@ -136,12 +136,12 @@ object SimpleClusterServer extends App with MySslConfiguration {
       next match {
         case OnEvent("Hi!", args, context) =>
           println("observed: " + next.name + ", " + next.args)
-          next.replyEvent("welcome", Msg("Greeting from spray-socketio").toJson)(system)
-          next.replyEvent("time", Now((new java.util.Date).toString).toJson)(system)
+          next.replyEvent("welcome", Msg("Greeting from spray-socketio").toJson.toString)(system)
+          next.replyEvent("time", Now((new java.util.Date).toString).toJson.toString)(system)
           // batched packets
           next.reply(
-            EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio").toJson)),
-            EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString).toJson)))(system)
+            EventPacket(-1L, false, "testendpoint", "welcome", Msg("Batcher Greeting from spray-socketio").toJson.toString),
+            EventPacket(-1L, false, "testendpoint", "time", Now("Batched " + (new java.util.Date).toString).toJson.toString))(system)
         case OnEvent("time", args, context) =>
           println("observed: " + next.name + ", " + next.args)
         case _ =>

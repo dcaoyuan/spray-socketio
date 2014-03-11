@@ -13,6 +13,8 @@ import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.OnClose
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.OnOpen
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.Packet
+import spray.json.JsonParser
+import spray.json.JsArray
 import spray.json.JsObject
 import spray.json.JsString
 
@@ -50,21 +52,24 @@ class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socket
   def onPacket(packet: Packet) {
     val messageArrivedAt = System.currentTimeMillis
     packet match {
-      case x: EventPacket =>
-        x.args.headOption match {
-          case Some(JsObject(fields)) =>
-            fields.get("text") match {
-              case Some(JsString(message)) =>
-                message.split(",") match {
-                  case Array(Id, timestamp) =>
-                    val roundtripTime = messageArrivedAt - timestamp.toLong
-                    log.debug("roundtripTime {}", roundtripTime)
-                    report ! MessageArrived(roundtripTime)
+      case EventPacket(name, args) =>
+        JsonParser(args) match {
+          case JsArray(xs) =>
+            xs.headOption match {
+              case Some(JsObject(fields)) =>
+                fields.get("text") match {
+                  case Some(JsString(message)) =>
+                    message.split(",") match {
+                      case Array(Id, timestamp) =>
+                        val roundtripTime = messageArrivedAt - timestamp.toLong
+                        log.debug("roundtripTime {}", roundtripTime)
+                        report ! MessageArrived(roundtripTime)
+                      case _ =>
+                    }
                   case _ =>
                 }
               case _ =>
             }
-
           case _ =>
         }
       case _ =>

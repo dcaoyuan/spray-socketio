@@ -52,7 +52,7 @@ object Namespace {
   final case class RemoveNamespace(namespace: String)
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transport: Transport)
   final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext)
-  final case class Subscribe[T <: OnData](system: ActorSystem, endpoint: String, observer: Observer[T])(implicit val tag: TypeTag[T])
+  final case class Subscribe[T <: OnData](observer: Observer[T])(implicit val tag: TypeTag[T])
   final case class Broadcast(packet: Packet)
 
   // --- Observable data
@@ -73,7 +73,7 @@ object Namespace {
   final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val endpoint: String) extends OnData
 
   def subscribe[T <: OnData: TypeTag](endpoint: String, observer: Observer[T])(system: ActorSystem, props: Props) {
-    tryDispatch(system, props, endpoint, Subscribe(system, endpoint, observer))
+    tryDispatch(system, props, endpoint, Subscribe(observer))
   }
 
   def namespaceFor(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
@@ -103,7 +103,6 @@ class GeneralNamespace(implicit val endpoint: String) extends Namespace
  * Namespace is refered to endpoint fo packets
  */
 trait Namespace extends Actor with ActorLogging {
-
   import Namespace._
   import context.dispatcher
 
@@ -126,7 +125,7 @@ trait Namespace extends Actor with ActorLogging {
     case OnPacket(packet: JsonPacket, connContext)       => jsonChannel.onNext(OnJson(packet.json, connContext))
     case OnPacket(packet: EventPacket, connContext)      => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
 
-    case x @ Subscribe(_, _, observer) =>
+    case x @ Subscribe(observer) =>
       noticeSubscribe(endpoint).onComplete {
         case Success(_) =>
           x.tag.tpe match {

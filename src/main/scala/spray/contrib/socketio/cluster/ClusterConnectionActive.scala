@@ -15,19 +15,21 @@ object ClusterConnectionActiveSelector {
   lazy val shardResolver: ShardRegion.ShardResolver = msg => msg match {
     case cmd: socketio.ConnectionActive.Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
   }
+
+  def apply(system: ActorSystem) = new ClusterConnectionActiveSelector(system)
 }
 
-class ClusterConnectionActiveSelector(system: ActorSystem) extends socketio.ConnectionActiveSelector {
+final class ClusterConnectionActiveSelector(system: ActorSystem) extends socketio.ConnectionActiveSelector {
   import ConnectionActive._
 
-  private lazy val selection: ActorRef = ClusterSharding(system).shardRegion(shardName)
+  private lazy val selector: ActorRef = ClusterSharding(system).shardRegion(shardName)
 
   def createActive(sessionId: String) {
     // will be create automatically. TODO how to drop them when closed
   }
 
   def dispatch(cmd: Command) {
-    selection ! cmd
+    selector ! cmd
   }
 }
 
@@ -35,7 +37,7 @@ class ClusterConnectionActiveSelector(system: ActorSystem) extends socketio.Conn
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-class ClusterConnectionActive(val selection: ConnectionActiveSelector) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
+class ClusterConnectionActive(val selector: ConnectionActiveSelector) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
   import context.dispatcher
 

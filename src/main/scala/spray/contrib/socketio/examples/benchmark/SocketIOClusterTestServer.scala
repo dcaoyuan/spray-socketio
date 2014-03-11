@@ -22,7 +22,7 @@ import scala.concurrent.duration._
 
 object SocketIOClusterTestServer extends App {
 
-  class SocketIOServer extends Actor with ActorLogging {
+  class SocketIOServer(selector: ConnectionActiveSelector) extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
@@ -62,13 +62,10 @@ object SocketIOClusterTestServer extends App {
   }
 
   val clusterPort = 2551
-
   // Override the configuration of the port
-  val systemConfig = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + clusterPort).
-    withFallback(ConfigFactory.load())
-
+  val systemConfig = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + clusterPort).withFallback(ConfigFactory.load())
   implicit val system = ActorSystem("ClusterSystem", systemConfig)
-  implicit val selector = new ClusterConnectionActiveSelector(system)
+  implicit val selector = ClusterConnectionActiveSelector(system)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -96,8 +93,8 @@ object SocketIOClusterTestServer extends App {
     idExtractor = ClusterConnectionActiveSelector.idExtractor,
     shardResolver = ClusterConnectionActiveSelector.shardResolver)
 
-  Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], Namespace.DEFAULT_NAMESPACE))
-  val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")
+  Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], ""))
+  val server = system.actorOf(Props(classOf[SocketIOServer], selector), name = "socketio")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val host = config.getString("host")

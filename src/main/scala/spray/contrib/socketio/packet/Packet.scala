@@ -258,7 +258,16 @@ object EventPacket {
     new EventPacket(id, isAckRequested, endpoint, name, args)
   }
 
-  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: String*): EventPacket =
+  /**
+   * Single full args json string. Should be enclosed with all args in one json array string and enlclosed with "[...]"
+   */
+  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: String): EventPacket =
+    new EventPacket(id, isAckRequested, endpoint, name, args)
+
+  /**
+   * Seq of json string of each arg
+   */
+  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: Seq[String]): EventPacket =
     new EventPacket(id, isAckRequested, endpoint, name, args.mkString("[", ",", "]"))
 
   def unapply(x: EventPacket): Option[(String, String)] = Option(x.name, x.args)

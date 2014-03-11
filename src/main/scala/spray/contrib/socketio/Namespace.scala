@@ -62,7 +62,8 @@ object Namespace {
 
     def replyMessage(msg: String)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendMessage(context.sessionId, endpoint, msg))
     def replyJson(json: String)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendJson(context.sessionId, endpoint, json))
-    def replyEvent(name: String, args: String*)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, args))
+    def replyEvent(name: String, args: String)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, Left(args)))
+    def replyEvent(name: String, args: Seq[String])(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendEvent(context.sessionId, endpoint, name, Right(args)))
     def reply(packets: Packet*)(implicit selector: ConnectionActiveSelector) = selector.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
     def broadcast(packet: Packet)(implicit selector: ConnectionActiveSelector) {} //TODO
   }

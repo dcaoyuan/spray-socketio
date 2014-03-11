@@ -22,11 +22,7 @@ import akka.actor.Identify
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
 import spray.contrib.socketio.Namespace.OnEvent
-<<<<<<< HEAD
-import spray.contrib.socketio.cluster.{ ClusterNamespace, ClusterConnectionActiveSelector, ClusterConnectionActive }
-=======
-import spray.contrib.socketio.cluster.{ClusterConnectionActiveSelector, ClusterNamespace, ClusterConnectionActive}
->>>>>>> cowboy129-master
+import spray.contrib.socketio.cluster.{ ClusterConnectionActiveSelector, ClusterNamespace, ClusterConnectionActive }
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -171,11 +167,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
           (next: OnEvent) => {
             next match {
               case OnEvent("chat", args, context) =>
-<<<<<<< HEAD
-                next.replyEvent("chat", args)(system)
-=======
-                next.replyEvent("chat", args: _*)
->>>>>>> cowboy129-master
+                spray.json.JsonParser(args) // test spray-json too.
+                next.replyEvent("chat", args)
               case _ =>
                 println("observed: " + next.name + ", " + next.args)
             }

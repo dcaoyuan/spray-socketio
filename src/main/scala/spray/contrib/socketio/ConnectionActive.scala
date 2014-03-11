@@ -54,7 +54,7 @@ final class GeneralConnectionActiveSelector(system: ActorSystem) extends Connect
       case sessionId: String =>
         context.child(sessionId) match {
           case Some(_) =>
-          case None    => context.actorOf(Props(classOf[GeneralConnectionActive], selector), name = sessionId)
+          case None    => context.actorOf(Props(classOf[GeneralConnectionActive], GeneralConnectionActiveSelector.this), name = sessionId)
         }
 
       case cmd: Command =>
@@ -84,7 +84,7 @@ object ConnectionActive {
 
   final case class SendMessage(sessionId: String, endpoint: String, msg: String) extends Command
   final case class SendJson(sessionId: String, endpoint: String, json: String) extends Command
-  final case class SendEvent(sessionId: String, endpoint: String, name: String, args: Seq[String]) extends Command
+  final case class SendEvent(sessionId: String, endpoint: String, name: String, args: Either[String, Seq[String]]) extends Command
   final case class SendPackets(sessionId: String, packets: Seq[Packet]) extends Command
 
   final case class OnPayload(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
@@ -297,8 +297,11 @@ trait ConnectionActive { actor: Actor =>
     sendPacket(packet)
   }
 
-  def sendEvent(endpoint: String, name: String, args: Seq[String]) {
-    val packet = EventPacket(-1L, false, Namespace.endpointFor(endpoint), name, args: _*)
+  def sendEvent(endpoint: String, name: String, args: Either[String, Seq[String]]) {
+    val packet = args match {
+      case Left(x)   => EventPacket(-1L, false, Namespace.endpointFor(endpoint), name, x)
+      case Right(xs) => EventPacket(-1L, false, Namespace.endpointFor(endpoint), name, xs)
+    }
     sendPacket(packet)
   }
 

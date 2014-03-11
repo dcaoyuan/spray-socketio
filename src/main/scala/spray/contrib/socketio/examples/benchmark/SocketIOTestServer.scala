@@ -41,6 +41,7 @@ object SocketIOTestServer extends App {
     (next: OnEvent) => {
       next match {
         case OnEvent("chat", args, context) =>
+          spray.json.JsonParser(args) // test spray-json performance too.
           next.replyEvent("chat", args)
         case _ =>
           println("observed: " + next.name + ", " + next.args)

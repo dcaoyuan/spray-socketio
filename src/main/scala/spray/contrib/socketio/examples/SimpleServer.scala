@@ -3,21 +3,16 @@ package spray.contrib.socketio.examples
 import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import rx.lang.scala.Observer
-import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
-import spray.can.websocket
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio
-import spray.contrib.socketio.ConnectionActive
-import spray.contrib.socketio.GeneralConnectionActiveSelector
-import spray.contrib.socketio.GeneralNamespace
-import spray.contrib.socketio.Namespace
-import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
-import spray.http.{ HttpMethods, HttpRequest, Uri, HttpResponse, HttpEntity, ContentType, MediaTypes }
+import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.json.DefaultJsonProtocol
+import spray.contrib.socketio._
+import spray.http.HttpRequest
+import spray.contrib.socketio.Namespace.OnEvent
+import spray.http.HttpResponse
 
 object SimpleServer extends App with MySslConfiguration {
 
@@ -26,14 +21,14 @@ object SimpleServer extends App with MySslConfiguration {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection))
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, selection))
         serverConnection ! Http.Register(conn)
     }
   }
 
   val WEB_ROOT = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
-  class SocketIOWorker(val serverConnection: ActorRef) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val selection: ConnectionActiveSelector) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>
@@ -76,6 +71,8 @@ object SimpleServer extends App with MySslConfiguration {
   import TheJsonProtocol._
 
   implicit val system = ActorSystem()
+  implicit val selection = new GeneralConnectionActiveSelector(system)
+
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
@@ -94,12 +91,8 @@ object SimpleServer extends App with MySslConfiguration {
       }
     })
 
-  import system.dispatcher
 
-  ConnectionActive.init(new GeneralConnectionActiveSelector(system))
-  Namespace.init(classOf[GeneralNamespace])
-
-  Namespace.subscribe("testendpoint", observer)(system)
+  Namespace.subscribe("testendpoint", observer)(system, Props(classOf[GeneralNamespace], "testendpoint"))
   val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)

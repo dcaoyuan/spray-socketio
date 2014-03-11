@@ -62,11 +62,11 @@ object Namespace {
     def context: ConnectionContext
     def endpoint: String
 
-    def replyMessage(msg: String)(implicit system: ActorSystem) = ConnectionActive.dispatch(ConnectionActive.SendMessage(context.sessionId, msg, endpoint))
-    def replyJson(json: String)(implicit system: ActorSystem) = ConnectionActive.dispatch(ConnectionActive.SendJson(context.sessionId, json, endpoint))
-    def replyEvent(name: String, args: JsValue*)(implicit system: ActorSystem) = ConnectionActive.dispatch(ConnectionActive.SendEvent(context.sessionId, name, args.toList, endpoint))
-    def reply(packets: Packet*)(implicit system: ActorSystem) = ConnectionActive.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
-    def broadcast(packet: Packet)(implicit system: ActorSystem) {} //TODO
+    def replyMessage(msg: String)(implicit selection: ConnectionActiveSelector) = selection.dispatch(ConnectionActive.SendMessage(context.sessionId, msg, endpoint))
+    def replyJson(json: String)(implicit selection: ConnectionActiveSelector) = selection.dispatch(ConnectionActive.SendJson(context.sessionId, json, endpoint))
+    def replyEvent(name: String, args: JsValue*)(implicit selection: ConnectionActiveSelector) = selection.dispatch(ConnectionActive.SendEvent(context.sessionId, name, args.toList, endpoint))
+    def reply(packets: Packet*)(implicit selection: ConnectionActiveSelector) = selection.dispatch(ConnectionActive.SendPackets(context.sessionId, packets))
+    def broadcast(packet: Packet)(implicit selection: ConnectionActiveSelector) {} //TODO
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnDisconnect(context: ConnectionContext)(implicit val endpoint: String) extends OnData
@@ -74,24 +74,19 @@ object Namespace {
   final case class OnJson(json: JsValue, context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnEvent(name: String, args: List[JsValue], context: ConnectionContext)(implicit val endpoint: String) extends OnData
 
-  def subscribe[T <: OnData: TypeTag](endpoint: String, observer: Observer[T])(system: ActorSystem) {
-    tryDispatch(system, endpoint, Subscribe(system, endpoint, observer))
+  def subscribe[T <: OnData: TypeTag](endpoint: String, observer: Observer[T])(system: ActorSystem, props: Props) {
+    tryDispatch(system, props, endpoint, Subscribe(system, endpoint, observer))
   }
 
   def namespaceFor(endpoint: String): String = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
 
   def actorPath(namespace: String) = "/user/" + namespace
 
-  private var namespaceClazz: Class[_ <: Namespace] = _
-  def init(_namespaceClazz: Class[_ <: Namespace]) {
-    namespaceClazz = _namespaceClazz
-  }
-
-  def tryDispatch(system: ActorSystem, endpoint: String, msg: Any) {
+  def tryDispatch(system: ActorSystem, props: Props, endpoint: String, msg: Any) {
     val namespace = namespaceFor(endpoint)
     import system.dispatcher
     system.actorSelection(actorPath(namespace)).resolveOne(actorResolveTimeout.seconds).recover {
-      case _: Throwable => system.actorOf(Props(namespaceClazz, namespace), name = namespace)
+      case _: Throwable => system.actorOf(props, name = namespace)
     } map (_ ! msg)
   }
 
@@ -114,7 +109,6 @@ trait Namespace extends Actor with ActorLogging {
   import context.dispatcher
 
   implicit def endpoint: String
-  private val connections = new TrieMap[String, ConnectionContext]()
 
   val connectChannel = Subject[OnConnect]()
   val disconnectChannel = Subject[OnDisconnect]()

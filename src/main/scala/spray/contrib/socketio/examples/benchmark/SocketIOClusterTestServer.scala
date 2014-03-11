@@ -12,9 +12,7 @@ import com.typesafe.config.ConfigFactory
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.ConnectionActive
-import spray.contrib.socketio.SocketIOServerConnection
-import spray.contrib.socketio.Namespace
+import spray.contrib.socketio.{ConnectionActiveSelector, ConnectionActive, SocketIOServerConnection, Namespace}
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.cluster.ClusterConnectionActive
 import spray.contrib.socketio.cluster.ClusterConnectionActiveSelector
@@ -29,12 +27,12 @@ object SocketIOClusterTestServer extends App {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection))
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, selection))
         serverConnection ! Http.Register(conn)
     }
   }
 
-  class SocketIOWorker(val serverConnection: ActorRef) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val selection: ConnectionActiveSelector) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case x: Frame =>
@@ -67,7 +65,7 @@ object SocketIOClusterTestServer extends App {
     (next: OnEvent) => {
       next match {
         case OnEvent("chat", args, context) =>
-          next.replyEvent("chat", args: _*)(system)
+          next.replyEvent("chat", args: _*)(selection)
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }
@@ -80,6 +78,7 @@ object SocketIOClusterTestServer extends App {
     withFallback(ConfigFactory.load())
 
   implicit val system = ActorSystem("ClusterSystem", systemConfig)
+
   import system.dispatcher
   val clusterSystem = Cluster(system)
 
@@ -92,14 +91,13 @@ object SocketIOClusterTestServer extends App {
 
   ClusterSharding(system).start(
     typeName = ConnectionActive.shardName,
-    entryProps = Some(Props[ClusterConnectionActive]),
+    entryProps = Some(Props(classOf[ClusterConnectionActive], selection)),
     idExtractor = ClusterConnectionActiveSelector.idExtractor,
     shardResolver = ClusterConnectionActiveSelector.shardResolver)
 
-  ConnectionActive.init(new ClusterConnectionActiveSelector(system))
-  Namespace.init(classOf[ClusterNamespace])
+  implicit val selection = new ClusterConnectionActiveSelector(system)
 
-  Namespace.subscribe("", observer)(system)
+  Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], Namespace.DEFAULT_NAMESPACE))
   val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")

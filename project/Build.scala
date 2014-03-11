@@ -60,10 +60,11 @@ object Build extends sbt.Build {
 }
 
 object Dependencies {
-  val AKKA_VERSION = "2.3.0-RC4"
+  val SPRAY_VERSION = "1.3.0"
+  val AKKA_VERSION = "2.3.0"
 
   val spray_websocket = "com.wandoulabs" % "spray-websocket_2.10" % "0.1"
-  val spray_can = "io.spray" % "spray-can" % "1.3-RC4"
+  val spray_can = "io.spray" % "spray-can" % SPRAY_VERSION
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
   val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
   val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.5"

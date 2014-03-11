@@ -98,6 +98,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
   def join(from: RoleName, to: RoleName): Unit = {
     runOn(from) {
+      Thread.sleep(1000)
       Cluster(system) join node(to).address
       startSharding()
     }
@@ -176,14 +177,15 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "chat with client and server1" in within(15.seconds) {
       runOn(client) {
+        Thread.sleep(5000)
         val connect = Http.Connect(host, port1)
         val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
 
         awaitAssert {
-          within(2.second) {
+          within(5.second) {
             client ! SocketIOTestClient.SendTimestampedChat
             expectMsgPF() {
-              case MessageArrived(_) =>
+              case MessageArrived(time) => println("round time: " + time)
             }
           }
         }

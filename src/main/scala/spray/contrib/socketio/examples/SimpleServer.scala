@@ -65,6 +65,12 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
+  implicit val system = ActorSystem()
+  import system.dispatcher
+
+  ConnectionActive.init(new GeneralConnectionActiveSelector(system))
+  Namespace.init(classOf[GeneralNamespace])
+
   // --- json protocals for socketio messages:
   case class Msg(message: String)
   case class Now(time: String)
@@ -75,7 +81,6 @@ object SimpleServer extends App with MySslConfiguration {
   import spray.json._
   import TheJsonProtocol._
 
-  implicit val system = ActorSystem()
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
       next match {
@@ -93,11 +98,6 @@ object SimpleServer extends App with MySslConfiguration {
           println("observed: " + next.name + ", " + next.args)
       }
     })
-
-  import system.dispatcher
-
-  ConnectionActive.init(new GeneralConnectionActiveSelector(system))
-  Namespace.init(classOf[GeneralNamespace])
 
   Namespace.subscribe("testendpoint", observer)(system)
   val server = system.actorOf(Props(classOf[SocketIOServer]), "socketio")

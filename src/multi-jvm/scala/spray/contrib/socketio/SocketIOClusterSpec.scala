@@ -168,7 +168,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
             next match {
               case OnEvent("chat", args, context) =>
                 spray.json.JsonParser(args) // test spray-json too.
-                next.replyEvent("chat", args)
+                next.replyEvent("chat", args)(resolver)
               case _ =>
                 println("observed: " + next.name + ", " + next.args)
             }

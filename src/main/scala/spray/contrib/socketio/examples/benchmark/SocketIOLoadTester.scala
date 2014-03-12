@@ -114,7 +114,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
   private var clients = List[ActorRef]()
 
-  private var concurrentConnections = 0
+  private var nConcurrentConnections = 0
 
   private var currentMessagesPerSecond = initailMessagesPerSecond
 
@@ -131,27 +131,30 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
   private var commander: ActorRef = _
 
+  private var t0 = System.currentTimeMillis
+
   def receive = {
-    case RoundBegin(concConnections) =>
+    case RoundBegin(nConnections) =>
       commander = sender()
-      val t0 = System.currentTimeMillis
-      concurrentConnections = concConnections
-      println("---------------- CONCURRENCY " + concurrentConnections + " ----------------")
+      nConcurrentConnections = nConnections
+      println("---------------- Concurrent connections " + nConcurrentConnections + " ----------------")
       var i = 0
-      while (i < concurrentConnections) {
+      while (i < nConcurrentConnections) {
         val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
         clients ::= client
         i += 1
       }
 
-      println("Clients created in " + ((System.currentTimeMillis - t0) / 1000.0) + "s")
-      println("Woken up - time to start load test!")
+      println("Clients created in " + ((System.currentTimeMillis - t0) / 1000.0) + "s.")
 
     case OnOpen =>
       nConnectionsOpened += 1
-      if (nConnectionsOpened == concurrentConnections) {
-        println("All " + concurrentConnections + " clients connected successfully.")
+      if (nConnectionsOpened == nConcurrentConnections) {
+        println("\nAll " + nConcurrentConnections + " clients connected successfully in " + ((System.currentTimeMillis - t0) / 1000.0) + "s.")
+        println("Woken up - time to start load test!\n")
         performLoadTest()
+      } else if (nConnectionsOpened % 100 == 0) {
+        print(nConnectionsOpened + "... ")
       }
 
     case OnClose =>
@@ -189,7 +192,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
   private def triggerMessages(statistics: mutable.Map[Double, SummaryStatistics], _overallEffectiveRate: Double) {
     var overallEffectiveRate = _overallEffectiveRate
 
-    println(concurrentConnections + " connections at currentMessagesPerSecond " + currentMessagesPerSecond + ": ")
+    println(nConcurrentConnections + " connections at current messages per second rate " + currentMessagesPerSecond + ": ")
 
     roundtripTimes = new mutable.ArrayBuffer[Double](secondsToTestEachLoadState * currentMessagesPerSecond)
 
@@ -200,7 +203,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     while (i < secondsToTestEachLoadState) {
       // usually we hope triggerChatMessages will be processed in extractly 1 second.
       val messageSendStartTime = System.currentTimeMillis
-      val effectiveRate = triggerChatMessages(currentMessagesPerSecond)
+      val effectiveRate = triggerChatMessages(currentMessagesPerSecond) // message sending rate
       val duration = System.currentTimeMillis - messageSendStartTime
       val delta = expectedDutationPerSend - duration
       // TODO flow control here according to delta here?
@@ -211,7 +214,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     println(count + " messages sent in " + (System.currentTimeMillis - t0) + "ms")
 
     overallEffectiveRate = overallEffectiveRate / secondsToTestEachLoadState
-    println("Rate: %.3f ".format(overallEffectiveRate))
+    //println("Rate: %.3f ".format(overallEffectiveRate))
 
     import system.dispatcher
     isPostTestTimeout = true
@@ -228,7 +231,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
   private def goon(statistics: mutable.Map[Double, SummaryStatistics], overallEffectiveRate: Double) {
     statistics.put(overallEffectiveRate, processRoundtripStats)
-    currentMessagesPerSecond += Math.max(100, messageReceivedPerSecondRamp / concurrentConnections)
+    currentMessagesPerSecond += Math.max(100, messageReceivedPerSecondRamp / nConcurrentConnections)
 
     if (!isConnectionLost && !isPostTestTimeout && currentMessagesPerSecond < maxMessagesPerSecond) {
       import system.dispatcher
@@ -259,8 +262,8 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     val stats = new SummaryStatistics()
 
     roundtripTimes foreach stats.addValue
-    println("n: %5d min: %8.0f  mean: %8.0f   max: %8.0f   stdev: %8.0f\n".format(
-      stats.getN, stats.getMin, stats.getMean, stats.getMax, stats.getStandardDeviation))
+    println("n: %5d min: %6.0f  mean: %6.0f   max: %6.0f   stdev: %6.0f    rate: %5.0f\n".format(
+      stats.getN, stats.getMin, stats.getMean, stats.getMax, stats.getStandardDeviation, stats.getN / (stats.getMean / 1000.0)))
 
     stats
   }

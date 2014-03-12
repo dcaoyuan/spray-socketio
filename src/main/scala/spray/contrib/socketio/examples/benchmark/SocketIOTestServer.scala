@@ -7,8 +7,8 @@ import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.ConnectionActive
-import spray.contrib.socketio.GeneralConnectionActiveResolver
-import spray.contrib.socketio.GeneralNamespace
+import spray.contrib.socketio.LocalConnectionActiveResolver
+import spray.contrib.socketio.LocalNamespace
 import spray.contrib.socketio.Namespace
 import spray.contrib.socketio.Namespace.OnEvent
 import spray.contrib.socketio.SocketIOServerConnection
@@ -35,7 +35,7 @@ object SocketIOTestServer extends App {
   }
 
   implicit val system = ActorSystem()
-  implicit val resolver = system.actorOf(Props(classOf[GeneralConnectionActiveResolver]), name = ConnectionActive.shardName)
+  implicit val resolver = system.actorOf(Props(classOf[LocalConnectionActiveResolver]), name = ConnectionActive.shardName)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -48,7 +48,7 @@ object SocketIOTestServer extends App {
       }
     })
 
-  Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[GeneralNamespace], Namespace.DEFAULT_NAMESPACE))
+  Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[LocalNamespace], Namespace.DEFAULT_NAMESPACE))
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")

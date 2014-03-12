@@ -34,7 +34,7 @@ import spray.http.Uri
  *    |                |  |                  vitaul MEDIATOR                  |
  *    +================+  +---------------------------------------------------+
  *                        |       |
- *                        |       |
+ *                        |       | (Namespace)
  *    +======node======+  |     +=|=============busi-node===============+
  *    |       mediator----/     | +endpointA              busi-actor(s) |
  *    |     /     |    |        |   |  |   |                            |
@@ -119,7 +119,7 @@ object Namespace {
 
 }
 
-class GeneralNamespace(implicit val endpoint: String) extends Namespace
+class LocalNamespace(implicit val endpoint: String) extends Namespace
 
 /**
  * Namespace is refered to endpoint fo packets

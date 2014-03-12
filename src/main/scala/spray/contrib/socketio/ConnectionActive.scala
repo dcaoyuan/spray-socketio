@@ -26,7 +26,7 @@ import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
 
-class GeneralConnectionActiveResolver extends Actor with ActorLogging {
+class LocalConnectionActiveResolver extends Actor with ActorLogging {
   import context.dispatcher
 
   def receive = {
@@ -34,7 +34,7 @@ class GeneralConnectionActiveResolver extends Actor with ActorLogging {
       context.child(sessionId) match {
         case Some(_) =>
         case None =>
-          val connectActive = context.actorOf(Props(classOf[GeneralConnectionActive]), name = sessionId)
+          val connectActive = context.actorOf(Props(classOf[LocalConnectionActive]), name = sessionId)
           context.watch(connectActive)
       }
 
@@ -89,7 +89,7 @@ object ConnectionActive {
   }
 }
 
-class GeneralConnectionActive extends ConnectionActive with Actor with ActorLogging {
+class LocalConnectionActive extends ConnectionActive with Actor with ActorLogging {
 
   // have to call after log created
   enableCloseTimeout()

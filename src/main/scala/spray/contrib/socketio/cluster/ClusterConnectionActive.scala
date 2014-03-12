@@ -2,7 +2,7 @@ package spray.contrib.socketio.cluster
 
 import akka.actor.{ActorLogging, ActorRef, ActorSystem}
 import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtension, ShardRegion, ClusterSharding }
-import akka.persistence.EventsourcedProcessor
+import akka.persistence.{PersistenceFailure, EventsourcedProcessor}
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.Packet
 import spray.contrib.socketio.{Namespace, ConnectionContext, ConnectionActive}
@@ -37,13 +37,20 @@ class ClusterConnectionActive extends ConnectionActive with EventsourcedProcesso
     case event: Event => update(event)
   }
 
-  def receiveCommand: Receive = working
+  def receiveCommand: Receive = working orElse {
+    case PersistenceFailure(_, _, e) =>
+      log.error(e, "persistence failure")
+  }
 
-  override def processNewConnecting(connecting: Connecting) {
-    persist(Connected(connecting.sessionId, connecting.query, connecting.origins)) { event =>
-      update(event)
-      connectionContext.foreach(_.bindTransport(connecting.transport))
-      connected()
+  override def processNewConnected(conn: Connected) {
+    persist(conn)(super.processNewConnected(_))
+  }
+
+  override def processUpdatePackets(packets: UpdatePackets) {
+    if (packets.packets.isEmpty && pendingPackets.isEmpty) {
+      super.processUpdatePackets(packets)
+    } else {
+      persist(packets)(super.processUpdatePackets(_))
     }
   }
 

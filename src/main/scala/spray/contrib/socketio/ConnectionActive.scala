@@ -1,11 +1,8 @@
 package spray.contrib.socketio
 
 import akka.actor.Actor
-import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.actor.Cancellable
-import akka.actor.Props
-import akka.actor.Terminated
 import akka.event.LoggingAdapter
 import akka.util.ByteString
 import org.parboiled2.ParseError
@@ -13,7 +10,6 @@ import scala.collection.immutable
 import scala.concurrent.duration._
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
-import spray.contrib.socketio.Namespace.OnPacket
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
@@ -26,38 +22,15 @@ import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
 
-class LocalConnectionActiveResolver extends Actor with ActorLogging {
-  import context.dispatcher
-
-  def receive = {
-    case ConnectionActive.CreateSession(sessionId: String) =>
-      context.child(sessionId) match {
-        case Some(_) =>
-        case None =>
-          val connectActive = context.actorOf(Props(classOf[LocalConnectionActive]), name = sessionId)
-          context.watch(connectActive)
-      }
-
-    case cmd: ConnectionActive.Command =>
-      context.child(cmd.sessionId) match {
-        case Some(ref) => ref forward cmd
-        case None      => log.warning("Failed to select actor {}", cmd.sessionId)
-      }
-
-    case Terminated(ref) =>
-
-  }
-}
-
 object ConnectionActive {
 
-  val actorResolveTimeout = socketio.config.getInt("server.actor-selection-resolve-timeout")
   val shardName: String = "connectionActives"
 
   case object AskConnectedTime
 
   case object Pause
   case object Awake
+  final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext)
 
   sealed trait Command {
     def sessionId: String
@@ -86,21 +59,6 @@ object ConnectionActive {
 
   def broadcast(sessionId: String, endpoint: String, packet: Packet)(implicit resolver: ActorRef) {
     resolver ! SendBroadcast(sessionId, endpoint, packet)
-  }
-}
-
-class LocalConnectionActive extends ConnectionActive with Actor with ActorLogging {
-
-  // have to call after log created
-  enableCloseTimeout()
-
-  def receive = working
-
-  def publishMessage(msg: Any)(ctx: ConnectionContext) {
-    msg match {
-      case x: Packet => Namespace.dispatch(context.system, x.endpoint, Namespace.OnPacket(x, ctx))
-      case x: ConnectionActive.OnBroadcast => Namespace.dispatch(context.system, x.endpoint, x)
-    }
   }
 }
 
@@ -210,8 +168,8 @@ trait ConnectionActive { actor: Actor =>
   def resetHeartbeatTimeout() {
     heartbeatTimeout foreach (_.cancel)
     heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.HeartbeatTimeout.seconds) {
-        enableCloseTimeout()
-      })
+      enableCloseTimeout()
+    })
   }
 
   // --- close timeout
@@ -221,10 +179,10 @@ trait ConnectionActive { actor: Actor =>
     closeTimeout foreach (_.cancel)
     if (context != null) {
       closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-          log.warning("{}: stoped due to close timeout", self.path)
-          disableHeartbeat()
-          context.stop(self)
-        })
+        log.warning("{}: stoped due to close timeout", self.path)
+        disableHeartbeat()
+        context.stop(self)
+      })
     }
   }
 
@@ -253,12 +211,12 @@ trait ConnectionActive { actor: Actor =>
         // bounce connect packet back to client
         sendPacket(packet)
         connectionContext foreach publishMessage(packet)
-        Namespace.subscribeBroadcast(endpoint, self)(context.system)
+        //Namespace.subscribeBroadcast(endpoint, self)(context.system)
         topics += endpoint
 
       case DisconnectPacket(endpoint) =>
         connectionContext foreach publishMessage(packet)
-        Namespace.unsubscribeBroadcast(endpoint, self)(context.system)
+        //Namespace.unsubscribeBroadcast(endpoint, self)(context.system)
         topics -= endpoint
         if (endpoint == "") {
           topics = Set()
@@ -292,19 +250,19 @@ trait ConnectionActive { actor: Actor =>
   }
 
   def sendMessage(endpoint: String, msg: String) {
-    val packet = MessagePacket(-1L, false, Namespace.endpointFor(endpoint), msg)
+    val packet = MessagePacket(-1L, false, socketio.endpointFor(endpoint), msg)
     sendPacket(packet)
   }
 
   def sendJson(endpoint: String, json: String) {
-    val packet = JsonPacket(-1L, false, Namespace.endpointFor(endpoint), json)
+    val packet = JsonPacket(-1L, false, socketio.endpointFor(endpoint), json)
     sendPacket(packet)
   }
 
   def sendEvent(endpoint: String, name: String, args: Either[String, Seq[String]]) {
     val packet = args match {
-      case Left(x)   => EventPacket(-1L, false, Namespace.endpointFor(endpoint), name, x)
-      case Right(xs) => EventPacket(-1L, false, Namespace.endpointFor(endpoint), name, xs)
+      case Left(x)   => EventPacket(-1L, false, socketio.endpointFor(endpoint), name, x)
+      case Right(xs) => EventPacket(-1L, false, socketio.endpointFor(endpoint), name, xs)
     }
     sendPacket(packet)
   }

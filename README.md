@@ -21,13 +21,12 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.ConnectionActive
-import spray.contrib.socketio.GeneralConnectionActiveResolver
-import spray.contrib.socketio.GeneralNamespace
-import spray.contrib.socketio.Namespace
-import spray.contrib.socketio.Namespace.OnEvent
+import spray.contrib.socketio.LocalConnectionActiveResolver
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
+import spray.contrib.socketio.namespace.LocalNamespace
+import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
 import spray.http.HttpResponse
@@ -90,7 +89,7 @@ object SimpleServer extends App with MySslConfiguration {
   import TheJsonProtocol._
 
   implicit val system = ActorSystem()
-  implicit val resolver = system.actorOf(Props(classOf[GeneralConnectionActiveResolver]), name = ConnectionActive.shardName)
+  implicit val resolver = LocalConnectionActiveResolver(system)
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -110,7 +109,7 @@ object SimpleServer extends App with MySslConfiguration {
       }
     })
 
-  Namespace.subscribe("testendpoint", observer)(system, Props(classOf[GeneralNamespace], "testendpoint"))
+  Namespace.subscribe("testendpoint", observer)(system, Props(classOf[LocalNamespace], "testendpoint"))
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)

@@ -1,19 +1,18 @@
-package spray.contrib.socketio.cluster
+package spray.contrib.socketio
 
-import akka.actor.{ ActorLogging, ActorRef, ActorSystem }
-import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtension, ShardRegion, ClusterSharding }
+import akka.actor.{ ActorLogging }
+import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtension, ShardRegion }
 import akka.persistence.{ PersistenceFailure, EventsourcedProcessor }
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.Packet
-import spray.contrib.socketio.{ Namespace, ConnectionContext, ConnectionActive }
 
 object ClusterConnectionActive {
   lazy val idExtractor: ShardRegion.IdExtractor = {
-    case cmd: socketio.ConnectionActive.Command => (cmd.sessionId, cmd)
+    case cmd: ConnectionActive.Command => (cmd.sessionId, cmd)
   }
 
   lazy val shardResolver: ShardRegion.ShardResolver = {
-    case cmd: socketio.ConnectionActive.Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
+    case cmd: ConnectionActive.Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
   }
 }
 
@@ -23,15 +22,18 @@ object ClusterConnectionActive {
  */
 class ClusterConnectionActive extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
-  import context.dispatcher
-
-  import DistributedPubSubMediator.Publish
-
-  // activate the extension
-  val mediator = DistributedPubSubExtension(context.system).mediator
 
   // have to call after log created
   enableCloseTimeout()
+
+  val mediator = DistributedPubSubExtension(context.system).mediator
+
+  def publishMessage(msg: Any)(ctx: ConnectionContext) {
+    msg match {
+      case packet: Packet => mediator ! DistributedPubSubMediator.Publish(socketio.namespaceFor(packet.endpoint), OnPacket(packet, ctx))
+      case x: OnBroadcast => mediator ! DistributedPubSubMediator.Publish(socketio.namespaceFor(x.endpoint), x)
+    }
+  }
 
   def receiveRecover: Receive = {
     case event: Event => update(event)
@@ -53,11 +55,5 @@ class ClusterConnectionActive extends ConnectionActive with EventsourcedProcesso
     }
   }
 
-  def publishMessage(msg: Any)(ctx: ConnectionContext) {
-    msg match {
-      case packet: Packet => mediator ! Publish(Namespace.namespaceFor(packet.endpoint), Namespace.OnPacket(packet, ctx))
-      case x: OnBroadcast => mediator ! Publish(Namespace.namespaceFor(x.endpoint), x)
-    }
-  }
 }
 

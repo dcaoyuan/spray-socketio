@@ -21,8 +21,9 @@ import scala.Some
 import akka.actor.Identify
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
-import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.cluster.{ ClusterNamespace, ClusterConnectionActive }
+import spray.contrib.socketio.namespace.ClusterConnectionActive
+import spray.contrib.socketio.namespace.ClusterNamespace
+import spray.contrib.socketio.namespace.Namespace.OnEvent
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec

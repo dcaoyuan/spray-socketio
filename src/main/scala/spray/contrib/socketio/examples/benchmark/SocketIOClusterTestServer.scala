@@ -9,15 +9,17 @@ import akka.persistence.Persistence
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
+import rx.lang.scala.Observer
 import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.{ ConnectionActive, SocketIOServerConnection, Namespace }
-import spray.contrib.socketio.Namespace.OnEvent
-import spray.contrib.socketio.cluster.ClusterConnectionActive
-import spray.contrib.socketio.cluster.ClusterNamespace
-import rx.lang.scala.Observer
+import spray.contrib.socketio
+import spray.contrib.socketio.{ ConnectionActive, SocketIOServerConnection }
+import spray.contrib.socketio.namespace.ClusterNamespace
+import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.ClusterConnectionActive
 
 object SocketIOClusterTestServer extends App {
 
@@ -94,7 +96,7 @@ object SocketIOClusterTestServer extends App {
     idExtractor = ClusterConnectionActive.idExtractor,
     shardResolver = ClusterConnectionActive.shardResolver)
 
-  Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], ""))
+  Namespace.subscribe(socketio.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], ""))
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")

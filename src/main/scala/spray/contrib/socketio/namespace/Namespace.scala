@@ -1,4 +1,4 @@
-package spray.contrib.socketio
+package spray.contrib.socketio.namespace
 
 import akka.actor.Actor
 import akka.actor.ActorLogging
@@ -12,6 +12,8 @@ import rx.lang.scala.Subject
 import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
 import spray.contrib.socketio
+import spray.contrib.socketio.ConnectionActive
+import spray.contrib.socketio.ConnectionContext
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
@@ -58,13 +60,8 @@ import spray.http.Uri
  * @Note Akka can do millions of messages per second per actor per core.
  */
 object Namespace {
-  val DEFAULT_NAMESPACE = "socket.io"
-  val NAMESPACES = "socketio-namespaces"
-  val actorResolveTimeout = socketio.config.getInt("server.actor-selection-resolve-timeout")
 
   final case class RemoveNamespace(namespace: String)
-  final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transport: Transport)
-  final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext)
   final case class Subscribe[T <: OnData](observer: Observer[T])(implicit val tag: TypeTag[T])
   final case class SubscribeBroadcast(endpoint: String, ref: ActorRef)
   final case class UnsubscribeBroadcast(endpoint: String, ref: ActorRef)
@@ -99,34 +96,29 @@ object Namespace {
     dispatch(system, endpoint, UnsubscribeBroadcast(endpoint, connectionActive))
   }
 
-  def namespaceFor(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
-  def endpointFor(namespace: String) = if (namespace == DEFAULT_NAMESPACE) "" else namespace
   def actorPath(namespace: String) = "/user/" + namespace
 
   def tryDispatch(system: ActorSystem, props: Props, endpoint: String, msg: Any) {
-    val namespace = namespaceFor(endpoint)
+    val namespace = socketio.namespaceFor(endpoint)
     import system.dispatcher
-    system.actorSelection(actorPath(namespace)).resolveOne(actorResolveTimeout.seconds).recover {
+    system.actorSelection(actorPath(namespace)).resolveOne(socketio.actorResolveTimeout.seconds).recover {
       case _: Throwable => system.actorOf(props, name = namespace)
     } map (_ ! msg)
   }
 
   def dispatch(system: ActorSystem, endpoint: String, msg: Any) {
-    val namespace = namespaceFor(endpoint)
+    val namespace = socketio.namespaceFor(endpoint)
     import system.dispatcher
     system.actorSelection(actorPath(namespace)) ! msg
   }
 
 }
 
-class LocalNamespace(implicit val endpoint: String) extends Namespace
-
 /**
  * Namespace is refered to endpoint fo packets
  */
 trait Namespace extends Actor with ActorLogging {
   import Namespace._
-  import context.dispatcher
 
   implicit def endpoint: String
 
@@ -138,21 +130,19 @@ trait Namespace extends Actor with ActorLogging {
   val jsonChannel = Subject[OnJson]()
   val eventChannel = Subject[OnEvent]()
 
-  def noticeSubscribe(endpoint: String) {
-    // override it if neccesary.
-  }
+  def subscribeMediator(endpoint: String)(action: () => Unit)
 
   def receive: Receive = {
     case x @ Subscribe(observer) =>
-      noticeSubscribe(endpoint)
-
-      x.tag.tpe match {
-        case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
-        case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])
-        case t if t =:= typeOf[OnMessage]    => messageChannel(observer.asInstanceOf[Observer[OnMessage]])
-        case t if t =:= typeOf[OnJson]       => jsonChannel(observer.asInstanceOf[Observer[OnJson]])
-        case t if t =:= typeOf[OnEvent]      => eventChannel(observer.asInstanceOf[Observer[OnEvent]])
-        case _                               =>
+      subscribeMediator(endpoint) { () =>
+        x.tag.tpe match {
+          case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
+          case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])
+          case t if t =:= typeOf[OnMessage]    => messageChannel(observer.asInstanceOf[Observer[OnMessage]])
+          case t if t =:= typeOf[OnJson]       => jsonChannel(observer.asInstanceOf[Observer[OnJson]])
+          case t if t =:= typeOf[OnEvent]      => eventChannel(observer.asInstanceOf[Observer[OnEvent]])
+          case _                               =>
+        }
       }
 
     case x @ SubscribeBroadcast(endpoint, ref) =>
@@ -163,11 +153,11 @@ trait Namespace extends Actor with ActorLogging {
       context.unwatch(ref)
       subsrcriptions -= ref
 
-    case OnPacket(packet: ConnectPacket, connContext) => connectChannel.onNext(OnConnect(packet.args, connContext))
-    case OnPacket(packet: DisconnectPacket, connContext) => disconnectChannel.onNext(OnDisconnect(connContext))
-    case OnPacket(packet: MessagePacket, connContext) => messageChannel.onNext(OnMessage(packet.data, connContext))
-    case OnPacket(packet: JsonPacket, connContext) => jsonChannel.onNext(OnJson(packet.json, connContext))
-    case OnPacket(packet: EventPacket, connContext) => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
+    case ConnectionActive.OnPacket(packet: ConnectPacket, connContext) => connectChannel.onNext(OnConnect(packet.args, connContext))
+    case ConnectionActive.OnPacket(packet: DisconnectPacket, connContext) => disconnectChannel.onNext(OnDisconnect(connContext))
+    case ConnectionActive.OnPacket(packet: MessagePacket, connContext) => messageChannel.onNext(OnMessage(packet.data, connContext))
+    case ConnectionActive.OnPacket(packet: JsonPacket, connContext) => jsonChannel.onNext(OnJson(packet.json, connContext))
+    case ConnectionActive.OnPacket(packet: EventPacket, connContext) => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
 
     case x @ ConnectionActive.OnBroadcast(endpoint, packet, sessionId) => subsrcriptions foreach (_ ! x)
 

@@ -1,7 +1,6 @@
 package spray.contrib
 
 import akka.actor.ActorRef
-import akka.actor.ActorSystem
 import akka.event.LoggingAdapter
 import akka.pattern.ask
 import com.typesafe.config.Config
@@ -36,6 +35,14 @@ package object socketio {
     val NamespacesDispatcher = config.getString("namespaces-dispatcher")
     val NamespaceDispatcher = config.getString("namespace-dispatcher")
   }
+
+  val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout")
+
+  val DEFAULT_NAMESPACE = "socket.io"
+  val NAMESPACES = "socketio-namespaces"
+
+  def namespaceFor(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
+  def endpointFor(namespace: String) = if (namespace == DEFAULT_NAMESPACE) "" else namespace
 
   private[socketio] final class SoConnectingContext(
     var sessionId: String,

@@ -97,7 +97,7 @@ object SocketIOClusterTestServer extends App {
     shardResolver = ClusterConnectionActive.shardResolver)
 
   Namespace.subscribe(socketio.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], ""))
-  val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio")
+  val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val host = config.getString("host")

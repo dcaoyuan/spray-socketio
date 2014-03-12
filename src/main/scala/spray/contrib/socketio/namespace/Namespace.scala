@@ -5,7 +5,6 @@ import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.actor.Props
-import akka.actor.Terminated
 import akka.pattern.ask
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
@@ -20,9 +19,6 @@ import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.packet.Packet
-import spray.contrib.socketio.transport.Transport
-import spray.http.HttpOrigin
-import spray.http.Uri
 
 /**
  *
@@ -32,39 +28,39 @@ import spray.http.Uri
  *    |     /     |    |  |
  *    |    /      |    |  |
  *    | conn    conn   |  |
- *    | conn    conn   |  +---------------------------------------------------+
- *    |                |  |                  vitaul MEDIATOR                  |
- *    +================+  +---------------------------------------------------+
+ *    | conn    conn   |  |---------------------------------------------------+
+ *    |                |  |                  virtaul MEDIATOR                 |
+ *    +================+  |---------------------------------------------------+
  *                        |       |
  *                        |       | (Namespace)
- *    +======node======+  |     +=|=============busi-node===============+
- *    |       mediator----/     | +endpointA              busi-actor(s) |
+ *    +======node======+  |     +=V=============busi-node===============+
+ *    |       mediator----/     | +endpointA              [busi-actors] |
  *    |     /     |    |        |   |  |   |                            |
  *    |    /      |    |        |   |  |   +roomA                       |
  *    | conn    conn   |        |   |  |      |                         |
  *    | conn    conn   |        |   |  |      |                         |
- *    |                |        |   |  |      \---> channelA            |
- *    +================+        |   |  |      \---> channleB            |
- *                              |   |  |                                |
- *                              |   |  +roomB                           |
- *                              |   |     |                             |
- *                              |   |     |                             |
- *                              |   |     \---> channelA                |
- *                              |   |     \---> channelB                |
- *                              |   |                                   |
- *                              |   \---> channelA                      |
- *                              |   \---> channelB                      |
- *                              +=======================================+
+ *    | /              |        |   |  |      \---> channelA            |
+ *    +=|==============+        |   |  |      \---> channleB            |
+ *      |                       |   |  |                                |
+ *      \                       |   |  +roomB                           |
+ *       \                      |   |     |                             |
+ *    +---|-------------+       |   |     |                             |
+ *    |   | resolver    |       |   |     \---> channelA --> [observer]-----\
+ *    +---|-------------+       |   |     \---> channelB                |   |
+ *        |                     |   |                                   |   |
+ *        |                     |   \---> channelA                      |   |
+ *        |                     |   \---> channelB                      |   |
+ *        |                     +=======================================+   |
+ *        |                                                                 |
+ *        |                                                                 |
+ *        \-----------------------------------------------------------------/
  *
  *
  * @Note Akka can do millions of messages per second per actor per core.
  */
 object Namespace {
 
-  final case class RemoveNamespace(namespace: String)
   final case class Subscribe[T <: OnData](observer: Observer[T])(implicit val tag: TypeTag[T])
-  final case class SubscribeBroadcast(endpoint: String, ref: ActorRef)
-  final case class UnsubscribeBroadcast(endpoint: String, ref: ActorRef)
 
   // --- Observable data
   sealed trait OnData {
@@ -76,7 +72,7 @@ object Namespace {
     def replyEvent(name: String, args: String)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendEvent(context.sessionId, endpoint, name, Left(args))
     def replyEvent(name: String, args: Seq[String])(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendEvent(context.sessionId, endpoint, name, Right(args))
     def reply(packets: Packet*)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendPackets(context.sessionId, packets)
-    def broadcast(packet: Packet)(implicit resolver: ActorRef) {} //TODO
+    def broadcast(topic: String, packet: Packet)(implicit resolver: ActorRef) = resolver ! ConnectionActive.Broadcast(context.sessionId, topic, packet)
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnDisconnect(context: ConnectionContext)(implicit val endpoint: String) extends OnData
@@ -88,16 +84,7 @@ object Namespace {
     tryDispatch(system, props, endpoint, Subscribe(observer))
   }
 
-  def subscribeBroadcast(endpoint: String, connectionActive: ActorRef)(system: ActorSystem) {
-    dispatch(system, endpoint, SubscribeBroadcast(endpoint, connectionActive))
-  }
-
-  def unsubscribeBroadcast(endpoint: String, connectionActive: ActorRef)(system: ActorSystem) {
-    dispatch(system, endpoint, UnsubscribeBroadcast(endpoint, connectionActive))
-  }
-
   def actorPath(namespace: String) = "/user/" + namespace
-
   def tryDispatch(system: ActorSystem, props: Props, endpoint: String, msg: Any) {
     val namespace = socketio.namespaceFor(endpoint)
     import system.dispatcher
@@ -105,24 +92,15 @@ object Namespace {
       case _: Throwable => system.actorOf(props, name = namespace)
     } map (_ ! msg)
   }
-
-  def dispatch(system: ActorSystem, endpoint: String, msg: Any) {
-    val namespace = socketio.namespaceFor(endpoint)
-    import system.dispatcher
-    system.actorSelection(actorPath(namespace)) ! msg
-  }
-
 }
 
 /**
- * Namespace is refered to endpoint fo packets
+ * Namespace is refered to endpoint for observers
  */
 trait Namespace extends Actor with ActorLogging {
   import Namespace._
 
   implicit def endpoint: String
-
-  private var subsrcriptions = Set[ActorRef]()
 
   val connectChannel = Subject[OnConnect]()
   val disconnectChannel = Subject[OnDisconnect]()
@@ -145,23 +123,11 @@ trait Namespace extends Actor with ActorLogging {
         }
       }
 
-    case x @ SubscribeBroadcast(endpoint, ref) =>
-      context.watch(ref)
-      subsrcriptions += ref
-
-    case x @ UnsubscribeBroadcast(endpoint, ref) =>
-      context.unwatch(ref)
-      subsrcriptions -= ref
-
-    case ConnectionActive.OnPacket(packet: ConnectPacket, connContext) => connectChannel.onNext(OnConnect(packet.args, connContext))
+    case ConnectionActive.OnPacket(packet: ConnectPacket, connContext)    => connectChannel.onNext(OnConnect(packet.args, connContext))
     case ConnectionActive.OnPacket(packet: DisconnectPacket, connContext) => disconnectChannel.onNext(OnDisconnect(connContext))
-    case ConnectionActive.OnPacket(packet: MessagePacket, connContext) => messageChannel.onNext(OnMessage(packet.data, connContext))
-    case ConnectionActive.OnPacket(packet: JsonPacket, connContext) => jsonChannel.onNext(OnJson(packet.json, connContext))
-    case ConnectionActive.OnPacket(packet: EventPacket, connContext) => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
-
-    case x @ ConnectionActive.OnBroadcast(endpoint, packet, sessionId) => subsrcriptions foreach (_ ! x)
-
-    case Terminated(ref) => subsrcriptions -= ref
+    case ConnectionActive.OnPacket(packet: MessagePacket, connContext)    => messageChannel.onNext(OnMessage(packet.data, connContext))
+    case ConnectionActive.OnPacket(packet: JsonPacket, connContext)       => jsonChannel.onNext(OnJson(packet.json, connContext))
+    case ConnectionActive.OnPacket(packet: EventPacket, connContext)      => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
   }
 
 }

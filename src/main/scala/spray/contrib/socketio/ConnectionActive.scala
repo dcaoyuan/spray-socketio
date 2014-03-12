@@ -28,50 +28,56 @@ object ConnectionActive {
 
   case object AskConnectedTime
 
-  case object Pause
-  case object Awake
-  final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext)
+  sealed trait Event extends Serializable
+  final case class Connected(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Event
+  final case class UpdatePackets(packets: Seq[Packet]) extends Event
 
   sealed trait Command {
     def sessionId: String
   }
 
   final case class CreateSession(sessionId: String) extends Command
-
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command
 
+  // called by connection
+  final case class OnGet(sessionId: String, transportConnection: ActorRef) extends Command
+  final case class OnPost(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
+  final case class OnFrame(sessionId: String, transportConnection: ActorRef, frame: TextFrame) extends Command
+
+  // called business logic
   final case class SendMessage(sessionId: String, endpoint: String, msg: String) extends Command
   final case class SendJson(sessionId: String, endpoint: String, json: String) extends Command
   final case class SendEvent(sessionId: String, endpoint: String, name: String, args: Either[String, Seq[String]]) extends Command
   final case class SendPackets(sessionId: String, packets: Seq[Packet]) extends Command
 
-  final case class OnPayload(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
-  final case class OnGet(sessionId: String, transportConnection: ActorRef) extends Command
-  final case class OnPost(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
-  final case class OnFrame(sessionId: String, transportConnection: ActorRef, frame: TextFrame) extends Command
+  /**
+   * ask me to publish an OnBroadcast data
+   */
+  final case class Broadcast(sessionId: String, topic: String, packet: Packet) extends Command
 
-  final case class SendBroadcast(sessionId: String, endpoint: String, packet: Packet) extends Command
-  final case class OnBroadcast(senderSessionId: String, endpoint: String, packet: Packet)
+  /**
+   * Broadcast event to be publish or recevived
+   */
+  final case class OnBroadcast(sessionId: String, topic: String, packet: Packet)
 
-  sealed trait Event extends Serializable
-  final case class Connected(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Event
-  final case class UpdatePackets(packets: Seq[Packet]) extends Event
-
-  def broadcast(sessionId: String, endpoint: String, packet: Packet)(implicit resolver: ActorRef) {
-    resolver ! SendBroadcast(sessionId, endpoint, packet)
-  }
+  /**
+   * Packet event to be publish
+   */
+  final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext)
 }
 
 /**
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-trait ConnectionActive { actor: Actor =>
+trait ConnectionActive { _: Actor =>
   import ConnectionActive._
   import context.dispatcher
 
   def log: LoggingAdapter
-  def publishMessage(msg: Any)(ctx: ConnectionContext)
+  def publishMessage(msg: Any)
+  def subscribe(topic: String)
+  def unsubscribe(topic: String)
 
   var connectionContext: Option[ConnectionContext] = None
   var transportConnection: ActorRef = _
@@ -133,18 +139,17 @@ trait ConnectionActive { actor: Actor =>
           processNewConnected(Connected(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
-    case Pause =>
-
-    case OnFrame(sessionId, transportConnection, frame) => onFrame(transportConnection, frame)
-    case OnGet(sessionId, transportConnection) => onGet(transportConnection)
+    case OnFrame(sessionId, transportConnection, frame)  => onFrame(transportConnection, frame)
+    case OnGet(sessionId, transportConnection)           => onGet(transportConnection)
     case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)
 
-    case SendMessage(sessionId, endpoint, msg) => sendMessage(endpoint, msg)
-    case SendJson(sessionId, endpoint, json) => sendJson(endpoint, json)
-    case SendEvent(sessionId, endpoint, name, args) => sendEvent(endpoint, name, args)
-    case SendPackets(sessionId, packets) => sendPacket(packets: _*)
+    case SendMessage(sessionId, endpoint, msg)           => sendMessage(endpoint, msg)
+    case SendJson(sessionId, endpoint, json)             => sendJson(endpoint, json)
+    case SendEvent(sessionId, endpoint, name, args)      => sendEvent(endpoint, name, args)
+    case SendPackets(sessionId, packets)                 => sendPacket(packets: _*)
 
-    case SendBroadcast(sessionId, endpoint, packet) => connectionContext foreach publishMessage(packet)
+    case Broadcast(sessionId, topic, packet)             => publishMessage(OnBroadcast(sessionId, topic, packet))
+    case OnBroadcast(senderSessionId, topic, packet)     => sendPacket(packet) // write to client
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
@@ -210,21 +215,23 @@ trait ConnectionActive { actor: Actor =>
       case ConnectPacket(endpoint, args) =>
         // bounce connect packet back to client
         sendPacket(packet)
-        connectionContext foreach publishMessage(packet)
-        //Namespace.subscribeBroadcast(endpoint, self)(context.system)
+        connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
         topics += endpoint
+        subscribe(endpoint)
 
       case DisconnectPacket(endpoint) =>
-        connectionContext foreach publishMessage(packet)
-        //Namespace.unsubscribeBroadcast(endpoint, self)(context.system)
+        connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
         topics -= endpoint
         if (endpoint == "") {
+          topics foreach unsubscribe
           topics = Set()
           context.stop(self)
+        } else {
+          unsubscribe(endpoint)
         }
 
       case _ =>
-        connectionContext foreach publishMessage(packet)
+        connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
     }
   }
 

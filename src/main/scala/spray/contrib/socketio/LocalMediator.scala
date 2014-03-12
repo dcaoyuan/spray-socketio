@@ -9,15 +9,6 @@ import akka.actor.Terminated
 import scala.collection.concurrent
 
 object LocalMediator {
-  private val topicToSubscitptions = concurrent.TrieMap[String, Set[ActorRef]]()
-
-  val name = "localmediator"
-
-  final case class Subscribe(topic: String, subscitption: ActorRef)
-  final case class Unsubscribe(topic: String, subscitption: ActorRef)
-  final case class Publish(topic: String, msg: Any)
-  case object SubscribeAck
-
   private var mediator: ActorRef = _
   def apply(system: ActorSystem): ActorRef = {
     if (mediator == null) {
@@ -25,6 +16,15 @@ object LocalMediator {
     }
     mediator
   }
+
+  private val topicToSubscitptions = concurrent.TrieMap[String, Set[ActorRef]]()
+
+  val name = "localmediator"
+
+  case object SubscribeAck
+  final case class Subscribe(topic: String, subscitption: ActorRef)
+  final case class Unsubscribe(topic: String, subscitption: ActorRef)
+  final case class Publish(topic: String, msg: Any)
 }
 
 class LocalMediator extends Actor with ActorLogging {

@@ -6,7 +6,6 @@ import scala.util.Failure
 import scala.util.Success
 import spray.contrib.socketio
 import scala.concurrent.duration._
-import scala.reflect.runtime.universe._
 
 /**
  * Namespace is refered to endpoint fo packets

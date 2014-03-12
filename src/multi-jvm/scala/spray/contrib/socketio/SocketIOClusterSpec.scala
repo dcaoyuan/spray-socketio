@@ -151,13 +151,13 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "startup server" in within(15.seconds) {
       runOn(transport1) {
         val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
-        val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], resolver), "socketio")
+        val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], resolver), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port1)
       }
 
       runOn(transport2) {
         val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
-        val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], resolver), "socketio")
+        val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], resolver), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port2)
       }
 

@@ -4,7 +4,6 @@ import akka.actor.{ ActorLogging }
 import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtension, ShardRegion }
 import akka.persistence.{ PersistenceFailure, EventsourcedProcessor }
 import spray.contrib.socketio
-import spray.contrib.socketio.packet.Packet
 
 object ClusterConnectionActive {
   lazy val idExtractor: ShardRegion.IdExtractor = {
@@ -28,11 +27,18 @@ class ClusterConnectionActive extends ConnectionActive with EventsourcedProcesso
 
   val mediator = DistributedPubSubExtension(context.system).mediator
 
-  def publishMessage(msg: Any)(ctx: ConnectionContext) {
+  def publishMessage(msg: Any) {
     msg match {
-      case packet: Packet => mediator ! DistributedPubSubMediator.Publish(socketio.namespaceFor(packet.endpoint), OnPacket(packet, ctx))
-      case x: OnBroadcast => mediator ! DistributedPubSubMediator.Publish(socketio.namespaceFor(x.endpoint), x)
+      case x: OnPacket[_] => mediator ! DistributedPubSubMediator.Publish(socketio.namespaceFor(x.packet.endpoint), x)
     }
+  }
+
+  def subscribe(topic: String) {
+    mediator ! DistributedPubSubMediator.Subscribe(topic, self)
+  }
+
+  def unsubscribe(topic: String) {
+    mediator ! DistributedPubSubMediator.Unsubscribe(topic, self)
   }
 
   def receiveRecover: Receive = {

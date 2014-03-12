@@ -38,8 +38,7 @@ package object socketio {
 
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout")
 
-  val DEFAULT_NAMESPACE = "socket.io"
-  val NAMESPACES = "socketio-namespaces"
+  val DEFAULT_NAMESPACE = "socketio-namespace"
 
   def namespaceFor(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
   def endpointFor(namespace: String) = if (namespace == DEFAULT_NAMESPACE) "" else namespace

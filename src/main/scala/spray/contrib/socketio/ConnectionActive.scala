@@ -80,11 +80,12 @@ object ConnectionActive {
   final case class SendBroadcast(sessionId: String, endpoint: String, packet: Packet) extends Command
   final case class OnBroadcast(senderSessionId: String, endpoint: String, packet: Packet)
 
-  sealed trait Event
-  final case class Connected(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin]) extends Event
+  sealed trait Event extends Serializable
+  final case class Connected(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Event
+  final case class UpdatePackets(packets: Seq[Packet]) extends Event
 
   def broadcast(sessionId: String, endpoint: String, packet: Packet)(implicit resolver: ActorRef) {
-    resolver ! SendBroadcast(sessionId, endpoint, packet))
+    resolver ! SendBroadcast(sessionId, endpoint, packet)
   }
 }
 
@@ -97,8 +98,8 @@ class GeneralConnectionActive extends ConnectionActive with Actor with ActorLogg
 
   def publishMessage(msg: Any)(ctx: ConnectionContext) {
     msg match {
-      case packet: Packet => Namespace.dispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
-      case x: OnBroadcast => Namespace.dispatch(context.system, x.endpoint, x)
+      case x: Packet => Namespace.dispatch(context.system, x.endpoint, Namespace.OnPacket(x, ctx))
+      case x: ConnectionActive.OnBroadcast => Namespace.dispatch(context.system, x.endpoint, x)
     }
   }
 }
@@ -140,14 +141,22 @@ trait ConnectionActive { actor: Actor =>
 
   def update(event: Event) = {
     event match {
-      case Connected(sessionId, query, origins) => connectionContext = Some(new ConnectionContext(sessionId, query, origins))
+      case x: Connected =>
+        connectionContext = Some(new ConnectionContext(x.sessionId, x.query, x.origins))
+        transportConnection = x.transportConnection
+        connectionContext.foreach(_.bindTransport(x.transport))
+      case x: UpdatePackets =>
+        pendingPackets = immutable.Queue(x.packets: _*)
     }
   }
 
-  def processNewConnecting(connecting: Connecting) {
-    update(Connected(connecting.sessionId, connecting.query, connecting.origins))
-    connectionContext.foreach(_.bindTransport(connecting.transport))
+  def processNewConnected(conn: Connected) {
+    update(conn)
     connected()
+  }
+
+  def processUpdatePackets(packets: UpdatePackets) {
+    update(packets)
   }
 
   def working: Receive = {
@@ -157,13 +166,13 @@ trait ConnectionActive { actor: Actor =>
       log.debug("Connecting request: {}", sessionId)
       disableCloseTimeout()
 
-      transportConnection = transportConn
       connectionContext match {
         case Some(existed) =>
+          transportConnection = transportConn
           existed.bindTransport(transport)
           connected()
         case None =>
-          processNewConnecting(conn)
+          processNewConnected(Connected(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
     case Pause =>
@@ -177,7 +186,7 @@ trait ConnectionActive { actor: Actor =>
     case SendEvent(sessionId, endpoint, name, args) => sendEvent(endpoint, name, args)
     case SendPackets(sessionId, packets) => sendPacket(packets: _*)
 
-    case SendBroadcast(sessionId, endpoint, packet) => publishPacket(packet)
+    case SendBroadcast(sessionId, endpoint, packet) => connectionContext foreach publishMessage(packet)
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
@@ -192,9 +201,7 @@ trait ConnectionActive { actor: Actor =>
   def enableHeartbeat() {
     log.debug("{}: heartbeat enabled.", self.path)
     if (heartbeatHandler.isEmpty || heartbeatHandler.nonEmpty && heartbeatHandler.get.isCancelled) {
-      heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
-          sendPacket(HeartbeatPacket)
-        })
+      heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds, self, SendPackets(null, List(HeartbeatPacket))))
     }
   }
 
@@ -212,11 +219,13 @@ trait ConnectionActive { actor: Actor =>
   def enableCloseTimeout() {
     log.debug("{}: close timeout, will close in {} seconds", self.path, socketio.Settings.CloseTimeout)
     closeTimeout foreach (_.cancel)
-    closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-        log.warning("{}: stoped due to close timeout", self.path)
-        disableHeartbeat()
-        context.stop(self)
-      })
+    if (context != null) {
+      closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
+          log.warning("{}: stoped due to close timeout", self.path)
+          disableHeartbeat()
+          context.stop(self)
+        })
+    }
   }
 
   def disableCloseTimeout() {
@@ -243,12 +252,12 @@ trait ConnectionActive { actor: Actor =>
       case ConnectPacket(endpoint, args) =>
         // bounce connect packet back to client
         sendPacket(packet)
-        connectionContext foreach publishPacket(packet)
+        connectionContext foreach publishMessage(packet)
         Namespace.subscribeBroadcast(endpoint, self)(context.system)
         topics += endpoint
 
       case DisconnectPacket(endpoint) =>
-        connectionContext foreach publishPacket(packet)
+        connectionContext foreach publishMessage(packet)
         Namespace.unsubscribeBroadcast(endpoint, self)(context.system)
         topics -= endpoint
         if (endpoint == "") {
@@ -257,7 +266,7 @@ trait ConnectionActive { actor: Actor =>
         }
 
       case _ =>
-        connectionContext foreach publishPacket(packet)
+        connectionContext foreach publishMessage(packet)
     }
   }
 
@@ -269,7 +278,7 @@ trait ConnectionActive { actor: Actor =>
   def onGet(transportConnection: ActorRef) {
     disableCloseTimeout()
     connectionContext foreach { ctx =>
-      pendingPackets = ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
+      processUpdatePackets(UpdatePackets(ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)))
     }
   }
 
@@ -304,11 +313,13 @@ trait ConnectionActive { actor: Actor =>
    * enqueue packets, and let tranport decide if flush them or pending flush
    */
   def sendPacket(packets: Packet*) {
-    packets foreach { packet => pendingPackets = pendingPackets.enqueue(packet) }
+    var updatePendingPackets = pendingPackets
+    packets foreach { packet => updatePendingPackets = updatePendingPackets.enqueue(packet) }
     log.debug("Enqueued {}, pendingPackets: {}", packets, pendingPackets)
     connectionContext foreach { ctx =>
-      pendingPackets = ctx.transport.flushOrWait(ctx, transportConnection, pendingPackets: immutable.Queue[Packet])
+      updatePendingPackets = ctx.transport.flushOrWait(ctx, transportConnection, updatePendingPackets)
     }
+    processUpdatePackets(UpdatePackets(updatePendingPackets))
   }
 }
 

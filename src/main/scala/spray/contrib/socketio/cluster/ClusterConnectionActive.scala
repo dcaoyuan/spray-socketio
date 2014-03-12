@@ -1,11 +1,11 @@
 package spray.contrib.socketio.cluster
 
-import akka.actor.{ActorLogging, ActorRef, ActorSystem}
+import akka.actor.{ ActorLogging, ActorRef, ActorSystem }
 import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtension, ShardRegion, ClusterSharding }
 import akka.persistence.EventsourcedProcessor
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.Packet
-import spray.contrib.socketio.{Namespace, ConnectionContext, ConnectionActive}
+import spray.contrib.socketio.{ Namespace, ConnectionContext, ConnectionActive }
 
 object ClusterConnectionActive {
   lazy val idExtractor: ShardRegion.IdExtractor = {
@@ -47,8 +47,11 @@ class ClusterConnectionActive extends ConnectionActive with EventsourcedProcesso
     }
   }
 
-  override def dispatchData(packet: Packet)(ctx: ConnectionContext) {
-    mediator ! Publish(Namespace.namespaceFor(packet.endpoint), Namespace.OnPacket(packet, ctx))
+  def publishMessage(msg: Any)(ctx: ConnectionContext) {
+    msg match {
+      case packet: Packet => mediator ! Publish(Namespace.namespaceFor(packet.endpoint), Namespace.OnPacket(packet, ctx))
+      case x: OnBroadcast => mediator ! Publish(Namespace.namespaceFor(x.endpoint), x)
+    }
   }
 }
 

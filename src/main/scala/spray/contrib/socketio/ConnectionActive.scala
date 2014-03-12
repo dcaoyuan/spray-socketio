@@ -5,6 +5,7 @@ import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.actor.Cancellable
 import akka.actor.Props
+import akka.actor.Terminated
 import akka.event.LoggingAdapter
 import akka.util.ByteString
 import org.parboiled2.ParseError
@@ -12,6 +13,7 @@ import scala.collection.immutable
 import scala.concurrent.duration._
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
+import spray.contrib.socketio.Namespace.OnPacket
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
@@ -31,7 +33,9 @@ class GeneralConnectionActiveResolver extends Actor with ActorLogging {
     case ConnectionActive.CreateSession(sessionId: String) =>
       context.child(sessionId) match {
         case Some(_) =>
-        case None    => context.actorOf(Props(classOf[GeneralConnectionActive]), name = sessionId)
+        case None =>
+          val connectActive = context.actorOf(Props(classOf[GeneralConnectionActive]), name = sessionId)
+          context.watch(connectActive)
       }
 
     case cmd: ConnectionActive.Command =>
@@ -39,6 +43,9 @@ class GeneralConnectionActiveResolver extends Actor with ActorLogging {
         case Some(ref) => ref forward cmd
         case None      => log.warning("Failed to select actor {}", cmd.sessionId)
       }
+
+    case Terminated(ref) =>
+
   }
 }
 
@@ -70,11 +77,16 @@ object ConnectionActive {
   final case class OnPost(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
   final case class OnFrame(sessionId: String, transportConnection: ActorRef, frame: TextFrame) extends Command
 
+  final case class SendBroadcast(sessionId: String, endpoint: String, packet: Packet) extends Command
+  final case class OnBroadcast(senderSessionId: String, endpoint: String, packet: Packet)
+
   sealed trait Event
   final case class Connected(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin]) extends Event
 
+  def broadcast(sessionId: String, endpoint: String, packet: Packet)(implicit resolver: ActorRef) {
+    resolver ! SendBroadcast(sessionId, endpoint, packet))
+  }
 }
-
 
 class GeneralConnectionActive extends ConnectionActive with Actor with ActorLogging {
 
@@ -82,6 +94,13 @@ class GeneralConnectionActive extends ConnectionActive with Actor with ActorLogg
   enableCloseTimeout()
 
   def receive = working
+
+  def publishMessage(msg: Any)(ctx: ConnectionContext) {
+    msg match {
+      case packet: Packet => Namespace.dispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
+      case x: OnBroadcast => Namespace.dispatch(context.system, x.endpoint, x)
+    }
+  }
 }
 
 /**
@@ -93,6 +112,7 @@ trait ConnectionActive { actor: Actor =>
   import context.dispatcher
 
   def log: LoggingAdapter
+  def publishMessage(msg: Any)(ctx: ConnectionContext)
 
   var connectionContext: Option[ConnectionContext] = None
   var transportConnection: ActorRef = _
@@ -105,6 +125,7 @@ trait ConnectionActive { actor: Actor =>
   var heartbeatTimeout: Option[Cancellable] = None
 
   var pendingPackets = immutable.Queue[Packet]()
+  var topics = immutable.Set[String]()
 
   val startTime = System.currentTimeMillis
 
@@ -156,6 +177,8 @@ trait ConnectionActive { actor: Actor =>
     case SendEvent(sessionId, endpoint, name, args) => sendEvent(endpoint, name, args)
     case SendPackets(sessionId, packets) => sendPacket(packets: _*)
 
+    case SendBroadcast(sessionId, endpoint, packet) => publishPacket(packet)
+
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
   }
@@ -170,8 +193,8 @@ trait ConnectionActive { actor: Actor =>
     log.debug("{}: heartbeat enabled.", self.path)
     if (heartbeatHandler.isEmpty || heartbeatHandler.nonEmpty && heartbeatHandler.get.isCancelled) {
       heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds) {
-        sendPacket(HeartbeatPacket)
-      })
+          sendPacket(HeartbeatPacket)
+        })
     }
   }
 
@@ -180,8 +203,8 @@ trait ConnectionActive { actor: Actor =>
   def resetHeartbeatTimeout() {
     heartbeatTimeout foreach (_.cancel)
     heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.HeartbeatTimeout.seconds) {
-      enableCloseTimeout()
-    })
+        enableCloseTimeout()
+      })
   }
 
   // --- close timeout
@@ -190,10 +213,10 @@ trait ConnectionActive { actor: Actor =>
     log.debug("{}: close timeout, will close in {} seconds", self.path, socketio.Settings.CloseTimeout)
     closeTimeout foreach (_.cancel)
     closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-      log.warning("{}: stoped due to close timeout", self.path)
-      disableHeartbeat()
-      context.stop(self)
-    })
+        log.warning("{}: stoped due to close timeout", self.path)
+        disableHeartbeat()
+        context.stop(self)
+      })
   }
 
   def disableCloseTimeout() {
@@ -220,21 +243,22 @@ trait ConnectionActive { actor: Actor =>
       case ConnectPacket(endpoint, args) =>
         // bounce connect packet back to client
         sendPacket(packet)
-        connectionContext foreach dispatchData(packet)
+        connectionContext foreach publishPacket(packet)
+        Namespace.subscribeBroadcast(endpoint, self)(context.system)
+        topics += endpoint
 
       case DisconnectPacket(endpoint) =>
-        connectionContext foreach dispatchData(packet)
+        connectionContext foreach publishPacket(packet)
+        Namespace.unsubscribeBroadcast(endpoint, self)(context.system)
+        topics -= endpoint
         if (endpoint == "") {
+          topics = Set()
           context.stop(self)
         }
 
       case _ =>
-        connectionContext foreach dispatchData(packet)
+        connectionContext foreach publishPacket(packet)
     }
-  }
-
-  def dispatchData(packet: Packet)(ctx: ConnectionContext) {
-    Namespace.dispatch(context.system, packet.endpoint, Namespace.OnPacket(packet, ctx))
   }
 
   def onFrame(transportConnection: ActorRef, frame: TextFrame) {

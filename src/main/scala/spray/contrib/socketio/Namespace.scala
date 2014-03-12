@@ -5,13 +5,12 @@ import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.actor.Props
+import akka.actor.Terminated
+import akka.pattern.ask
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
 import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
-import scala.concurrent.Future
-import scala.util.Failure
-import scala.util.Success
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DisconnectPacket
@@ -26,22 +25,35 @@ import spray.http.Uri
 /**
  *
  *
- *   [client1 events] [client2 events]  ... [clientN events]
- *          |               |                      |
- *          |               |                      |
- *          V               V                      V
- *   +-----------------------------------------------------+
- *   |                    endpoint                         |
- *   +-----------------------------------------------------+
- *               |                             |
- *               |                             |
- *               V                             V
- *         [namespace1]                  [namespace2]
- *               |
- *               |
- * (channel1)    +---> [************] -->
- * (channel2)    +---> [+++++++++] -->
- * (channelN)    +---> [$$$$$$$] -->
+ *    +======node======+
+ *    |       mediator----\
+ *    |     /     |    |  |
+ *    |    /      |    |  |
+ *    | conn    conn   |  |
+ *    | conn    conn   |  +---------------------------------------------------+
+ *    |                |  |                  vitaul MEDIATOR                  |
+ *    +================+  +---------------------------------------------------+
+ *                        |       |
+ *                        |       |
+ *    +======node======+  |     +=|=============busi-node===============+
+ *    |       mediator----/     | +endpointA              busi-actor(s) |
+ *    |     /     |    |        |   |  |   |                            |
+ *    |    /      |    |        |   |  |   +roomA                       |
+ *    | conn    conn   |        |   |  |      |                         |
+ *    | conn    conn   |        |   |  |      |                         |
+ *    |                |        |   |  |      \---> channelA            |
+ *    +================+        |   |  |      \---> channleB            |
+ *                              |   |  |                                |
+ *                              |   |  +roomB                           |
+ *                              |   |     |                             |
+ *                              |   |     |                             |
+ *                              |   |     \---> channelA                |
+ *                              |   |     \---> channelB                |
+ *                              |   |                                   |
+ *                              |   \---> channelA                      |
+ *                              |   \---> channelB                      |
+ *                              +=======================================+
+ *
  *
  * @Note Akka can do millions of messages per second per actor per core.
  */
@@ -54,7 +66,8 @@ object Namespace {
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transport: Transport)
   final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext)
   final case class Subscribe[T <: OnData](observer: Observer[T])(implicit val tag: TypeTag[T])
-  final case class Broadcast(packet: Packet)
+  final case class SubscribeBroadcast(endpoint: String, ref: ActorRef)
+  final case class UnsubscribeBroadcast(endpoint: String, ref: ActorRef)
 
   // --- Observable data
   sealed trait OnData {
@@ -76,6 +89,14 @@ object Namespace {
 
   def subscribe[T <: OnData: TypeTag](endpoint: String, observer: Observer[T])(system: ActorSystem, props: Props) {
     tryDispatch(system, props, endpoint, Subscribe(observer))
+  }
+
+  def subscribeBroadcast(endpoint: String, connectionActive: ActorRef)(system: ActorSystem) {
+    dispatch(system, endpoint, SubscribeBroadcast(endpoint, connectionActive))
+  }
+
+  def unsubscribeBroadcast(endpoint: String, connectionActive: ActorRef)(system: ActorSystem) {
+    dispatch(system, endpoint, UnsubscribeBroadcast(endpoint, connectionActive))
   }
 
   def namespaceFor(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
@@ -109,45 +130,48 @@ trait Namespace extends Actor with ActorLogging {
 
   implicit def endpoint: String
 
+  private var subsrcriptions = Set[ActorRef]()
+
   val connectChannel = Subject[OnConnect]()
   val disconnectChannel = Subject[OnDisconnect]()
   val messageChannel = Subject[OnMessage]()
   val jsonChannel = Subject[OnJson]()
   val eventChannel = Subject[OnEvent]()
 
-  def noticeSubscribe(endpoint: String): Future[Any] = {
-    Future.successful(true)
+  def noticeSubscribe(endpoint: String) {
+    // override it if neccesary.
   }
 
   def receive: Receive = {
-    case OnPacket(packet: ConnectPacket, connContext)    => connectChannel.onNext(OnConnect(packet.args, connContext))
-    case OnPacket(packet: DisconnectPacket, connContext) => disconnectChannel.onNext(OnDisconnect(connContext))
-    case OnPacket(packet: MessagePacket, connContext)    => messageChannel.onNext(OnMessage(packet.data, connContext))
-    case OnPacket(packet: JsonPacket, connContext)       => jsonChannel.onNext(OnJson(packet.json, connContext))
-    case OnPacket(packet: EventPacket, connContext)      => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
-
     case x @ Subscribe(observer) =>
-      noticeSubscribe(endpoint).onComplete {
-        case Success(_) =>
-          x.tag.tpe match {
-            case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
-            case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])
-            case t if t =:= typeOf[OnMessage]    => messageChannel(observer.asInstanceOf[Observer[OnMessage]])
-            case t if t =:= typeOf[OnJson]       => jsonChannel(observer.asInstanceOf[Observer[OnJson]])
-            case t if t =:= typeOf[OnEvent]      => eventChannel(observer.asInstanceOf[Observer[OnEvent]])
-            case _                               =>
-          }
-        case Failure(ex) =>
-          log.warning("Failed on subscribe {}. due to {}", observer, ex.getMessage)
+      noticeSubscribe(endpoint)
+
+      x.tag.tpe match {
+        case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
+        case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])
+        case t if t =:= typeOf[OnMessage]    => messageChannel(observer.asInstanceOf[Observer[OnMessage]])
+        case t if t =:= typeOf[OnJson]       => jsonChannel(observer.asInstanceOf[Observer[OnJson]])
+        case t if t =:= typeOf[OnEvent]      => eventChannel(observer.asInstanceOf[Observer[OnEvent]])
+        case _                               =>
       }
 
-    case Broadcast(packet) =>
-      gossip(packet)
+    case x @ SubscribeBroadcast(endpoint, ref) =>
+      context.watch(ref)
+      subsrcriptions += ref
 
-  }
+    case x @ UnsubscribeBroadcast(endpoint, ref) =>
+      context.unwatch(ref)
+      subsrcriptions -= ref
 
-  def gossip(packet: Packet) {
-    //connections foreach (_._2.transport.sendPacket(packet))
+    case OnPacket(packet: ConnectPacket, connContext) => connectChannel.onNext(OnConnect(packet.args, connContext))
+    case OnPacket(packet: DisconnectPacket, connContext) => disconnectChannel.onNext(OnDisconnect(connContext))
+    case OnPacket(packet: MessagePacket, connContext) => messageChannel.onNext(OnMessage(packet.data, connContext))
+    case OnPacket(packet: JsonPacket, connContext) => jsonChannel.onNext(OnJson(packet.json, connContext))
+    case OnPacket(packet: EventPacket, connContext) => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext))
+
+    case x @ ConnectionActive.OnBroadcast(endpoint, packet, sessionId) => subsrcriptions foreach (_ ! x)
+
+    case Terminated(ref) => subsrcriptions -= ref
   }
 
 }

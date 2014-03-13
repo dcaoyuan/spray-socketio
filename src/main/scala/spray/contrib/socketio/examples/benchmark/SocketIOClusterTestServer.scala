@@ -20,6 +20,7 @@ import spray.contrib.socketio.namespace.ClusterNamespace
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.ClusterConnectionActive
+import spray.contrib.socketio.packet.MessagePacket
 
 object SocketIOClusterTestServer extends App {
 
@@ -75,6 +76,9 @@ object SocketIOClusterTestServer extends App {
         case OnEvent("chat", args, context) =>
           spray.json.JsonParser(args) // test spray-json performance too.
           next.replyEvent("chat", args)
+        case OnEvent("broadcast", args, context) =>
+          //FIXME how to get endpoint in observer?
+          next.broadcast(socketio.DEFAULT_NAMESPACE, MessagePacket(0, false, socketio.DEFAULT_NAMESPACE, args))
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }

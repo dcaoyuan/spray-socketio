@@ -2,7 +2,6 @@ package spray.contrib.socketio.examples.benchmark
 
 import akka.actor.ActorRef
 import akka.io.IO
-import scala.collection.mutable
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket
@@ -11,8 +10,7 @@ import spray.contrib.socketio
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.OnClose
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.OnOpen
-import spray.contrib.socketio.packet.EventPacket
-import spray.contrib.socketio.packet.Packet
+import spray.contrib.socketio.packet.{MessagePacket, EventPacket, Packet}
 import spray.json.JsonParser
 import spray.json.JsArray
 import spray.json.JsObject
@@ -28,6 +26,7 @@ object SocketIOTestClient {
   val wsHandshakeReq = websocket.basicHandshakeRepuset("/mytest")
   case object SendTimestampedChat
   case object SendHello
+  case class SendBroadcast(msg: String)
 }
 
 class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socketio.SocketIOClientConnection {
@@ -39,6 +38,7 @@ class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socket
   def businessLogic: Receive = {
     case SocketIOTestClient.SendHello           => connection ! TextFrame("5:::{\"name\":\"hello\", \"args\":[]}")
     case SocketIOTestClient.SendTimestampedChat => connection ! TextFrame(timestampedChat)
+    case SocketIOTestClient.SendBroadcast(msg) => connection ! TextFrame( """5:::{"name":"broadcast", "args":""" + spray.json.JsString(msg).value + "}")
   }
 
   override def onDisconnected(endpoint: String) {
@@ -72,6 +72,7 @@ class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socket
             }
           case _ =>
         }
+      case msg: MessagePacket => report ! msg.data
       case _ =>
     }
 

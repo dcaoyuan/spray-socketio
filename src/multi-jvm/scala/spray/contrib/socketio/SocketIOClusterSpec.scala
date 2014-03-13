@@ -23,6 +23,7 @@ import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArriv
 import rx.lang.scala.Observer
 import spray.contrib.socketio.namespace.{Namespace, ClusterNamespace}
 import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.packet.MessagePacket
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -34,7 +35,8 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
   val connectionActive2 = role("connectionActive2")
   val business1 = role("business1")
 
-  val client = role("client")
+  val client1 = role("client1")
+  val client2 = role("client2")
 
   val host = "127.0.0.1"
 
@@ -73,6 +75,7 @@ class SocketIOClusterSpecMultiJvmNode4 extends SocketIOClusterSpec
 class SocketIOClusterSpecMultiJvmNode5 extends SocketIOClusterSpec
 class SocketIOClusterSpecMultiJvmNode6 extends SocketIOClusterSpec
 class SocketIOClusterSpecMultiJvmNode7 extends SocketIOClusterSpec
+class SocketIOClusterSpecMultiJvmNode8 extends SocketIOClusterSpec
 
 class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with STMultiNodeSpec with ImplicitSender {
 
@@ -169,6 +172,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
               case OnEvent("chat", args, context) =>
                 spray.json.JsonParser(args) // test spray-json too.
                 next.replyEvent("chat", args)(resolver)
+              case OnEvent("broadcast", args, context) =>
+                next.broadcast(DEFAULT_NAMESPACE, MessagePacket(0, false, DEFAULT_NAMESPACE, args))(resolver)
               case _ =>
                 println("observed: " + next.name + ", " + next.args)
             }
@@ -180,8 +185,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("startup-server")
     }
 
-    "chat with client and server1" in within(15.seconds) {
-      runOn(client) {
+    "chat with client1 and server1" in within(15.seconds) {
+      runOn(client1) {
         Thread.sleep(5000)
         val connect = Http.Connect(host, port1)
         val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
@@ -192,11 +197,41 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
             expectMsgPF() {
               case MessageArrived(time) => println("round time: " + time)
             }
+            client ! Http.CloseAll
           }
         }
       }
 
-      enterBarrier("finish")
+      enterBarrier("chat")
+    }
+
+    "broadcast" in within(15.seconds) {
+      val msg = "hello world"
+      runOn(client2) {
+        Thread.sleep(5000)
+        val connect = Http.Connect(host, port2)
+        val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
+
+        awaitAssert {
+          within(10.second) {
+            expectMsg(msg)
+          }
+        }
+      }
+      runOn(client1) {
+        Thread.sleep(5000)
+        val connect = Http.Connect(host, port1)
+        val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
+
+        awaitAssert {
+          within(10.second) {
+            client ! SocketIOTestClient.SendBroadcast(msg)
+            expectMsg(msg)
+          }
+        }
+      }
+
+      enterBarrier("broadcast")
     }
 
   }

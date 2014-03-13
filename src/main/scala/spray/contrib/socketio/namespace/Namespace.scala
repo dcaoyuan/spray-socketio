@@ -67,12 +67,13 @@ object Namespace {
     def context: ConnectionContext
     def endpoint: String
 
-    def replyMessage(msg: String)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendMessage(context.sessionId, endpoint, msg)
-    def replyJson(json: String)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendJson(context.sessionId, endpoint, json)
-    def replyEvent(name: String, args: String)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendEvent(context.sessionId, endpoint, name, Left(args))
-    def replyEvent(name: String, args: Seq[String])(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendEvent(context.sessionId, endpoint, name, Right(args))
-    def reply(packets: Packet*)(implicit resolver: ActorRef) = resolver ! ConnectionActive.SendPackets(context.sessionId, packets)
-    def broadcast(topic: String, packet: Packet)(implicit resolver: ActorRef) = resolver ! ConnectionActive.Broadcast(context.sessionId, topic, packet)
+    import ConnectionActive._
+    def replyMessage(msg: String)(implicit resolver: ActorRef) = resolver ! SendMessage(context.sessionId, endpoint, msg)
+    def replyJson(json: String)(implicit resolver: ActorRef) = resolver ! SendJson(context.sessionId, endpoint, json)
+    def replyEvent(name: String, args: String)(implicit resolver: ActorRef) = resolver ! SendEvent(context.sessionId, endpoint, name, Left(args))
+    def replyEvent(name: String, args: Seq[String])(implicit resolver: ActorRef) = resolver ! SendEvent(context.sessionId, endpoint, name, Right(args))
+    def reply(packets: Packet*)(implicit resolver: ActorRef) = resolver ! SendPackets(context.sessionId, packets)
+    def broadcast(topic: String, packet: Packet)(implicit resolver: ActorRef) = resolver ! Broadcast(context.sessionId, topic, packet)
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnDisconnect(context: ConnectionContext)(implicit val endpoint: String) extends OnData

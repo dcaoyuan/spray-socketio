@@ -13,6 +13,7 @@ import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.namespace.LocalNamespace
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.packet.EventPacket
 
 object SocketIOTestServer extends App {
 
@@ -41,7 +42,11 @@ object SocketIOTestServer extends App {
       next match {
         case OnEvent("chat", args, context) =>
           spray.json.JsonParser(args) // test spray-json performance too.
-          next.replyEvent("chat", args)
+          if (isBroadcast) {
+            next.broadcast("", EventPacket(-1L, false, "", "chat", args))
+          } else {
+            next.replyEvent("chat", args)
+          }
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }
@@ -53,5 +58,6 @@ object SocketIOTestServer extends App {
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val host = config.getString("host")
   val port = config.getInt("port")
+  val isBroadcast = config.getBoolean("broadcast")
   IO(UHttp) ! Http.Bind(server, host, port)
 }

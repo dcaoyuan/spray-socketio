@@ -44,7 +44,7 @@ object ConnectionActive {
   final case class OnPost(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
   final case class OnFrame(sessionId: String, transportConnection: ActorRef, frame: TextFrame) extends Command
 
-  // called business logic
+  // called by business logic
   final case class SendMessage(sessionId: String, endpoint: String, msg: String) extends Command
   final case class SendJson(sessionId: String, endpoint: String, json: String) extends Command
   final case class SendEvent(sessionId: String, endpoint: String, name: String, args: Either[String, Seq[String]]) extends Command
@@ -56,12 +56,12 @@ object ConnectionActive {
   final case class Broadcast(sessionId: String, topic: String, packet: Packet) extends Command
 
   /**
-   * Broadcast event to be publish or recevived
+   * Broadcast event to be published or recevived
    */
   final case class OnBroadcast(sessionId: String, topic: String, packet: Packet)
 
   /**
-   * Packet event to be publish
+   * Packet event to be published
    */
   final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext)
 }

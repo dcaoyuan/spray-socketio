@@ -21,8 +21,7 @@ import scala.Some
 import akka.actor.Identify
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
-import spray.contrib.socketio.namespace.ClusterConnectionActive
-import spray.contrib.socketio.namespace.ClusterNamespace
+import spray.contrib.socketio.namespace.{Namespace, ClusterNamespace}
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
@@ -175,7 +174,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
             }
           })
 
-        Namespace.subscribe(Namespace.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], Namespace.DEFAULT_NAMESPACE))
+        Namespace.subscribe(DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], DEFAULT_NAMESPACE))
       }
 
       enterBarrier("startup-server")

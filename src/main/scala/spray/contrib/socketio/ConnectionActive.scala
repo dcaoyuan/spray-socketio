@@ -216,18 +216,20 @@ trait ConnectionActive { _: Actor =>
         // bounce connect packet back to client
         sendPacket(packet)
         connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
-        topics += endpoint
-        subscribe(endpoint)
+        val topic = broadcastTopicFor(endpoint)
+        topics += topic
+        subscribe(topic)
 
       case DisconnectPacket(endpoint) =>
         connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
-        topics -= endpoint
+        val topic = broadcastTopicFor(endpoint)
+        topics -= topic
         if (endpoint == "") {
           topics foreach unsubscribe
           topics = Set()
           context.stop(self)
         } else {
-          unsubscribe(endpoint)
+          unsubscribe(topic)
         }
 
       case _ =>

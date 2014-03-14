@@ -21,7 +21,7 @@ import scala.Some
 import akka.actor.Identify
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
-import spray.contrib.socketio.namespace.{Namespace, ClusterNamespace}
+import spray.contrib.socketio.namespace.{ Namespace, ClusterNamespace }
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.MessagePacket
 
@@ -173,13 +173,13 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
                 spray.json.JsonParser(args) // test spray-json too.
                 next.replyEvent("chat", args)(resolver)
               case OnEvent("broadcast", args, context) =>
-                next.broadcast(DEFAULT_NAMESPACE, MessagePacket(0, false, DEFAULT_NAMESPACE, args))(resolver)
+                next.broadcast("", MessagePacket(0, false, "", args))(resolver)
               case _ =>
                 println("observed: " + next.name + ", " + next.args)
             }
           })
 
-        Namespace.subscribe(DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], DEFAULT_NAMESPACE))
+        Namespace.subscribe("", observer)(system, Props(classOf[ClusterNamespace], ""))
       }
 
       enterBarrier("startup-server")

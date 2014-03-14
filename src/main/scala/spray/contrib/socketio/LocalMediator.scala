@@ -21,7 +21,7 @@ object LocalMediator {
 
   val name = "localmediator"
 
-  case object SubscribeAck
+  final case class SubscribeAck(subsribte: Subscribe)
   final case class Subscribe(topic: String, subscitption: ActorRef)
   final case class Unsubscribe(topic: String, subscitption: ActorRef)
   final case class Publish(topic: String, msg: Any)
@@ -35,11 +35,11 @@ class LocalMediator extends Actor with ActorLogging {
   }
 
   def receive: Receive = {
-    case Subscribe(topic, subscitption) =>
+    case x @ Subscribe(topic, subscitption) =>
       val subs = subscitptionsFor(topic)
       topicToSubscitptions(topic) = subs + subscitption
       context.watch(subscitption)
-      sender() ! SubscribeAck
+      sender() ! SubscribeAck(x)
 
     case Unsubscribe(topic, subscitption) =>
       topicToSubscitptions.get(topic) match {

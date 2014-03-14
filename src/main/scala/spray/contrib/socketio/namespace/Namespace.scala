@@ -8,7 +8,6 @@ import akka.actor.Props
 import akka.pattern.ask
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
-import scala.concurrent.duration._
 import scala.reflect.runtime.universe._
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionActive
@@ -89,7 +88,7 @@ object Namespace {
   def tryDispatch(system: ActorSystem, props: Props, endpoint: String, msg: Any) {
     val namespace = socketio.namespaceFor(endpoint)
     import system.dispatcher
-    system.actorSelection(actorPath(namespace)).resolveOne(socketio.actorResolveTimeout.seconds).recover {
+    system.actorSelection(actorPath(namespace)).resolveOne(socketio.actorResolveTimeout).recover {
       case _: Throwable => system.actorOf(props, name = namespace)
     } map (_ ! msg)
   }
@@ -102,6 +101,7 @@ trait Namespace extends Actor with ActorLogging {
   import Namespace._
 
   implicit def endpoint: String
+  val namespace: String = socketio.namespaceFor(endpoint)
 
   val connectChannel = Subject[OnConnect]()
   val disconnectChannel = Subject[OnDisconnect]()
@@ -109,11 +109,11 @@ trait Namespace extends Actor with ActorLogging {
   val jsonChannel = Subject[OnJson]()
   val eventChannel = Subject[OnEvent]()
 
-  def subscribeMediator(endpoint: String)(action: () => Unit)
+  def subscribeMediatorForNamespace(action: () => Unit)
 
   def receive: Receive = {
     case x @ Subscribe(observer) =>
-      subscribeMediator(endpoint) { () =>
+      subscribeMediatorForNamespace { () =>
         x.tag.tpe match {
           case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
           case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])

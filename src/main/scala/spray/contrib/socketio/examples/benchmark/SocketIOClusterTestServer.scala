@@ -78,7 +78,7 @@ object SocketIOClusterTestServer extends App {
           next.replyEvent("chat", args)
         case OnEvent("broadcast", args, context) =>
           //FIXME how to get endpoint in observer?
-          next.broadcast(socketio.DEFAULT_NAMESPACE, MessagePacket(0, false, socketio.DEFAULT_NAMESPACE, args))
+          next.broadcast("", MessagePacket(0, false, "", args))
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }
@@ -100,7 +100,7 @@ object SocketIOClusterTestServer extends App {
     idExtractor = ClusterConnectionActive.idExtractor,
     shardResolver = ClusterConnectionActive.shardResolver)
 
-  Namespace.subscribe(socketio.DEFAULT_NAMESPACE, observer)(system, Props(classOf[ClusterNamespace], ""))
+  Namespace.subscribe("", observer)(system, Props(classOf[ClusterNamespace], ""))
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")

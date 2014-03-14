@@ -36,13 +36,13 @@ package object socketio {
     val NamespaceDispatcher = config.getString("namespace-dispatcher")
   }
 
-  val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout")
+  val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds
 
-  val DEFAULT_NAMESPACE = "socketio-namespace"
+  val GLOBAL_NAMESPACE = "socketio-namespace"
 
   def broadcastTopicFor(endpoint: String) = "broadcast-" + namespaceFor(endpoint)
-  def namespaceFor(endpoint: String) = if (endpoint == "") DEFAULT_NAMESPACE else endpoint
-  def endpointFor(namespace: String) = if (namespace == DEFAULT_NAMESPACE) "" else namespace
+  def namespaceFor(endpoint: String) = if (endpoint == "") GLOBAL_NAMESPACE else endpoint
+  def endpointFor(namespace: String) = if (namespace == GLOBAL_NAMESPACE) "" else namespace
 
   private[socketio] final class SoConnectingContext(
     var sessionId: String,

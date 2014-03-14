@@ -10,7 +10,7 @@ import spray.contrib.socketio
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.OnClose
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.OnOpen
-import spray.contrib.socketio.packet.{MessagePacket, EventPacket, Packet}
+import spray.contrib.socketio.packet.{ MessagePacket, EventPacket, Packet }
 import spray.json.JsonParser
 import spray.json.JsArray
 import spray.json.JsObject
@@ -38,7 +38,7 @@ class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socket
   def businessLogic: Receive = {
     case SocketIOTestClient.SendHello           => connection ! TextFrame("5:::{\"name\":\"hello\", \"args\":[]}")
     case SocketIOTestClient.SendTimestampedChat => connection ! TextFrame(timestampedChat)
-    case SocketIOTestClient.SendBroadcast(msg) => connection ! TextFrame( """5:::{"name":"broadcast", "args":""" + spray.json.JsString(msg).value + "}")
+    case SocketIOTestClient.SendBroadcast(msg)  => connection ! TextFrame("""5:::{"name":"broadcast", "args":""" + spray.json.JsString(msg).value + "}")
   }
 
   override def onDisconnected(endpoint: String) {
@@ -60,7 +60,7 @@ class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socket
                 fields.get("text") match {
                   case Some(JsString(message)) =>
                     message.split(",") match {
-                      case Array(Id, timestamp) =>
+                      case Array(id, timestamp) =>
                         val roundtripTime = messageArrivedAt - timestamp.toLong
                         log.debug("roundtripTime {}", roundtripTime)
                         report ! MessageArrived(roundtripTime)
@@ -73,7 +73,7 @@ class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socket
           case _ =>
         }
       case msg: MessagePacket => report ! msg.data
-      case _ =>
+      case _                  =>
     }
 
   }

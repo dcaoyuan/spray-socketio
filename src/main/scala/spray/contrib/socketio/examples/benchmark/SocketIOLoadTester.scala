@@ -25,17 +25,19 @@ object SocketIOLoadTester {
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
 
   val postTestReceptionTimeout = config.getInt("post-test-reception-timeout")
-  val initailMessagesPerSecond = config.getInt("initail-messages-per-second")
-  val secondsToTestEachLoadState = config.getInt("seconds-to-test-each-load-state")
+  val initailMessagesPerSecond = config.getInt("initail-messages-sent-per-second")
+  val nSecondsToTestEachLoadState = config.getInt("seconds-to-test-each-load-state")
   val secondsBetweenRounds = config.getInt("seconds-between-rounds")
-  val messageReceivedPerSecondRamp = config.getInt("message-received-per-second-ramp")
-  val maxMessagesPerSecond = config.getInt("max-messages-per-second")
+  val nMessageSentPerSecondRamp = config.getInt("messages-sent-per-second-ramp")
+  val maxMessagesSentPerSecond = config.getInt("max-messages-sent-per-second")
+  val isBroadcast = config.getBoolean("broadcast")
 
   val host = config.getString("host")
   val port = config.getInt("port")
-  var concurrencyLevels = config.getIntList("concurrencyLevels")
 
   val connect = Http.Connect(host, port)
+
+  var concurrencyLevels = config.getIntList("concurrencyLevels")
 
   implicit val system = ActorSystem()
 
@@ -44,6 +46,7 @@ object SocketIOLoadTester {
   case object OnClose
   case class MessageArrived(roundtrip: Long)
   case class StatsSummary(stats: mutable.Map[Double, SummaryStatistics])
+  case object ReceivingTimeout
 
   def main(args: Array[String]) {
     run(args.map(_.toInt))
@@ -110,13 +113,13 @@ object SocketIOLoadTester {
 class SocketIOLoadTester extends Actor with ActorLogging {
   import SocketIOLoadTester._
 
-  final case class RoundContext(timeoutHandler: Option[Cancellable], statistics: mutable.Map[Double, SummaryStatistics], overallEffectiveRate: Double)
+  final case class RoundContext(receivingTimeoutHandler: Option[Cancellable], statistics: mutable.Map[Double, SummaryStatistics], overallEffectiveRate: Double)
 
   private var clients = List[ActorRef]()
 
-  private var nConcurrentConnections = 0
+  private var nConnections = 0
 
-  private var currentMessagesPerSecond = initailMessagesPerSecond
+  private var nMessagesSentPerSecond = initailMessagesPerSecond
 
   private var isConnectionLost = false
 
@@ -124,22 +127,24 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
   private var roundtripTimes: mutable.ArrayBuffer[Double] = _
 
-  private var isPostTestTimeout: Boolean = _
   private var roundContext: RoundContext = _
 
-  private var testRunning: Boolean = _
+  private var isTestRunning: Boolean = _
 
   private var commander: ActorRef = _
 
   private var t0 = System.currentTimeMillis
 
+  private var nMessagesSent: Int = _
+  private var isMessagesSent: Boolean = _
+
   def receive = {
-    case RoundBegin(nConnections) =>
+    case RoundBegin(nConns) =>
       commander = sender()
-      nConcurrentConnections = nConnections
-      println("---------------- Concurrent connections " + nConcurrentConnections + " ----------------")
+      nConnections = nConns
+      println("---------------- Concurrent connections " + nConnections + { if (isBroadcast) " (broadcast)" else " (single bounce)" } + " ----------------")
       var i = 0
-      while (i < nConcurrentConnections) {
+      while (i < nConnections) {
         val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
         clients ::= client
         i += 1
@@ -149,8 +154,8 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
     case OnOpen =>
       nConnectionsOpened += 1
-      if (nConnectionsOpened == nConcurrentConnections) {
-        println("\nAll " + nConcurrentConnections + " clients connected successfully in " + ((System.currentTimeMillis - t0) / 1000.0) + "s.")
+      if (nConnectionsOpened == nConnections) {
+        println("\nAll " + nConnections + " clients connected successfully in " + ((System.currentTimeMillis - t0) / 1000.0) + "s.")
         println("Woken up - time to start load test!\n")
         performLoadTest()
       } else if (nConnectionsOpened % 100 == 0) {
@@ -158,7 +163,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
       }
 
     case OnClose =>
-      if (testRunning) {
+      if (isTestRunning) {
         isConnectionLost = true
         println("Failed - lost a connection. Shutting down.")
       }
@@ -166,103 +171,118 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     case MessageArrived(roundtripTime: Long) =>
       roundtripTimes += roundtripTime
 
-      if (roundtripTimes.size >= secondsToTestEachLoadState * currentMessagesPerSecond) {
-        isPostTestTimeout = false
+      if (isMessagesSent && roundtripTimes.size >= nMessagesExpected) {
         roundContext match {
           case null =>
-          case RoundContext(timeoutHandler, statistics, overallEffectiveRate) =>
-            roundContext.timeoutHandler foreach (_.cancel)
+          case RoundContext(receivingTimeoutHandler, statistics, overallEffectiveRate) =>
+            receivingTimeoutHandler foreach (_.cancel)
             goon(statistics, overallEffectiveRate)
         }
       } else {
-        log.debug("Expected: " + secondsToTestEachLoadState * currentMessagesPerSecond + ", got: " + roundtripTimes.size)
+        log.debug("Expected: " + nMessagesExpected + ", got: " + roundtripTimes.size)
       }
 
+    case ReceivingTimeout =>
+      if (isMessagesSent && roundtripTimes.size >= nMessagesExpected) {
+        roundContext match {
+          case null =>
+          case RoundContext(receivingTimeoutHandler, statistics, overallEffectiveRate) =>
+            goon(statistics, overallEffectiveRate)
+        }
+      } else {
+        println("Failed - not all messages received in " + postTestReceptionTimeout + "s")
+        println("Expected: " + nMessagesExpected + ", got: " + roundtripTimes.size)
+      }
   }
+
+  private def nMessagesExpected = if (isBroadcast) nMessagesSent * nConnections else nMessagesSent
 
   private def performLoadTest() {
     val statistics = new mutable.HashMap[Double, SummaryStatistics]()
 
-    testRunning = true
+    isTestRunning = true
 
-    currentMessagesPerSecond = initailMessagesPerSecond
+    nMessagesSentPerSecond = initailMessagesPerSecond
     triggerMessages(statistics, 0.0)
   }
 
   private def triggerMessages(statistics: mutable.Map[Double, SummaryStatistics], _overallEffectiveRate: Double) {
+    isMessagesSent = false
+
     var overallEffectiveRate = _overallEffectiveRate
 
-    println(nConcurrentConnections + " connections at current messages per second rate " + currentMessagesPerSecond + ": ")
+    println(nConnections + " connections at sending rate " + nMessagesSentPerSecond + " msgs/s: ")
 
-    roundtripTimes = new mutable.ArrayBuffer[Double](secondsToTestEachLoadState * currentMessagesPerSecond)
+    roundtripTimes = new mutable.ArrayBuffer[Double](nSecondsToTestEachLoadState * nMessagesSentPerSecond * { if (isBroadcast) nConnections else 1 })
 
     val t0 = System.currentTimeMillis
-    val expectedDutationPerSend = 1000 / currentMessagesPerSecond
-    var count = 0
+    val expectedDutationPerSend = 1000.0 / nMessagesSentPerSecond
+    nMessagesSent = 0
     var i = 0
-    while (i < secondsToTestEachLoadState) {
+    while (i < nSecondsToTestEachLoadState) {
       // usually we hope triggerChatMessages will be processed in extractly 1 second.
       val messageSendStartTime = System.currentTimeMillis
-      val effectiveRate = triggerChatMessages(currentMessagesPerSecond) // message sending rate
+      val sendingRate = triggerChatMessages(nMessagesSentPerSecond)
       val duration = System.currentTimeMillis - messageSendStartTime
       val delta = expectedDutationPerSend - duration
-      // TODO flow control here according to delta here?
-      count += currentMessagesPerSecond
-      overallEffectiveRate += effectiveRate
+      // TODO flow control here according to delta?
+      nMessagesSent += nMessagesSentPerSecond
+      overallEffectiveRate += sendingRate
       i += 1
     }
-    println(count + " messages sent in " + (System.currentTimeMillis - t0) + "ms")
+    isMessagesSent = true
+    println(nMessagesSent + " msgs " + { if (isBroadcast) "broadcast" else "sent" } + " in " + (System.currentTimeMillis - t0) + "ms, expect to receive " + nMessagesExpected)
 
-    overallEffectiveRate = overallEffectiveRate / secondsToTestEachLoadState
+    overallEffectiveRate = overallEffectiveRate / nSecondsToTestEachLoadState
     //println("Rate: %.3f ".format(overallEffectiveRate))
 
     import system.dispatcher
-    isPostTestTimeout = true
     roundContext = RoundContext(
-      Some(system.scheduler.scheduleOnce(postTestReceptionTimeout.seconds) {
-        if (isPostTestTimeout) {
-          println("Failed - not all messages received in " + postTestReceptionTimeout + "s")
-          println("Expected: " + secondsToTestEachLoadState * currentMessagesPerSecond + ", got: " + roundtripTimes.size)
-        } else {
-          goon(statistics, overallEffectiveRate)
-        }
-      }), statistics, overallEffectiveRate)
+      Some(system.scheduler.scheduleOnce(postTestReceptionTimeout.seconds, self, ReceivingTimeout)),
+      statistics, overallEffectiveRate)
   }
 
   private def goon(statistics: mutable.Map[Double, SummaryStatistics], overallEffectiveRate: Double) {
     statistics.put(overallEffectiveRate, processRoundtripStats)
-    currentMessagesPerSecond += Math.max(100, messageReceivedPerSecondRamp / nConcurrentConnections)
+    nMessagesSentPerSecond += nMessageSentPerSecondRamp
 
-    if (!isConnectionLost && !isPostTestTimeout && currentMessagesPerSecond < maxMessagesPerSecond) {
+    if (!isConnectionLost && nMessagesSentPerSecond < maxMessagesSentPerSecond) {
       import system.dispatcher
       system.scheduler.scheduleOnce(secondsBetweenRounds.seconds) {
         triggerMessages(statistics, overallEffectiveRate)
       }
     } else {
-      testRunning = false
+      isTestRunning = false
       commander ! StatsSummary(statistics)
     }
   }
 
+  /**
+   * @return sending rate: nMessages / second
+   */
   private def triggerChatMessages(totalMessages: Int): Double = {
-    val start = System.currentTimeMillis
+    val t0 = System.currentTimeMillis
 
     var senders = clients
     var i = 0
     while (i < totalMessages) {
       senders.head ! SocketIOTestClient.SendTimestampedChat
-      senders = if (senders.tail.isEmpty) clients else senders.tail
+      senders = senders.tail match {
+        case Nil => clients
+        case xs  => xs
+      }
       i += 1
     }
 
-    totalMessages / ((System.currentTimeMillis - start) / 1000.0)
+    totalMessages / ((System.currentTimeMillis - t0) / 1000.0)
   }
 
   private def processRoundtripStats: SummaryStatistics = {
     val stats = new SummaryStatistics()
 
     roundtripTimes foreach stats.addValue
-    println("n: %5d min: %6.0f  mean: %6.0f   max: %6.0f   stdev: %6.0f    rate: %5.0f\n".format(
+    println("     num      min    mean     max   stdev    rate")
+    println("%8d   %6.0f  %6.0f  %6.0f  %6.0f   %5.0f\n".format(
       stats.getN, stats.getMin, stats.getMean, stats.getMax, stats.getStandardDeviation, stats.getN / (stats.getMean / 1000.0)))
 
     stats

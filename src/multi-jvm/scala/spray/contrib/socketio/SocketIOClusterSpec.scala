@@ -179,7 +179,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
             }
           })
 
-        Namespace.subscribe("", observer)(system, Props(classOf[ClusterNamespace], ""))
+        import system.dispatcher
+        ClusterNamespace(system)("") map Namespace.subscribe(observer)
       }
 
       enterBarrier("startup-server")

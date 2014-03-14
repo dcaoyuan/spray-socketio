@@ -94,7 +94,8 @@ object SimpleServer extends App with MySslConfiguration {
       }
     })
 
-  Namespace.subscribe("testendpoint", observer)(system, Props(classOf[LocalNamespace], "testendpoint"))
+  import system.dispatcher
+  LocalNamespace(system)("testendpoint") map Namespace.subscribe(observer)
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)

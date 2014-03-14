@@ -3,8 +3,6 @@ package spray.contrib.socketio.namespace
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
-import akka.actor.ActorSystem
-import akka.actor.Props
 import akka.pattern.ask
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
@@ -80,22 +78,13 @@ object Namespace {
   final case class OnJson(json: String, context: ConnectionContext)(implicit val endpoint: String) extends OnData
   final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val endpoint: String) extends OnData
 
-  def subscribe[T <: OnData: TypeTag](endpoint: String, observer: Observer[T])(system: ActorSystem, props: Props) {
-    tryDispatch(system, props, endpoint, Subscribe(observer))
-  }
-
-  def actorPath(namespace: String) = "/user/" + namespace
-  def tryDispatch(system: ActorSystem, props: Props, endpoint: String, msg: Any) {
-    val namespace = socketio.namespaceFor(endpoint)
-    import system.dispatcher
-    system.actorSelection(actorPath(namespace)).resolveOne(socketio.actorResolveTimeout).recover {
-      case _: Throwable => system.actorOf(props, name = namespace)
-    } map (_ ! msg)
+  def subscribe[T <: OnData: TypeTag](observer: Observer[T])(namespace: ActorRef) {
+    namespace ! Subscribe(observer)
   }
 }
 
 /**
- * Namespace is refered to endpoint for observers
+ * Namespace is refered to endpoint for observers and will subscribe to topic 'namespace' of mediator
  */
 trait Namespace extends Actor with ActorLogging {
   import Namespace._

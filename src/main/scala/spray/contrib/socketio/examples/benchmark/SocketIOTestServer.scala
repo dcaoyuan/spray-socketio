@@ -52,7 +52,8 @@ object SocketIOTestServer extends App {
       }
     })
 
-  Namespace.subscribe("", observer)(system, Props(classOf[LocalNamespace], ""))
+  import system.dispatcher
+  LocalNamespace(system)("") map Namespace.subscribe(observer)
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")

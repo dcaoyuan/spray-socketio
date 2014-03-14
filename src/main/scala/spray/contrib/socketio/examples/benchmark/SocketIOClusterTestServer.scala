@@ -100,7 +100,7 @@ object SocketIOClusterTestServer extends App {
     idExtractor = ClusterConnectionActive.idExtractor,
     shardResolver = ClusterConnectionActive.shardResolver)
 
-  Namespace.subscribe("", observer)(system, Props(classOf[ClusterNamespace], ""))
+  ClusterNamespace(system)("") map Namespace.subscribe(observer)
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")

@@ -10,7 +10,9 @@ import scala.collection.immutable
 import scala.concurrent.duration._
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
+import spray.contrib.socketio.packet.AckPacket
 import spray.contrib.socketio.packet.ConnectPacket
+import spray.contrib.socketio.packet.DataPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.HeartbeatPacket
@@ -49,6 +51,8 @@ object ConnectionActive {
   final case class SendJson(sessionId: String, endpoint: String, json: String) extends Command
   final case class SendEvent(sessionId: String, endpoint: String, name: String, args: Either[String, Seq[String]]) extends Command
   final case class SendPackets(sessionId: String, packets: Seq[Packet]) extends Command
+
+  final case class SendAck(sessionId: String, originalPacket: DataPacket, args: String) extends Command
 
   /**
    * ask me to publish an OnBroadcast data
@@ -148,6 +152,8 @@ trait ConnectionActive { _: Actor =>
     case SendEvent(sessionId, endpoint, name, args)      => sendEvent(endpoint, name, args)
     case SendPackets(sessionId, packets)                 => sendPacket(packets: _*)
 
+    case SendAck(sessionId, packet, args)                => sendAck(packet, args)
+
     case Broadcast(sessionId, topic, packet)             => publishMessage(OnBroadcast(sessionId, topic, packet))
     case OnBroadcast(senderSessionId, topic, packet)     => sendPacket(packet) // write to client
 
@@ -233,6 +239,10 @@ trait ConnectionActive { _: Actor =>
         }
 
       case _ =>
+        // for data packet that requests ack and has no ack data, automatically ack
+        packet match {
+          case x: DataPacket if x.isAckRequested && !x.hasAckData => sendAck(x, "[]")
+        }
         connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
     }
   }
@@ -287,6 +297,10 @@ trait ConnectionActive { _: Actor =>
       updatePendingPackets = ctx.transport.flushOrWait(ctx, transportConnection, updatePendingPackets)
     }
     processUpdatePackets(UpdatePackets(updatePendingPackets))
+  }
+
+  def sendAck(originalPacket: DataPacket, args: String) {
+    sendPacket(AckPacket(originalPacket.id, args))
   }
 }
 

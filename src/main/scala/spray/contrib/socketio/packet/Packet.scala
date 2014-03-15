@@ -106,8 +106,14 @@ case object HeartbeatPacket extends Packet {
 }
 
 trait DataPacket extends Packet {
+  /**
+   * The message id is an incremental integer, required for ACKs (can be omitted).
+   * If the message id is followed by a +, the ACK is not handled by socket.io,
+   * but by the user instead.
+   */
   def id: Long
-  def isAckRequested: Boolean
+  def hasAckData: Boolean
+  def isAckRequested = id != -1
 
   protected def renderPacketHead = {
     val builder = ByteString.newBuilder
@@ -119,7 +125,7 @@ trait DataPacket extends Packet {
       case -1 =>
       case id =>
         builder.putBytes(id.toString.getBytes)
-        if (isAckRequested) {
+        if (hasAckData) {
           builder.putByte('+')
         }
     }
@@ -139,7 +145,7 @@ trait DataPacket extends Packet {
 /**
  * A regular message.
  */
-final case class MessagePacket(id: Long, isAckRequested: Boolean, endpoint: String, data: String) extends DataPacket {
+final case class MessagePacket(id: Long, hasAckData: Boolean, endpoint: String, data: String) extends DataPacket {
   def code = '3'
 
   def render = {
@@ -157,7 +163,7 @@ final case class MessagePacket(id: Long, isAckRequested: Boolean, endpoint: Stri
 /**
  * A JSON encoded message.
  */
-final case class JsonPacket(id: Long, isAckRequested: Boolean, endpoint: String, json: String) extends DataPacket {
+final case class JsonPacket(id: Long, hasAckData: Boolean, endpoint: String, json: String) extends DataPacket {
   def code = '4'
 
   def render = {
@@ -253,26 +259,26 @@ object EventPacket {
   /**
    * used by PacketParder only
    */
-  private[packet] def apply(id: Long, isAckRequested: Boolean, endpoint: String, json: String): EventPacket = {
+  private[packet] def apply(id: Long, hasAckData: Boolean, endpoint: String, json: String): EventPacket = {
     val (name, args) = splitNameArgs(json)
-    new EventPacket(id, isAckRequested, endpoint, name, args)
+    new EventPacket(id, hasAckData, endpoint, name, args)
   }
 
   /**
    * Single full args json string. Should be enclosed with all args in one json array string and enlclosed with "[...]"
    */
-  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: String): EventPacket =
-    new EventPacket(id, isAckRequested, endpoint, name, args)
+  def apply(id: Long, hasAckData: Boolean, endpoint: String, name: String, args: String): EventPacket =
+    new EventPacket(id, hasAckData, endpoint, name, args)
 
   /**
    * Seq of json string of each arg
    */
-  def apply(id: Long, isAckRequested: Boolean, endpoint: String, name: String, args: Seq[String]): EventPacket =
-    new EventPacket(id, isAckRequested, endpoint, name, args.mkString("[", ",", "]"))
+  def apply(id: Long, hasAckData: Boolean, endpoint: String, name: String, args: Seq[String]): EventPacket =
+    new EventPacket(id, hasAckData, endpoint, name, args.mkString("[", ",", "]"))
 
   def unapply(x: EventPacket): Option[(String, String)] = Option(x.name, x.args)
 }
-final class EventPacket private (val id: Long, val isAckRequested: Boolean, val endpoint: String, val name: String, val args: String) extends DataPacket {
+final class EventPacket private (val id: Long, val hasAckData: Boolean, val endpoint: String, val name: String, val args: String) extends DataPacket {
   def code = '5'
 
   def render = {

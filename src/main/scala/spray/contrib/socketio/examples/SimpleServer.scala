@@ -83,6 +83,9 @@ object SimpleServer extends App with MySslConfiguration {
           println("observed: " + next.name + ", " + next.args)
           next.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
           next.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
+          if (next.packet.hasAckData) {
+            next.ack("[]")
+          }
           // batched packets
           next.reply(
             EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio")).toJson.toString),

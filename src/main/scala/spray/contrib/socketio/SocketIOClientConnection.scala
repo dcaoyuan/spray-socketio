@@ -11,7 +11,9 @@ import spray.can.websocket.frame.CloseFrame
 import spray.can.websocket.frame.StatusCode
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
+import spray.contrib.socketio.packet.AckPacket
 import spray.contrib.socketio.packet.ConnectPacket
+import spray.contrib.socketio.packet.DataPacket
 import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.HeartbeatPacket
 import spray.contrib.socketio.packet.Packet
@@ -21,13 +23,22 @@ import spray.http.HttpRequest
 import spray.http.HttpResponse
 import spray.http.Uri
 
+object SocketIOClientConnection {
+  type AckPostAction = Any => Unit
+  final case class SendPacket(packet: Packet)
+  final case class SendPacketWithAck(packet: DataPacket, ackAction: AckPostAction = _ => ())
+}
 trait SocketIOClientConnection extends Actor with ActorLogging {
+  import SocketIOClientConnection._
+
   private var _connection: ActorRef = _
   /**
    * The actor which could receive frame directly. ie. by
    *   connection ! frame
    */
   def connection = _connection
+
+  private var idToAckAction = Map[Long, AckPostAction]()
 
   def receive = handshaking orElse closeLogic
 
@@ -91,6 +102,12 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
           case ConnectPacket(endpoint, args) => onConnected(endpoint, args)
           case DisconnectPacket(endpoint)    => onDisconnected(endpoint)
           case HeartbeatPacket               => connection ! TextFrame(HeartbeatPacket.utf8String)
+
+          case AckPacket(id, args) =>
+            idToAckAction.get(id) foreach { _(args) }
+            idToAckAction -= id
+            onAck(id, args)
+
           case packet =>
             log.debug("Got {}", packet)
             onPacket(packet)
@@ -102,6 +119,14 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
         case ex: Throwable =>
           log.warning("Exception during parse socket.io packet {}", ex.getMessage)
       }
+
+    // -- sending logic
+
+    case SendPacket(packet) => connection ! TextFrame(packet.render)
+
+    case SendPacketWithAck(packet, ackAction) =>
+      idToAckAction += (packet.id -> ackAction)
+      connection ! TextFrame(packet.render)
   }
 
   def businessLogic: Receive
@@ -115,6 +140,10 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
   }
 
   def onDisconnected(endpoint: String) {
+
+  }
+
+  def onAck(id: Long, args: String) {
 
   }
 

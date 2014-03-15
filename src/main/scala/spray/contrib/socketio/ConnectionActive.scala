@@ -242,6 +242,7 @@ trait ConnectionActive { _: Actor =>
         // for data packet that requests ack and has no ack data, automatically ack
         packet match {
           case x: DataPacket if x.isAckRequested && !x.hasAckData => sendAck(x, "[]")
+          case _ =>
         }
         connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
     }

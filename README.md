@@ -6,7 +6,7 @@ socket.io for spray (in progressing)
 Transports already supported : WebSocket, XHR-Polling.
 
 
-Features not supported yet: ACK, Room
+Features not supported yet: Room
 
 
 Example (in progressing):
@@ -96,6 +96,9 @@ object SimpleServer extends App with MySslConfiguration {
       next match {
         case OnEvent("Hi!", args, context) =>
           println("observed: " + next.name + ", " + next.args)
+          if (next.packet.hasAckData) {
+            next.ack("[]")
+          }
           next.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
           next.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
           // batched packets

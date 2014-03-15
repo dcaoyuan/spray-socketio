@@ -21,25 +21,9 @@ import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.ClusterConnectionActive
 import spray.contrib.socketio.packet.MessagePacket
+import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 
 object SocketIOClusterTestServer extends App {
-
-  class SocketIOServer(resolver: ActorRef) extends Actor with ActorLogging {
-    def receive = {
-      // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
-      case Http.Connected(remoteAddress, localAddress) =>
-        val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, resolver))
-        serverConnection ! Http.Register(conn)
-    }
-  }
-
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends SocketIOServerConnection {
-
-    def genericLogic: Receive = {
-      case x: Frame =>
-    }
-  }
 
   def startupSharedJournal(system: ActorSystem, startStore: Boolean, name: String, path: String) {
     // Start the shared journal on one node (don't crash this SPOF)
@@ -68,6 +52,16 @@ object SocketIOClusterTestServer extends App {
   // Override the configuration of the port
   val systemConfig = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + clusterPort).withFallback(ConfigFactory.load())
   implicit val system = ActorSystem("ClusterSystem", systemConfig)
+  val clusterSystem = Cluster(system)
+  // join to cluster
+  clusterSystem.join(clusterSystem.selfAddress)
+
+  ClusterSharding(system).start(
+    typeName = ConnectionActive.shardName,
+    entryProps = Some(Props(classOf[ClusterConnectionActive])),
+    idExtractor = ClusterConnectionActive.idExtractor,
+    shardResolver = ClusterConnectionActive.shardResolver)
+
   implicit val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
 
   val observer = Observer[OnEvent](
@@ -85,20 +79,11 @@ object SocketIOClusterTestServer extends App {
     })
 
   import system.dispatcher
-  val clusterSystem = Cluster(system)
 
   // start the Persistence extension
   Persistence(system)
   startupSharedJournal(system, clusterSystem.selfAddress.port == Some(clusterPort), "store", clusterSystem.selfAddress + "/user/store")
 
-  // join to cluster
-  clusterSystem.join(clusterSystem.selfAddress)
-
-  ClusterSharding(system).start(
-    typeName = ConnectionActive.shardName,
-    entryProps = Some(Props(classOf[ClusterConnectionActive])),
-    idExtractor = ClusterConnectionActive.idExtractor,
-    shardResolver = ClusterConnectionActive.shardResolver)
 
   ClusterNamespace(system)("") map Namespace.subscribe(observer)
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")

@@ -40,7 +40,8 @@ package object socketio {
 
   val GLOBAL_NAMESPACE = "socketio-namespace"
 
-  def broadcastTopicFor(endpoint: String) = "broadcast-" + namespaceFor(endpoint)
+  def topicForRoom(endpoint: String, room: String) = "socketio-" + namespaceFor(endpoint) + "/" + room
+  def topicForEndpoint(endpoint: String) = "socketio-" + namespaceFor(endpoint)
   def namespaceFor(endpoint: String) = if (endpoint == "") GLOBAL_NAMESPACE else endpoint
   def endpointFor(namespace: String) = if (namespace == GLOBAL_NAMESPACE) "" else namespace
 

@@ -1,12 +1,9 @@
 spray-socketio
 ==============
 
-socket.io for spray (in progressing)
+Socket.IO implementation on Spray with cluster sharding.
 
-Transports already supported : WebSocket, XHR-Polling.
-
-
-Features not supported yet: Room
+Supported transports : WebSocket, XHR-Polling.
 
 
 Example (in progressing):

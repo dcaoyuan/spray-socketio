@@ -54,6 +54,9 @@ object ConnectionActive {
 
   final case class SendAck(sessionId: String, originalPacket: DataPacket, args: String) extends Command
 
+  final case class Subscibe(sessionId: String, endpoint: String, room: String) extends Command
+  final case class Unsubscibe(sessionId: String, endpoint: String, room: String) extends Command
+
   /**
    * ask me to publish an OnBroadcast data
    */
@@ -157,6 +160,17 @@ trait ConnectionActive { _: Actor =>
     case Broadcast(sessionId, topic, packet)             => publishMessage(OnBroadcast(sessionId, topic, packet))
     case OnBroadcast(senderSessionId, topic, packet)     => sendPacket(packet) // write to client
 
+    case Subscibe(sessionId, endpoint, room) =>
+      // TODO check if this connection is under the namespace of this endpoint? 
+      val topic = topicForRoom(endpoint, room)
+      topics += topic
+      subscribe(topic)
+
+    case Unsubscibe(sessionId, endpoint, room) =>
+      val topic = topicForRoom(endpoint, room)
+      topics -= topic
+      unsubscribe(topic)
+
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
   }
@@ -222,13 +236,13 @@ trait ConnectionActive { _: Actor =>
         // bounce connect packet back to client
         sendPacket(packet)
         connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
-        val topic = broadcastTopicFor(endpoint)
+        val topic = topicForEndpoint(endpoint)
         topics += topic
         subscribe(topic)
 
       case DisconnectPacket(endpoint) =>
         connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
-        val topic = broadcastTopicFor(endpoint)
+        val topic = topicForEndpoint(endpoint)
         topics -= topic
         if (endpoint == "") {
           topics foreach unsubscribe

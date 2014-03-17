@@ -10,6 +10,7 @@ object Build extends sbt.Build {
     file("."),
     settings = commonSettings ++ SbtMultiJvm.multiJvmSettings ++ Seq(
       libraryDependencies ++= Dependencies.all,
+      unmanagedSourceDirectories in Test += baseDirectory.value / "multi-jvm/scala",
       distTask) ++ multiJvmSettings) configs (MultiJvm)
 
   def commonSettings = Defaults.defaultSettings ++
@@ -39,7 +40,7 @@ object Build extends sbt.Build {
     // make sure that MultiJvm tests are executed by the default test target,
     // and combine the results from ordinary test and multi-jvm tests
     executeTests in Test <<= (executeTests in Test, executeTests in MultiJvm) map {
-      case (testResults, multiNodeResults)  =>
+      case (testResults, multiNodeResults) =>
         val overall =
           if (testResults.overall.id < multiNodeResults.overall.id)
             multiNodeResults.overall

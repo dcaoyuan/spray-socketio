@@ -5,8 +5,13 @@ Socket.IO implementation on Spray with cluster sharding.
 
 Supported transports : WebSocket, XHR-Polling.
 
+### Benchmark
 
-Example:
+We did a simple load test on laptop (i7-2630QM 4xcore CPU @2.00GHz), with Client/Server both run on it. It could process about 80k messages/second under 50k long-live connections.
+
+The test code could be found at spray.contrib.socketio.examples.benchmark
+
+### Example
 
 ```scala
 

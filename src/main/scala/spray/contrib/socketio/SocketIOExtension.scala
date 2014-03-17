@@ -1,16 +1,22 @@
-package spray.contrib.socketio.extension
+package spray.contrib.socketio
 
-import java.util.concurrent.ConcurrentHashMap
-import akka.actor._
-import akka.pattern.ask
-import spray.contrib.socketio.namespace.Namespace
+import akka.actor.Actor
+import akka.actor.ActorRef
+import akka.actor.ActorSystem
+import akka.actor.ExtendedActorSystem
+import akka.actor.Extension
+import akka.actor.ExtensionId
+import akka.actor.ExtensionIdProvider
+import akka.actor.NoSerializationVerificationNeeded
+import akka.actor.Props
 import akka.contrib.pattern._
-import spray.contrib.socketio.{ ClusterConnectionActive, LocalConnectionActiveResolver, ConnectionActive, LocalMediator }
+import akka.pattern.ask
+import scala.collection.concurrent.TrieMap
 import scala.concurrent.Await
-import scala.Some
-import spray.contrib.socketio.extension.SocketIONamespaceGuardian.Start
-import spray.contrib.socketio.extension.SocketIONamespaceGuardian.Started
 import spray.contrib.socketio
+import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.SocketIONamespaceGuardian.Start
+import spray.contrib.socketio.SocketIONamespaceGuardian.Started
 
 object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionIdProvider {
   override def get(system: ActorSystem): SocketIOExtension = super.get(system)
@@ -31,9 +37,9 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   import Settings._
 
-  private val namespaces: ConcurrentHashMap[String, ActorRef] = new ConcurrentHashMap
+  private val namespaces = new TrieMap[String, ActorRef]
 
-  private lazy val guardian = system.actorOf(Props[SocketIONamespaceGuardian], "socket-io-guardian")
+  private lazy val guardian = system.actorOf(Props[SocketIONamespaceGuardian], "socketio-guardian")
 
   if (isCluster) {
     ClusterSharding(system).start(
@@ -52,22 +58,19 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     implicit val timeout = system.settings.CreationTimeout
     val startMsg = Start(namespace, Props(classOf[Namespace], endpoint, mediator))
     val Started(namespaceRef) = Await.result(guardian ? startMsg, timeout.duration)
-    namespaces.put(endpoint, namespaceRef)
+    namespaces(endpoint) = namespaceRef
     namespaceRef
   }
 
   def namespace(endpoint: String): ActorRef = namespaces.get(endpoint) match {
-    case null          ⇒ throw new IllegalArgumentException(s"Namespace endpoint [$endpoint] must be started first")
-    case ref: ActorRef ⇒ ref
+    case None      => throw new IllegalArgumentException(s"Namespace endpoint [$endpoint] must be started first")
+    case Some(ref) => ref
   }
 }
 
 private[socketio] object SocketIONamespaceGuardian {
-
   final case class Start(endpoint: String, entryProps: Props) extends NoSerializationVerificationNeeded
-
   final case class Started(namespace: ActorRef) extends NoSerializationVerificationNeeded
-
 }
 
 private[socketio] class SocketIONamespaceGuardian extends Actor {

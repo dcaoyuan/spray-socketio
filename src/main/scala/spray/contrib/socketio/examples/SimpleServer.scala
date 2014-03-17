@@ -6,7 +6,7 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.LocalConnectionActiveResolver
+import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
@@ -15,7 +15,6 @@ import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
 import spray.http.HttpResponse
 import spray.json.DefaultJsonProtocol
-import spray.contrib.socketio.extension.SocketIOExtension
 
 object SimpleServer extends App with MySslConfiguration {
 
@@ -99,7 +98,7 @@ object SimpleServer extends App with MySslConfiguration {
     })
 
   socketioExt.startNamespace("testendpoint")
-  Namespace.subscribe(observer)(socketioExt.namespace("testendpoint"))
+  socketioExt.namespace("testendpoint") ! Namespace.Subscribe(observer)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

@@ -2,20 +2,19 @@ package spray.contrib.socketio.examples
 
 import com.typesafe.config.{ Config, ConfigFactory }
 import akka.actor.{ Props, ActorSystem }
-import spray.contrib.socketio.{ ClusterConnectionActive, ConnectionActive }
-import akka.contrib.pattern.{ DistributedPubSubExtension, ClusterSharding }
-import akka.cluster.Cluster
-import akka.persistence.Persistence
-import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
+import akka.contrib.pattern.ClusterSharding
 import akka.io.IO
+import akka.persistence.Persistence
+import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
+import rx.lang.scala.Observer
 import spray.can.server.UHttp
 import spray.can.Http
-import rx.lang.scala.Observer
+import spray.contrib.socketio.ConnectionActive
+import spray.contrib.socketio.SocketIOExtension
+import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
+import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.MessagePacket
-import spray.contrib.socketio.namespace.Namespace
-import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
-import spray.contrib.socketio.extension.SocketIOExtension
 import spray.json.JsArray
 import spray.json.JsString
 
@@ -99,7 +98,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
         })
 
       socketioExt.startNamespace("")
-      Namespace.subscribe(observer)(socketioExt.namespace(""))
+      socketioExt.namespace("") ! Namespace.Subscribe(observer)
 
     case _ =>
       exitWithUsage

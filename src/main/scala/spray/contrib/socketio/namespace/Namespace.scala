@@ -3,6 +3,7 @@ package spray.contrib.socketio.namespace
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
+import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
 import akka.pattern.ask
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
@@ -17,7 +18,6 @@ import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.packet.Packet
-import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
 import scala.util.{ Failure, Success }
 
 /**
@@ -86,10 +86,6 @@ object Namespace {
   final case class OnMessage(msg: String, context: ConnectionContext)(implicit val packet: DataPacket) extends OnData
   final case class OnJson(json: String, context: ConnectionContext)(implicit val packet: DataPacket) extends OnData
   final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val packet: DataPacket) extends OnData
-
-  def subscribe[T <: OnData: TypeTag](observer: Observer[T])(namespace: ActorRef) {
-    namespace ! Subscribe(observer)
-  }
 }
 
 /**

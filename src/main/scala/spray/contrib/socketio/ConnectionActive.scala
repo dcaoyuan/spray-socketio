@@ -3,10 +3,9 @@ package spray.contrib.socketio
 import akka.actor.Actor
 import akka.actor.ActorRef
 import akka.actor.Cancellable
+import akka.contrib.pattern.DistributedPubSubMediator
 import akka.contrib.pattern.DistributedPubSubMediator.Publish
-import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
 import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
-import akka.contrib.pattern.DistributedPubSubMediator.Unsubscribe
 import akka.pattern.ask
 import akka.event.LoggingAdapter
 import akka.util.ByteString
@@ -62,8 +61,8 @@ object ConnectionActive {
 
   final case class SendAck(sessionId: String, originalPacket: DataPacket, args: String) extends Command
 
-  final case class Subscibe(sessionId: String, endpoint: String, room: String) extends Command
-  final case class Unsubscibe(sessionId: String, endpoint: String, room: String) extends Command
+  final case class Subscribe(sessionId: String, endpoint: String, room: String) extends Command
+  final case class Unsubscribe(sessionId: String, endpoint: String, room: String) extends Command
 
   /**
    * ask me to publish an OnBroadcast data
@@ -166,12 +165,12 @@ trait ConnectionActive { _: Actor =>
     case Broadcast(sessionId, room, packet)              => publishToMediator(OnBroadcast(sessionId, room, packet))
     case OnBroadcast(senderSessionId, room, packet)      => sendPacket(packet) // write to client
 
-    case Subscibe(sessionId, endpoint, room) =>
+    case Subscribe(sessionId, endpoint, room) =>
       val topic = topicFor(endpoint, room)
       topics += topic
       subscribe(topic)
 
-    case Unsubscibe(sessionId, endpoint, room) =>
+    case Unsubscribe(sessionId, endpoint, room) =>
       val topic = topicFor(endpoint, room)
       topics -= topic
       unsubscribe(topic)
@@ -335,11 +334,11 @@ trait ConnectionActive { _: Actor =>
   }
 
   def subscribe(topic: String): Future[SubscribeAck] = {
-    mediator.ask(Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
+    mediator.ask(DistributedPubSubMediator.Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
   }
 
   def unsubscribe(topic: String) {
-    mediator ! Unsubscribe(topic, self)
+    mediator ! DistributedPubSubMediator.Unsubscribe(topic, self)
   }
 
 }

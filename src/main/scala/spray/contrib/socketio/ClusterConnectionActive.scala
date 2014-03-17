@@ -1,7 +1,7 @@
 package spray.contrib.socketio
 
 import akka.actor.{ ActorLogging }
-import akka.contrib.pattern.{ DistributedPubSubMediator, DistributedPubSubExtension, ShardRegion }
+import akka.contrib.pattern.{ DistributedPubSubExtension, ShardRegion }
 import akka.persistence.{ PersistenceFailure, EventsourcedProcessor }
 import spray.contrib.socketio
 

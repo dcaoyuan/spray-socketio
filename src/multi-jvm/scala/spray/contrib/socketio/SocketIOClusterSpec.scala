@@ -14,6 +14,9 @@ import com.typesafe.config.ConfigFactory
 import akka.io.IO
 import spray.can.server.UHttp
 import spray.can.Http
+import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.examples.benchmark.{ SocketIOTestClient, SocketIOTestServer }
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnClose
@@ -26,10 +29,6 @@ import scala.concurrent.Await
 import scala.concurrent.Promise
 import akka.actor.Identify
 import rx.lang.scala.Observer
-import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnEvent
-import spray.contrib.socketio.packet.MessagePacket
-import spray.contrib.socketio.extension.SocketIOExtension
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -174,7 +173,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(business1) {
-        implicit val resolver = SocketIOExtension(system).resolver
+        val resolver = SocketIOExtension(system).resolver
 
         val observer = Observer[OnEvent](
           (next: OnEvent) => {
@@ -191,7 +190,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
           })
 
         SocketIOExtension(system).startNamespace("")
-        Namespace.subscribe(observer)(SocketIOExtension(system).namespace(""))
+        SocketIOExtension(system).namespace("") ! Namespace.Subscribe(observer)
       }
 
       enterBarrier("startup-server")

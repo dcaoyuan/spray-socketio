@@ -20,7 +20,7 @@ object LocalMediator {
 
   private val topicToSubscitptions = concurrent.TrieMap[String, Set[ActorRef]]()
 
-  val name = "localmediator"
+  val name = "socketio-localmediator"
 }
 
 class LocalMediator extends Actor with ActorLogging {

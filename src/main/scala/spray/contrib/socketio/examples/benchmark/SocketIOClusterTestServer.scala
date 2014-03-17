@@ -11,11 +11,11 @@ import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.contrib.socketio
+import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
-import spray.contrib.socketio.extension.SocketIOExtension
 import spray.json.JsArray
 import spray.json.JsString
 
@@ -55,7 +55,7 @@ object SocketIOClusterTestServer extends App {
   startupSharedJournal(system)
 
   socketioExt.startNamespace("")
-  Namespace.subscribe(observer)(socketioExt.namespace(""))
+  socketioExt.namespace("") ! Namespace.Subscribe(observer)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

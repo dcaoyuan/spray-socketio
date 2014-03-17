@@ -7,11 +7,11 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
+import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.EventPacket
-import spray.contrib.socketio.extension.SocketIOExtension
 
 object SocketIOTestServer extends App {
 
@@ -52,7 +52,7 @@ object SocketIOTestServer extends App {
     })
 
   socketioExt.startNamespace("")
-  Namespace.subscribe(observer)(socketioExt.namespace(""))
+  socketioExt.namespace("") ! Namespace.Subscribe(observer)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

@@ -7,6 +7,7 @@ import akka.actor.ActorSystem
 import akka.actor.Props
 import akka.actor.Terminated
 import spray.contrib.socketio
+import akka.contrib.pattern.DistributedPubSubMediator.{Publish, Unsubscribe, Subscribe}
 
 class LocalConnectionActive extends ConnectionActive with Actor with ActorLogging {
   import ConnectionActive._
@@ -18,17 +19,17 @@ class LocalConnectionActive extends ConnectionActive with Actor with ActorLoggin
 
   def publishMessage(msg: Any) {
     msg match {
-      case x: OnPacket[_] => mediator ! LocalMediator.Publish(socketio.namespaceFor(x.packet.endpoint), x)
-      case x: OnBroadcast => mediator ! LocalMediator.Publish(socketio.topicForEndpoint(x.packet.endpoint), x)
+      case x: OnPacket[_] => mediator ! Publish(socketio.namespaceFor(x.packet.endpoint), x)
+      case x: OnBroadcast => mediator ! Publish(socketio.topicForEndpoint(x.packet.endpoint), x)
     }
   }
 
   def subscribe(topic: String) {
-    mediator ! LocalMediator.Subscribe(topic, self)
+    mediator ! Subscribe(topic, self)
   }
 
   def unsubscribe(topic: String) {
-    mediator ! LocalMediator.Unsubscribe(topic, self)
+    mediator ! Unsubscribe(topic, self)
   }
 
   def receive = working

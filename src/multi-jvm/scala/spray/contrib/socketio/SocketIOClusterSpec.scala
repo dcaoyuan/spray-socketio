@@ -21,9 +21,10 @@ import scala.Some
 import akka.actor.Identify
 import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
-import spray.contrib.socketio.namespace.{ Namespace, ClusterNamespace }
+import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.MessagePacket
+import spray.contrib.socketio.extension.SocketIOExtension
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -53,6 +54,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     }
     akka.persistence.snapshot-store.local.dir = "target/test-snapshots"
     akka.contrib.cluster.sharding.role = "connectionActive"
+    spray.socketio.mode = "cluster"
                                          """))
 
   nodeConfig(transport1, transport2) {
@@ -111,11 +113,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
   def startSharding(): Unit = {
     // start shard region actor
-    ClusterSharding(system).start(
-      typeName = ConnectionActive.shardName,
-      entryProps = Some(Props(classOf[ClusterConnectionActive])),
-      idExtractor = ClusterConnectionActive.idExtractor,
-      shardResolver = ClusterConnectionActive.shardResolver)
+    SocketIOExtension(system)
 
     // optional: register cluster receptionist for cluster client
     ClusterReceptionistExtension(system).registerService(
@@ -152,19 +150,19 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "startup server" in within(15.seconds) {
       runOn(transport1) {
-        val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
+        val resolver = SocketIOExtension(system).resolver
         val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], resolver), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port1)
       }
 
       runOn(transport2) {
-        val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
+        val resolver = SocketIOExtension(system).resolver
         val server = system.actorOf(Props(classOf[SocketIOTestServer.SocketIOServer], resolver), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port2)
       }
 
       runOn(business1) {
-        implicit val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
+        implicit val resolver = SocketIOExtension(system).resolver
 
         val observer = Observer[OnEvent](
           (next: OnEvent) => {
@@ -179,8 +177,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
             }
           })
 
-        import system.dispatcher
-        ClusterNamespace(system)("") map Namespace.subscribe(observer)
+        SocketIOExtension(system).startNamespace()
+        Namespace.subscribe(observer)(SocketIOExtension(system).namespace())
       }
 
       enterBarrier("startup-server")

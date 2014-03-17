@@ -16,53 +16,29 @@ import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
 import spray.contrib.socketio
 import spray.contrib.socketio.{ ConnectionActive, SocketIOServerConnection }
-import spray.contrib.socketio.namespace.ClusterNamespace
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.ClusterConnectionActive
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
+import spray.contrib.socketio.extension.SocketIOExtension
 
 object SocketIOClusterTestServer extends App {
 
-  def startupSharedJournal(system: ActorSystem, startStore: Boolean, name: String, path: String) {
-    // Start the shared journal on one node (don't crash this SPOF)
-    // This will not be needed with a distributed journal
-    if (startStore) {
-      system.actorOf(Props[SharedLeveldbStore], name)
-    }
-    // register the shared journal
-    import system.dispatcher
-    implicit val timeout = Timeout(1.minute)
-    val f = (system.actorSelection(path) ? Identify(None))
-    f.onSuccess {
-      case ActorIdentity(_, Some(ref)) => SharedLeveldbJournal.setStore(ref, system)
-      case _ =>
-        system.log.error("Shared journal not started at {}", path)
-        system.shutdown()
-    }
-    f.onFailure {
-      case _ =>
-        system.log.error("Lookup of shared journal at {} timed out", path)
-        system.shutdown()
-    }
+  def startupSharedJournal(system: ActorSystem) {
+    val store = system.actorOf(Props[SharedLeveldbStore], "store")
+    SharedLeveldbJournal.setStore(store, system)
   }
 
   val clusterPort = 2551
   // Override the configuration of the port
-  val systemConfig = ConfigFactory.parseString("akka.remote.netty.tcp.port=" + clusterPort).withFallback(ConfigFactory.load())
+  val systemConfig = ConfigFactory.parseString(
+    """
+      |akka.remote.netty.tcp.port=2551
+      |spray.socketio.mode="cluster"""").withFallback(ConfigFactory.load())
   implicit val system = ActorSystem("ClusterSystem", systemConfig)
-  val clusterSystem = Cluster(system)
-  // join to cluster
-  clusterSystem.join(clusterSystem.selfAddress)
-
-  ClusterSharding(system).start(
-    typeName = ConnectionActive.shardName,
-    entryProps = Some(Props(classOf[ClusterConnectionActive])),
-    idExtractor = ClusterConnectionActive.idExtractor,
-    shardResolver = ClusterConnectionActive.shardResolver)
-
-  implicit val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
+  val socketioExt = SocketIOExtension(system)
+  implicit val resolver = socketioExt.resolver
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -71,21 +47,19 @@ object SocketIOClusterTestServer extends App {
           spray.json.JsonParser(args) // test spray-json performance too.
           next.replyEvent("chat", args)
         case OnEvent("broadcast", args, context) =>
-          //FIXME how to get endpoint in observer?
-          next.broadcast("", MessagePacket(0, false, "", args))
+          next.broadcast(next.endpoint, MessagePacket(0, false, "", args))
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }
     })
 
-  import system.dispatcher
-
   // start the Persistence extension
   Persistence(system)
-  startupSharedJournal(system, clusterSystem.selfAddress.port == Some(clusterPort), "store", clusterSystem.selfAddress + "/user/store")
+  startupSharedJournal(system)
 
+  socketioExt.startNamespace()
+  Namespace.subscribe(observer)(socketioExt.namespace())
 
-  ClusterNamespace(system)("") map Namespace.subscribe(observer)
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")

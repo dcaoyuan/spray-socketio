@@ -13,8 +13,9 @@ import spray.can.Http
 import rx.lang.scala.Observer
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.MessagePacket
-import spray.contrib.socketio.namespace.{Namespace, ClusterNamespace}
+import spray.contrib.socketio.namespace.Namespace
 import akka.persistence.journal.leveldb.{SharedLeveldbJournal, SharedLeveldbStore}
+import spray.contrib.socketio.extension.SocketIOExtension
 
 object SimpleClusterServer extends App with MySslConfiguration {
   val usage = """
@@ -28,13 +29,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
 
   def startCluster(config: Config): ActorSystem = {
     val system = ActorSystem("ClusterSystem", config)
-    Cluster(system)
-    ClusterSharding(system).start(
-      typeName = ConnectionActive.shardName,
-      entryProps = Some(Props(classOf[ClusterConnectionActive])),
-      idExtractor = ClusterConnectionActive.idExtractor,
-      shardResolver = ClusterConnectionActive.shardResolver)
-    DistributedPubSubExtension(system).mediator
+    SocketIOExtension(system)
     system
   }
 
@@ -58,6 +53,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
       |akka.contrib.cluster.sharding.role = "connectionActive"
       |transport.hostname = "0.0.0.0"
       |transport.port = 8080
+      |spray.socketio.mode = "cluster"
     """.stripMargin))
 
   implicit var system: ActorSystem = _
@@ -83,7 +79,8 @@ object SimpleClusterServer extends App with MySslConfiguration {
     case "business" :: tail =>
       val config = parseString("akka.cluster.roles =[\"business\"]").withFallback(commonSettings)
       system = startCluster(config)
-      implicit val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
+      val socketioExt = SocketIOExtension(system)
+      implicit val resolver = socketioExt.resolver
 
       val observer = Observer[OnEvent](
         (next: OnEvent) => {
@@ -98,9 +95,8 @@ object SimpleClusterServer extends App with MySslConfiguration {
           }
         })
 
-      val tmp = system
-      import tmp.dispatcher
-      ClusterNamespace(system)("") map Namespace.subscribe(observer)
+      socketioExt.startNamespace()
+      Namespace.subscribe(observer)(socketioExt.namespace())
 
     case _ =>
       exitWithUsage

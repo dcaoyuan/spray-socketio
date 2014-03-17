@@ -7,6 +7,7 @@ import akka.actor.ActorSystem
 import akka.actor.Props
 import akka.actor.Terminated
 import scala.collection.concurrent
+import akka.contrib.pattern.DistributedPubSubMediator.{Publish, Unsubscribe, SubscribeAck, Subscribe}
 
 object LocalMediator {
   private var mediator: ActorRef = _
@@ -21,10 +22,6 @@ object LocalMediator {
 
   val name = "localmediator"
 
-  final case class SubscribeAck(subsribte: Subscribe)
-  final case class Subscribe(topic: String, subscitption: ActorRef)
-  final case class Unsubscribe(topic: String, subscitption: ActorRef)
-  final case class Publish(topic: String, msg: Any)
 }
 
 class LocalMediator extends Actor with ActorLogging {

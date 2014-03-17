@@ -9,13 +9,13 @@ import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.LocalConnectionActiveResolver
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
-import spray.contrib.socketio.namespace.LocalNamespace
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
 import spray.http.HttpResponse
 import spray.json.DefaultJsonProtocol
+import spray.contrib.socketio.extension.SocketIOExtension
 
 object SimpleServer extends App with MySslConfiguration {
 
@@ -74,7 +74,8 @@ object SimpleServer extends App with MySslConfiguration {
   import TheJsonProtocol._
 
   implicit val system = ActorSystem()
-  implicit val resolver = LocalConnectionActiveResolver(system)
+  val socketioExt = SocketIOExtension(system)
+  implicit val resolver = socketioExt.resolver
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -97,8 +98,9 @@ object SimpleServer extends App with MySslConfiguration {
       }
     })
 
-  import system.dispatcher
-  LocalNamespace(system)("testendpoint") map Namespace.subscribe(observer)
+  socketioExt.startNamespace("testendpoint")
+  Namespace.subscribe(observer)(socketioExt.namespace("testendpoint"))
+
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)

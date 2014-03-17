@@ -5,12 +5,17 @@ import akka.actor.ActorRef
 import akka.actor.Cancellable
 import akka.contrib.pattern.DistributedPubSubMediator.Publish
 import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
+import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
 import akka.contrib.pattern.DistributedPubSubMediator.Unsubscribe
+import akka.pattern.ask
 import akka.event.LoggingAdapter
 import akka.util.ByteString
 import org.parboiled2.ParseError
 import scala.collection.immutable
+import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.Failure
+import scala.util.Success
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.AckPacket
@@ -158,7 +163,7 @@ trait ConnectionActive { _: Actor =>
 
     case SendAck(sessionId, packet, args)                => sendAck(packet, args)
 
-    case Broadcast(sessionId, room, packet)              => publishMessage(OnBroadcast(sessionId, room, packet))
+    case Broadcast(sessionId, room, packet)              => publishToMediator(OnBroadcast(sessionId, room, packet))
     case OnBroadcast(senderSessionId, room, packet)      => sendPacket(packet) // write to client
 
     case Subscibe(sessionId, endpoint, room) =>
@@ -233,15 +238,19 @@ trait ConnectionActive { _: Actor =>
         resetHeartbeatTimeout()
 
       case ConnectPacket(endpoint, args) =>
-        // bounce connect packet back to client
-        sendPacket(packet)
-        connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
+        connectionContext foreach { ctx => publishToMediator(OnPacket(packet, ctx)) }
         val topic = topicFor(endpoint, "")
         topics += topic
-        subscribe(topic)
+        subscribe(topic).onComplete {
+          case Success(ack) =>
+            // bounce connect packet back to client
+            sendPacket(packet)
+          case Failure(ex) =>
+            log.warning("Failed to subscribe to medietor on topic {}: {}", topic, ex.getMessage)
+        }
 
       case DisconnectPacket(endpoint) =>
-        connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
+        connectionContext foreach { ctx => publishToMediator(OnPacket(packet, ctx)) }
         val topic = topicFor(endpoint, "")
         topics -= topic
         if (endpoint == "") {
@@ -258,7 +267,7 @@ trait ConnectionActive { _: Actor =>
           case x: DataPacket if x.isAckRequested && !x.hasAckData => sendAck(x, "[]")
           case _ =>
         }
-        connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
+        connectionContext foreach { ctx => publishToMediator(OnPacket(packet, ctx)) }
     }
   }
 
@@ -318,15 +327,15 @@ trait ConnectionActive { _: Actor =>
     sendPacket(AckPacket(originalPacket.id, args))
   }
 
-  def publishMessage(msg: Any) {
+  def publishToMediator(msg: Any) {
     msg match {
       case x: OnPacket[_] => mediator ! Publish(socketio.topicFor(x.packet.endpoint, ""), x)
       case x: OnBroadcast => mediator ! Publish(socketio.topicFor(x.packet.endpoint, x.room), x)
     }
   }
 
-  def subscribe(topic: String) {
-    mediator ! Subscribe(topic, self)
+  def subscribe(topic: String): Future[SubscribeAck] = {
+    mediator.ask(Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
   }
 
   def unsubscribe(topic: String) {

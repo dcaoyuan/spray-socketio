@@ -16,21 +16,6 @@ class LocalConnectionActive extends ConnectionActive with Actor with ActorLoggin
 
   val mediator = LocalMediator(context.system)
 
-  def publishMessage(msg: Any) {
-    msg match {
-      case x: OnPacket[_] => mediator ! LocalMediator.Publish(socketio.topicFor(x.packet.endpoint, ""), x)
-      case x: OnBroadcast => mediator ! LocalMediator.Publish(socketio.topicFor(x.packet.endpoint, x.room), x)
-    }
-  }
-
-  def subscribe(topic: String) {
-    mediator ! LocalMediator.Subscribe(topic, self)
-  }
-
-  def unsubscribe(topic: String) {
-    mediator ! LocalMediator.Unsubscribe(topic, self)
-  }
-
   def receive = working
 }
 

@@ -17,6 +17,8 @@ import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.packet.Packet
+import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
+import scala.util.{ Failure, Success }
 
 /**
  *
@@ -93,10 +95,8 @@ object Namespace {
 /**
  * Namespace is refered to endpoint for observers and will subscribe to topic 'namespace' of mediator
  */
-trait Namespace extends Actor with ActorLogging {
+class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLogging {
   import Namespace._
-
-  def endpoint: String
 
   val connectChannel = Subject[OnConnect]()
   val disconnectChannel = Subject[OnDisconnect]()
@@ -104,7 +104,21 @@ trait Namespace extends Actor with ActorLogging {
   val jsonChannel = Subject[OnJson]()
   val eventChannel = Subject[OnEvent]()
 
-  def subscribeMediatorForEndpoint(action: () => Unit)
+  private var isMediatorSubscribed: Boolean = _
+  def subscribeMediatorForEndpoint(action: () => Unit) = {
+    if (!isMediatorSubscribed) {
+      import context.dispatcher
+      mediator.ask(akka.contrib.pattern.DistributedPubSubMediator.Subscribe(socketio.topicFor(endpoint, ""), self))(socketio.actorResolveTimeout).mapTo[SubscribeAck] onComplete {
+        case Success(ack) =>
+          isMediatorSubscribed = true
+          action()
+        case Failure(ex) =>
+          log.warning("Failed to subscribe to medietor on topic {}: {}", socketio.topicFor(endpoint, ""), ex.getMessage)
+      }
+    } else {
+      action()
+    }
+  }
 
   def receive: Receive = {
     case x @ Subscribe(observer) =>

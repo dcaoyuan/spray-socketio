@@ -7,13 +7,11 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio
-import spray.contrib.socketio.LocalConnectionActiveResolver
 import spray.contrib.socketio.SocketIOServerConnection
-import spray.contrib.socketio.namespace.LocalNamespace
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.EventPacket
+import spray.contrib.socketio.extension.SocketIOExtension
 
 object SocketIOTestServer extends App {
 
@@ -35,7 +33,8 @@ object SocketIOTestServer extends App {
   }
 
   implicit val system = ActorSystem()
-  implicit val resolver = LocalConnectionActiveResolver(system)
+  val socketioExt = SocketIOExtension(system)
+  implicit val resolver = SocketIOExtension(system).resolver
 
   val observer = Observer[OnEvent](
     (next: OnEvent) => {
@@ -43,17 +42,18 @@ object SocketIOTestServer extends App {
         case OnEvent("chat", args, context) =>
           spray.json.JsonParser(args) // test spray-json performance too.
           if (isBroadcast) {
-            next.broadcast("", EventPacket(-1L, false, "", "chat", args))
+            next.broadcast("", EventPacket(-1L, false, next.endpoint, next.name, args))
           } else {
-            next.replyEvent("chat", args)
+            next.replyEvent(next.name, args)
           }
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }
     })
 
-  import system.dispatcher
-  LocalNamespace(system)("") map Namespace.subscribe(observer)
+  socketioExt.startNamespace()
+  Namespace.subscribe(observer)(socketioExt.namespace())
+
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")

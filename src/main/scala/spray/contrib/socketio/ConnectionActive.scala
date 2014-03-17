@@ -3,6 +3,9 @@ package spray.contrib.socketio
 import akka.actor.Actor
 import akka.actor.ActorRef
 import akka.actor.Cancellable
+import akka.contrib.pattern.DistributedPubSubMediator.Publish
+import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
+import akka.contrib.pattern.DistributedPubSubMediator.Unsubscribe
 import akka.event.LoggingAdapter
 import akka.util.ByteString
 import org.parboiled2.ParseError
@@ -82,9 +85,7 @@ trait ConnectionActive { _: Actor =>
   import context.dispatcher
 
   def log: LoggingAdapter
-  def publishMessage(msg: Any)
-  def subscribe(topic: String)
-  def unsubscribe(topic: String)
+  def mediator: ActorRef
 
   var connectionContext: Option[ConnectionContext] = None
   var transportConnection: ActorRef = _
@@ -316,5 +317,21 @@ trait ConnectionActive { _: Actor =>
   def sendAck(originalPacket: DataPacket, args: String) {
     sendPacket(AckPacket(originalPacket.id, args))
   }
+
+  def publishMessage(msg: Any) {
+    msg match {
+      case x: OnPacket[_] => mediator ! Publish(socketio.topicFor(x.packet.endpoint, ""), x)
+      case x: OnBroadcast => mediator ! Publish(socketio.topicFor(x.packet.endpoint, x.room), x)
+    }
+  }
+
+  def subscribe(topic: String) {
+    mediator ! Subscribe(topic, self)
+  }
+
+  def unsubscribe(topic: String) {
+    mediator ! Unsubscribe(topic, self)
+  }
+
 }
 

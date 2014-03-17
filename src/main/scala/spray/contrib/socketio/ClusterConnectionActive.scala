@@ -27,21 +27,6 @@ class ClusterConnectionActive extends ConnectionActive with EventsourcedProcesso
 
   val mediator = DistributedPubSubExtension(context.system).mediator
 
-  def publishMessage(msg: Any) {
-    msg match {
-      case x: OnPacket[_] => mediator ! DistributedPubSubMediator.Publish(socketio.topicFor(x.packet.endpoint, ""), x)
-      case x: OnBroadcast => mediator ! DistributedPubSubMediator.Publish(socketio.topicFor(x.packet.endpoint, x.room), x)
-    }
-  }
-
-  def subscribe(topic: String) {
-    mediator ! DistributedPubSubMediator.Subscribe(topic, self)
-  }
-
-  def unsubscribe(topic: String) {
-    mediator ! DistributedPubSubMediator.Unsubscribe(topic, self)
-  }
-
   def receiveRecover: Receive = {
     case event: Event => update(event)
   }

@@ -29,8 +29,8 @@ class ClusterConnectionActive extends ConnectionActive with EventsourcedProcesso
 
   def publishMessage(msg: Any) {
     msg match {
-      case x: OnPacket[_] => mediator ! DistributedPubSubMediator.Publish(socketio.namespaceFor(x.packet.endpoint), x)
-      case x: OnBroadcast => mediator ! DistributedPubSubMediator.Publish(socketio.topicForEndpoint(x.packet.endpoint), x)
+      case x: OnPacket[_] => mediator ! DistributedPubSubMediator.Publish(socketio.topicFor(x.packet.endpoint, ""), x)
+      case x: OnBroadcast => mediator ! DistributedPubSubMediator.Publish(socketio.topicFor(x.packet.endpoint, x.room), x)
     }
   }
 

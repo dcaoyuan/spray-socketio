@@ -60,12 +60,12 @@ object ConnectionActive {
   /**
    * ask me to publish an OnBroadcast data
    */
-  final case class Broadcast(sessionId: String, topic: String, packet: Packet) extends Command
+  final case class Broadcast(sessionId: String, room: String, packet: Packet) extends Command
 
   /**
    * Broadcast event to be published or recevived
    */
-  final case class OnBroadcast(sessionId: String, topic: String, packet: Packet)
+  final case class OnBroadcast(sessionId: String, room: String, packet: Packet)
 
   /**
    * Packet event to be published
@@ -157,17 +157,16 @@ trait ConnectionActive { _: Actor =>
 
     case SendAck(sessionId, packet, args)                => sendAck(packet, args)
 
-    case Broadcast(sessionId, topic, packet)             => publishMessage(OnBroadcast(sessionId, topic, packet))
-    case OnBroadcast(senderSessionId, topic, packet)     => sendPacket(packet) // write to client
+    case Broadcast(sessionId, room, packet)              => publishMessage(OnBroadcast(sessionId, room, packet))
+    case OnBroadcast(senderSessionId, room, packet)      => sendPacket(packet) // write to client
 
     case Subscibe(sessionId, endpoint, room) =>
-      // TODO check if this connection is under the namespace of this endpoint? 
-      val topic = topicForRoom(endpoint, room)
+      val topic = topicFor(endpoint, room)
       topics += topic
       subscribe(topic)
 
     case Unsubscibe(sessionId, endpoint, room) =>
-      val topic = topicForRoom(endpoint, room)
+      val topic = topicFor(endpoint, room)
       topics -= topic
       unsubscribe(topic)
 
@@ -236,13 +235,13 @@ trait ConnectionActive { _: Actor =>
         // bounce connect packet back to client
         sendPacket(packet)
         connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
-        val topic = topicForEndpoint(endpoint)
+        val topic = topicFor(endpoint, "")
         topics += topic
         subscribe(topic)
 
       case DisconnectPacket(endpoint) =>
         connectionContext foreach { ctx => publishMessage(OnPacket(packet, ctx)) }
-        val topic = topicForEndpoint(endpoint)
+        val topic = topicFor(endpoint, "")
         topics -= topic
         if (endpoint == "") {
           topics foreach unsubscribe
@@ -284,19 +283,19 @@ trait ConnectionActive { _: Actor =>
   }
 
   def sendMessage(endpoint: String, msg: String) {
-    val packet = MessagePacket(-1L, false, socketio.endpointFor(endpoint), msg)
+    val packet = MessagePacket(-1L, false, endpoint, msg)
     sendPacket(packet)
   }
 
   def sendJson(endpoint: String, json: String) {
-    val packet = JsonPacket(-1L, false, socketio.endpointFor(endpoint), json)
+    val packet = JsonPacket(-1L, false, endpoint, json)
     sendPacket(packet)
   }
 
   def sendEvent(endpoint: String, name: String, args: Either[String, Seq[String]]) {
     val packet = args match {
-      case Left(x)   => EventPacket(-1L, false, socketio.endpointFor(endpoint), name, x)
-      case Right(xs) => EventPacket(-1L, false, socketio.endpointFor(endpoint), name, xs)
+      case Left(x)   => EventPacket(-1L, false, endpoint, name, x)
+      case Right(xs) => EventPacket(-1L, false, endpoint, name, xs)
     }
     sendPacket(packet)
   }

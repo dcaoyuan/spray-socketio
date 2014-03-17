@@ -1,9 +1,9 @@
 package spray.contrib.socketio.examples
 
-import com.typesafe.config.{Config, ConfigFactory}
-import akka.actor.{Props, ActorSystem}
-import spray.contrib.socketio.{ClusterConnectionActive, ConnectionActive}
-import akka.contrib.pattern.{DistributedPubSubExtension, ClusterSharding}
+import com.typesafe.config.{ Config, ConfigFactory }
+import akka.actor.{ Props, ActorSystem }
+import spray.contrib.socketio.{ ClusterConnectionActive, ConnectionActive }
+import akka.contrib.pattern.{ DistributedPubSubExtension, ClusterSharding }
 import akka.cluster.Cluster
 import akka.persistence.Persistence
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
@@ -13,8 +13,8 @@ import spray.can.Http
 import rx.lang.scala.Observer
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.MessagePacket
-import spray.contrib.socketio.namespace.{Namespace, ClusterNamespace}
-import akka.persistence.journal.leveldb.{SharedLeveldbJournal, SharedLeveldbStore}
+import spray.contrib.socketio.namespace.{ Namespace, ClusterNamespace }
+import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 
 object SimpleClusterServer extends App with MySslConfiguration {
   val usage = """
@@ -90,9 +90,9 @@ object SimpleClusterServer extends App with MySslConfiguration {
           next match {
             case OnEvent("chat", args, context) =>
               spray.json.JsonParser(args) // test spray-json too.
-              next.replyEvent("chat", args)(resolver)
+              next.replyEvent("chat", args)
             case OnEvent("broadcast", args, context) =>
-              next.broadcast("", MessagePacket(0, false, "", args))(resolver)
+              next.broadcast("", MessagePacket(0, false, "", args))
             case _ =>
               println("observed: " + next.name + ", " + next.args)
           }

@@ -25,15 +25,15 @@ class LocalNamespace(implicit val endpoint: String) extends Namespace {
   val mediator = LocalMediator(context.system)
 
   private var isMediatorSubscribed: Boolean = _
-  def subscribeMediatorForNamespace(action: () => Unit) = {
+  def subscribeMediatorForEndpoint(action: () => Unit) = {
     if (!isMediatorSubscribed) {
       import context.dispatcher
-      mediator.ask(LocalMediator.Subscribe(namespace, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck] onComplete {
+      mediator.ask(LocalMediator.Subscribe(socketio.topicFor(endpoint, ""), self))(socketio.actorResolveTimeout).mapTo[SubscribeAck] onComplete {
         case Success(ack) =>
           isMediatorSubscribed = true
           action()
         case Failure(ex) =>
-          log.warning("Failed to subscribe to medietor on topic {}: {}", namespace, ex.getMessage)
+          log.warning("Failed to subscribe to medietor on topic {}: {}", socketio.topicFor(endpoint, ""), ex.getMessage)
       }
     } else {
       action()

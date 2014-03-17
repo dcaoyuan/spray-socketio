@@ -38,12 +38,15 @@ package object socketio {
 
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds
 
-  val GLOBAL_NAMESPACE = "socketio-namespace"
+  /**
+   * Used for actor path and name only when namespace is being created, not for topic.
+   */
+  def namespaceFor(endpoint: String) = "socketio-namespace-" + { if (endpoint == "") "global" else endpoint }
 
-  def topicForRoom(endpoint: String, room: String) = "socketio-" + namespaceFor(endpoint) + "/" + room
-  def topicForEndpoint(endpoint: String) = "socketio-" + namespaceFor(endpoint)
-  def namespaceFor(endpoint: String) = if (endpoint == "") GLOBAL_NAMESPACE else endpoint
-  def endpointFor(namespace: String) = if (namespace == GLOBAL_NAMESPACE) "" else namespace
+  /**
+   * topic cannot contain '.' or '/'
+   */
+  def topicFor(endpoint: String, room: String) = "socketio" + { if (endpoint != "") "-" + endpoint else "" } + { if (room != "") "-" + room else "" }
 
   private[socketio] final class SoConnectingContext(
     var sessionId: String,

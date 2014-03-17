@@ -18,8 +18,8 @@ class LocalConnectionActive extends ConnectionActive with Actor with ActorLoggin
 
   def publishMessage(msg: Any) {
     msg match {
-      case x: OnPacket[_] => mediator ! LocalMediator.Publish(socketio.namespaceFor(x.packet.endpoint), x)
-      case x: OnBroadcast => mediator ! LocalMediator.Publish(socketio.topicForEndpoint(x.packet.endpoint), x)
+      case x: OnPacket[_] => mediator ! LocalMediator.Publish(socketio.topicFor(x.packet.endpoint, ""), x)
+      case x: OnBroadcast => mediator ! LocalMediator.Publish(socketio.topicFor(x.packet.endpoint, x.room), x)
     }
   }
 

@@ -71,7 +71,6 @@ object SocketIOClusterTestServer extends App {
           spray.json.JsonParser(args) // test spray-json performance too.
           next.replyEvent("chat", args)
         case OnEvent("broadcast", args, context) =>
-          //FIXME how to get endpoint in observer?
           next.broadcast("", MessagePacket(0, false, "", args))
         case _ =>
           println("observed: " + next.name + ", " + next.args)
@@ -83,7 +82,6 @@ object SocketIOClusterTestServer extends App {
   // start the Persistence extension
   Persistence(system)
   startupSharedJournal(system, clusterSystem.selfAddress.port == Some(clusterPort), "store", clusterSystem.selfAddress + "/user/store")
-
 
   ClusterNamespace(system)("") map Namespace.subscribe(observer)
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")

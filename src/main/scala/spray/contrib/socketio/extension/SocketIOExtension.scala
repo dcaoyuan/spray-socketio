@@ -47,7 +47,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   lazy val resolver = if (isCluster) ClusterSharding(system).shardRegion(ConnectionActive.shardName) else LocalConnectionActiveResolver(system)
 
-  def startNamespace(endpoint: String = ""): ActorRef = {
+  def startNamespace(endpoint: String): ActorRef = {
     val namespace = socketio.namespaceFor(endpoint)
     implicit val timeout = system.settings.CreationTimeout
     val startMsg = Start(namespace, Props(classOf[Namespace], endpoint, mediator))
@@ -56,7 +56,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     namespaceRef
   }
 
-  def namespace(endpoint: String = ""): ActorRef = namespaces.get(endpoint) match {
+  def namespace(endpoint: String): ActorRef = namespaces.get(endpoint) match {
     case null          ⇒ throw new IllegalArgumentException(s"Namespace endpoint [$endpoint] must be started first")
     case ref: ActorRef ⇒ ref
   }

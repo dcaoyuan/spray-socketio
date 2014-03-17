@@ -15,12 +15,16 @@ import akka.io.IO
 import spray.can.server.UHttp
 import spray.can.Http
 import spray.contrib.socketio.examples.benchmark.{ SocketIOTestClient, SocketIOTestServer }
+import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
+import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnClose
+import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnOpen
+import spray.json.JsArray
+import spray.json.JsString
 import akka.actor.ActorIdentity
 import akka.remote.testconductor.RoleName
 import scala.concurrent.Await
 import scala.concurrent.Promise
 import akka.actor.Identify
-import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
 import rx.lang.scala.Observer
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
@@ -179,14 +183,15 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
                 spray.json.JsonParser(args) // test spray-json too.
                 next.replyEvent("chat", args)(resolver)
               case OnEvent("broadcast", args, context) =>
-                next.broadcast("", MessagePacket(0, false, "", args))(resolver)
+                val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
+                next.broadcast("", MessagePacket(-1, false, next.endpoint, msg))(resolver)
               case _ =>
                 println("observed: " + next.name + ", " + next.args)
             }
           })
 
-        SocketIOExtension(system).startNamespace()
-        Namespace.subscribe(observer)(SocketIOExtension(system).namespace())
+        SocketIOExtension(system).startNamespace("")
+        Namespace.subscribe(observer)(SocketIOExtension(system).namespace(""))
       }
 
       enterBarrier("startup-server")
@@ -196,11 +201,17 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(client1) {
         waitForSeconds(5)(system)
         val connect = Http.Connect(host, port1)
-        val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
+        val testing = self
+        val commander = system.actorOf(Props(new Actor {
+          def receive = {
+            case OnOpen                   => sender() ! SocketIOTestClient.SendTimestampedChat
+            case x @ MessageArrived(time) => testing ! x
+          }
+        }))
+        val client = system.actorOf(Props(new SocketIOTestClient(connect, commander)))
 
         awaitAssert {
           within(10.second) {
-            client ! SocketIOTestClient.SendTimestampedChat
             expectMsgPF() {
               case MessageArrived(time) =>
                 println("round time: " + time)
@@ -218,7 +229,14 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(client2) {
         waitForSeconds(5)(system)
         val connect = Http.Connect(host, port2)
-        val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
+        val testing = self
+        val commander = system.actorOf(Props(new Actor {
+          def receive = {
+            case OnOpen =>
+            case `msg`  => testing ! msg
+          }
+        }))
+        val client = system.actorOf(Props(new SocketIOTestClient(connect, commander)))
 
         awaitAssert {
           within(10.second) {
@@ -230,8 +248,16 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(client1) {
         waitForSeconds(5)(system)
         val connect = Http.Connect(host, port1)
-        val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
-        client ! SocketIOTestClient.SendBroadcast(msg)
+        val testing = self
+        val commander = system.actorOf(Props(new Actor {
+          def receive = {
+            case OnOpen =>
+              waitForSeconds(5)(system) // wait for client2 connected
+              sender() ! SocketIOTestClient.SendBroadcast(msg)
+            case `msg` => testing ! msg
+          }
+        }))
+        val client = system.actorOf(Props(new SocketIOTestClient(connect, commander)))
 
         awaitAssert {
           within(10.second) {

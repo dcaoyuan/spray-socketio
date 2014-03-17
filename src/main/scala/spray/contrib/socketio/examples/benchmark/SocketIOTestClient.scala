@@ -7,9 +7,6 @@ import spray.can.server.UHttp
 import spray.can.websocket
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
-import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.MessageArrived
-import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.OnClose
-import spray.contrib.socketio.examples.benchmark.SocketIOLoadTester.OnOpen
 import spray.contrib.socketio.packet.{ MessagePacket, EventPacket, Packet }
 import spray.json.JsonParser
 import spray.json.JsArray
@@ -24,29 +21,36 @@ object SocketIOTestClient {
   }
 
   val wsHandshakeReq = websocket.basicHandshakeRepuset("/mytest")
+
+  case object OnOpen
+  case object OnClose
+  case class MessageArrived(roundtrip: Long)
+
   case object SendTimestampedChat
   case object SendHello
   case class SendBroadcast(msg: String)
 }
 
-class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socketio.SocketIOClientConnection {
-  val Id = SocketIOTestClient.nextId.toString
+class SocketIOTestClient(connect: Http.Connect, commander: ActorRef) extends socketio.SocketIOClientConnection {
+  import SocketIOTestClient._
+
+  val Id = nextId.toString
 
   import context.system
   IO(UHttp) ! connect
 
   def businessLogic: Receive = {
-    case SocketIOTestClient.SendHello           => connection ! TextFrame("5:::{\"name\":\"hello\", \"args\":[]}")
-    case SocketIOTestClient.SendTimestampedChat => connection ! TextFrame(timestampedChat)
-    case SocketIOTestClient.SendBroadcast(msg)  => connection ! TextFrame("""5:::{"name":"broadcast", "args":""" + spray.json.JsString(msg).value + "}")
+    case SendHello           => connection ! TextFrame("5:::{\"name\":\"hello\", \"args\":[]}")
+    case SendTimestampedChat => connection ! TextFrame(timestampedChat)
+    case SendBroadcast(msg)  => connection ! TextFrame("""5:::{"name":"broadcast", "args":[""" + "\"" + msg + "\"" + "]}")
   }
 
   override def onDisconnected(endpoint: String) {
-    report ! OnClose
+    commander ! OnClose
   }
 
   override def onOpen() {
-    report ! OnOpen
+    commander ! OnOpen
   }
 
   def onPacket(packet: Packet) {
@@ -63,7 +67,7 @@ class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socket
                       case Array(id, timestamp) =>
                         val roundtripTime = messageArrivedAt - timestamp.toLong
                         log.debug("roundtripTime {}", roundtripTime)
-                        report ! MessageArrived(roundtripTime)
+                        commander ! MessageArrived(roundtripTime)
                       case _ =>
                     }
                   case _ =>
@@ -72,7 +76,7 @@ class SocketIOTestClient(connect: Http.Connect, report: ActorRef) extends socket
             }
           case _ =>
         }
-      case msg: MessagePacket => report ! msg.data
+      case msg: MessagePacket => commander ! msg.data
       case _                  =>
     }
 

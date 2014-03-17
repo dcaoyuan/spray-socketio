@@ -1,27 +1,23 @@
 package spray.contrib.socketio.examples.benchmark
 
 import akka.io.IO
-import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef, ActorIdentity, Identify }
-import akka.contrib.pattern.{ ClusterSharding }
-import akka.cluster.Cluster
+import akka.actor.{ ActorSystem, Props }
 import akka.pattern.ask
 import akka.persistence.Persistence
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
-import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import rx.lang.scala.Observer
 import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
-import spray.can.websocket.frame.Frame
 import spray.contrib.socketio
-import spray.contrib.socketio.{ ConnectionActive, SocketIOServerConnection }
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
-import spray.contrib.socketio.ClusterConnectionActive
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.extension.SocketIOExtension
+import spray.json.JsArray
+import spray.json.JsString
 
 object SocketIOClusterTestServer extends App {
 
@@ -47,7 +43,8 @@ object SocketIOClusterTestServer extends App {
           spray.json.JsonParser(args) // test spray-json performance too.
           next.replyEvent("chat", args)
         case OnEvent("broadcast", args, context) =>
-          next.broadcast("", MessagePacket(0, false, next.endpoint, args))
+          val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
+          next.broadcast("", MessagePacket(-1, false, next.endpoint, msg))
         case _ =>
           println("observed: " + next.name + ", " + next.args)
       }
@@ -57,8 +54,8 @@ object SocketIOClusterTestServer extends App {
   Persistence(system)
   startupSharedJournal(system)
 
-  socketioExt.startNamespace()
-  Namespace.subscribe(observer)(socketioExt.namespace())
+  socketioExt.startNamespace("")
+  Namespace.subscribe(observer)(socketioExt.namespace(""))
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

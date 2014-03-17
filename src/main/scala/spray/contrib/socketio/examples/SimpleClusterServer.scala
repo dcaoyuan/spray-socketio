@@ -16,6 +16,8 @@ import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.namespace.Namespace
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import spray.contrib.socketio.extension.SocketIOExtension
+import spray.json.JsArray
+import spray.json.JsString
 
 object SimpleClusterServer extends App with MySslConfiguration {
   val usage = """
@@ -89,14 +91,15 @@ object SimpleClusterServer extends App with MySslConfiguration {
               spray.json.JsonParser(args) // test spray-json too.
               next.replyEvent("chat", args)
             case OnEvent("broadcast", args, context) =>
-              next.broadcast("", MessagePacket(0, false, "", args))
+              val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
+              next.broadcast("", MessagePacket(-1, false, next.endpoint, msg))
             case _ =>
               println("observed: " + next.name + ", " + next.args)
           }
         })
 
-      socketioExt.startNamespace()
-      Namespace.subscribe(observer)(socketioExt.namespace())
+      socketioExt.startNamespace("")
+      Namespace.subscribe(observer)(socketioExt.namespace(""))
 
     case _ =>
       exitWithUsage

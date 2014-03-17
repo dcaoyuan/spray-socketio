@@ -12,14 +12,16 @@ import java.io.BufferedWriter
 import java.io.FileNotFoundException
 import java.io.FileWriter
 import java.io.IOException
+import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
 import scala.collection.mutable
 import scala.collection.JavaConversions._
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.websocket
-
-import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
+import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
+import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnClose
+import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnOpen
 
 object SocketIOLoadTester {
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
@@ -42,9 +44,6 @@ object SocketIOLoadTester {
   implicit val system = ActorSystem()
 
   case class RoundBegin(concurrentConnections: Int)
-  case object OnOpen
-  case object OnClose
-  case class MessageArrived(roundtrip: Long)
   case class StatsSummary(stats: mutable.Map[Double, SummaryStatistics])
   case object ReceivingTimeout
 

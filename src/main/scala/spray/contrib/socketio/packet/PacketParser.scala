@@ -141,6 +141,7 @@ object PacketParser {
       apply("""1::/test?arg1=1&arg2=2"""),
       apply("""2"""),
       apply("""2::"""),
+      apply("""3:::hello world"""),
       apply("""5:1+::{"name":"tobi"}"""),
       apply("""5:::{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),
       apply("""5:21312312:test:{"name":"edwald","args":[{"a": "b"},2,"3"]}"""),

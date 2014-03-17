@@ -51,8 +51,8 @@ object SocketIOTestServer extends App {
       }
     })
 
-  socketioExt.startNamespace()
-  Namespace.subscribe(observer)(socketioExt.namespace())
+  socketioExt.startNamespace("")
+  Namespace.subscribe(observer)(socketioExt.namespace(""))
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

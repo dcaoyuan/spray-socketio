@@ -3,9 +3,7 @@ package spray.contrib.socketio
 import akka.actor.Actor
 import akka.actor.ActorRef
 import akka.actor.Cancellable
-import akka.contrib.pattern.DistributedPubSubMediator
-import akka.contrib.pattern.DistributedPubSubMediator.Publish
-import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
+import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
 import akka.pattern.ask
 import akka.event.LoggingAdapter
 import akka.util.ByteString
@@ -59,8 +57,8 @@ object ConnectionActive {
 
   final case class SendAck(sessionId: String, originalPacket: DataPacket, args: String) extends Command
 
-  final case class Subscribe(sessionId: String, endpoint: String, room: String) extends Command
-  final case class Unsubscribe(sessionId: String, endpoint: String, room: String) extends Command
+  final case class SubscribeBroadcast(sessionId: String, endpoint: String, room: String) extends Command
+  final case class UnsubscribeBroadcast(sessionId: String, endpoint: String, room: String) extends Command
 
   /**
    * ask me to publish an OnBroadcast data
@@ -161,18 +159,18 @@ trait ConnectionActive { _: Actor =>
 
     case SendAck(sessionId, packet, args)                => sendAck(packet, args)
 
-    case Broadcast(sessionId, room, packet)              => publishToMediator(OnBroadcast(sessionId, room, packet))
+    case Broadcast(sessionId, room, packet)              => publishToBroadcast(OnBroadcast(sessionId, room, packet))
     case OnBroadcast(senderSessionId, room, packet)      => sendPacket(packet) // write to client
 
-    case Subscribe(sessionId, endpoint, room) =>
-      val topic = topicFor(endpoint, room)
+    case SubscribeBroadcast(sessionId, endpoint, room) =>
+      val topic = socketio.topicForBroadcast(endpoint, room)
       topics += topic
-      subscribe(topic)
+      subscribeBroadcast(topic)
 
-    case Unsubscribe(sessionId, endpoint, room) =>
-      val topic = topicFor(endpoint, room)
+    case UnsubscribeBroadcast(sessionId, endpoint, room) =>
+      val topic = socketio.topicForBroadcast(endpoint, room)
       topics -= topic
-      unsubscribe(topic)
+      unsubscribeBroadcast(topic)
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
@@ -235,10 +233,10 @@ trait ConnectionActive { _: Actor =>
         resetHeartbeatTimeout()
 
       case ConnectPacket(endpoint, args) =>
-        connectionContext foreach { ctx => publishToMediator(OnPacket(packet, ctx)) }
-        val topic = topicFor(endpoint, "")
+        connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        val topic = socketio.topicForBroadcast(endpoint, "")
         topics += topic
-        subscribe(topic).onComplete {
+        subscribeBroadcast(topic).onComplete {
           case Success(ack) =>
             // bounce connect packet back to client
             sendPacket(packet)
@@ -247,15 +245,15 @@ trait ConnectionActive { _: Actor =>
         }
 
       case DisconnectPacket(endpoint) =>
-        connectionContext foreach { ctx => publishToMediator(OnPacket(packet, ctx)) }
-        val topic = topicFor(endpoint, "")
+        connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        val topic = socketio.topicForBroadcast(endpoint, "")
         topics -= topic
         if (endpoint == "") {
-          topics foreach unsubscribe
+          topics foreach unsubscribeBroadcast
           topics = Set()
           context.stop(self)
         } else {
-          unsubscribe(topic)
+          unsubscribeBroadcast(topic)
         }
 
       case _ =>
@@ -264,7 +262,7 @@ trait ConnectionActive { _: Actor =>
           case x: DataPacket if x.isAckRequested && !x.hasAckData => sendAck(x, "[]")
           case _ =>
         }
-        connectionContext foreach { ctx => publishToMediator(OnPacket(packet, ctx)) }
+        connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
     }
   }
 
@@ -324,19 +322,20 @@ trait ConnectionActive { _: Actor =>
     sendPacket(AckPacket(originalPacket.id, args))
   }
 
-  def publishToMediator(msg: Any) {
-    msg match {
-      case x: OnPacket[_] => mediator ! Publish(socketio.topicFor(x.packet.endpoint, ""), x)
-      case x: OnBroadcast => mediator ! Publish(socketio.topicFor(x.packet.endpoint, x.room), x)
-    }
+  def publishToBroadcast(msg: OnBroadcast) {
+    mediator ! Publish(socketio.topicForBroadcast(msg.packet.endpoint, msg.room), msg)
   }
 
-  def subscribe(topic: String): Future[SubscribeAck] = {
-    mediator.ask(DistributedPubSubMediator.Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
+  def publishToNamespace[T <: Packet](msg: OnPacket[T]) {
+    mediator ! Publish(socketio.topicForNamespace(msg.packet.endpoint), msg)
   }
 
-  def unsubscribe(topic: String) {
-    mediator ! DistributedPubSubMediator.Unsubscribe(topic, self)
+  def subscribeBroadcast(topic: String): Future[SubscribeAck] = {
+    mediator.ask(Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
+  }
+
+  def unsubscribeBroadcast(topic: String) {
+    mediator ! Unsubscribe(topic, self)
   }
 
 }

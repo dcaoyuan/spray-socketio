@@ -69,9 +69,9 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   private lazy val namespaces = new TrieMap[String, ActorRef]
 
   def startNamespace(endpoint: String) {
-    val namespace = socketio.namespaceFor(endpoint)
     implicit val timeout = system.settings.CreationTimeout
-    val startMsg = Start(namespace, Props(classOf[Namespace], endpoint, mediator))
+    val name = "socketio-namespace-" + { if (endpoint == "") "global" else endpoint }
+    val startMsg = Start(name, Props(classOf[Namespace], endpoint, mediator))
     val Started(namespaceRef) = Await.result(guardian ? startMsg, timeout.duration)
     namespaces(endpoint) = namespaceRef
   }

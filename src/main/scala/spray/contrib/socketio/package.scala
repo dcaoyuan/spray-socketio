@@ -39,14 +39,14 @@ package object socketio {
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds
 
   /**
-   * Used for actor path and name only when namespace is being created, not for topic.
+   * Topic for broadcast messages. Cannot contain '.' or '/'
    */
-  def namespaceFor(endpoint: String) = "socketio-namespace-" + { if (endpoint == "") "global" else endpoint }
+  def topicForBroadcast(endpoint: String, room: String) = "socketio" + { if (endpoint != "") "-" + endpoint else "" } + { if (room != "") "-" + room else "" }
 
   /**
-   * topic cannot contain '.' or '/'
+   * The topic used only by namespace actor. @Note __not for connections and broadcast__.
    */
-  def topicFor(endpoint: String, room: String) = "socketio" + { if (endpoint != "") "-" + endpoint else "" } + { if (room != "") "-" + room else "" }
+  def topicForNamespace(endpoint: String) = "socketio-namespace-" + { if (endpoint == "") "global" else endpoint }
 
   private[socketio] final class SoConnectingContext(
     var sessionId: String,

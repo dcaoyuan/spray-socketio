@@ -3,7 +3,7 @@ package spray.contrib.socketio.namespace
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
-import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
+import akka.contrib.pattern.DistributedPubSubMediator
 import akka.pattern.ask
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
@@ -101,15 +101,15 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
   val eventChannel = Subject[OnEvent]()
 
   private var isMediatorSubscribed: Boolean = _
-  def subscribeMediatorForEndpoint(action: () => Unit) = {
+  def subscribeMediatorForNamespace(action: () => Unit) = {
     if (!isMediatorSubscribed) {
       import context.dispatcher
-      mediator.ask(akka.contrib.pattern.DistributedPubSubMediator.Subscribe(socketio.topicFor(endpoint, ""), self))(socketio.actorResolveTimeout).mapTo[SubscribeAck] onComplete {
+      mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForNamespace(endpoint), self))(socketio.actorResolveTimeout).mapTo[DistributedPubSubMediator.SubscribeAck] onComplete {
         case Success(ack) =>
           isMediatorSubscribed = true
           action()
         case Failure(ex) =>
-          log.warning("Failed to subscribe to medietor on topic {}: {}", socketio.topicFor(endpoint, ""), ex.getMessage)
+          log.warning("Failed to subscribe to medietor on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
       }
     } else {
       action()
@@ -118,7 +118,7 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
 
   def receive: Receive = {
     case x @ Subscribe(observer) =>
-      subscribeMediatorForEndpoint { () =>
+      subscribeMediatorForNamespace { () =>
         x.tag.tpe match {
           case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
           case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])

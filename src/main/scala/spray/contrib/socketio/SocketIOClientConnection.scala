@@ -4,6 +4,8 @@ import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import org.parboiled2.ParseError
+import scala.util.Failure
+import scala.util.Success
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket
@@ -79,45 +81,46 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
       connection ! TextFrame(ConnectPacket().render)
 
     case TextFrame(payload) =>
-      try {
-        PacketParser(payload).headOption match {
-          case Some(ConnectPacket(_, _)) =>
-            onOpen()
-            context.become(businessLogic orElse socketioLogic orElse closeLogic)
-          case _ =>
-        }
-      } catch {
-        case ex: ParseError =>
+      PacketParser(payload) match {
+        case Success(packets) =>
+          packets.headOption match {
+            case Some(ConnectPacket(_, _)) =>
+              onOpen()
+              context.become(businessLogic orElse socketioLogic orElse closeLogic)
+            case _ =>
+          }
+        case Failure(ex: ParseError) =>
           log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
           connection ! CloseFrame(StatusCode.InternalError, "Invalide socket.io packet")
-        case ex: Throwable =>
-          log.warning("Exception during parse socket.io packet {}", ex.getMessage)
+        case Failure(ex) =>
+          log.warning("Exception during parse socket.io packet: {} ..., due to: {}", payload.take(50).utf8String, ex)
       }
   }
 
   def socketioLogic: Receive = {
     case TextFrame(payload) =>
-      try {
-        PacketParser(payload) foreach {
-          case ConnectPacket(endpoint, args) => onConnected(endpoint, args)
-          case DisconnectPacket(endpoint)    => onDisconnected(endpoint)
-          case HeartbeatPacket               => connection ! TextFrame(HeartbeatPacket.utf8String)
+      PacketParser(payload) match {
+        case Success(packets) =>
+          packets foreach {
+            case ConnectPacket(endpoint, args) => onConnected(endpoint, args)
+            case DisconnectPacket(endpoint)    => onDisconnected(endpoint)
+            case HeartbeatPacket               => connection ! TextFrame(HeartbeatPacket.utf8String)
 
-          case AckPacket(id, args) =>
-            idToAckAction.get(id) foreach { _(args) }
-            idToAckAction -= id
-            onAck(id, args)
+            case AckPacket(id, args) =>
+              idToAckAction.get(id) foreach { _(args) }
+              idToAckAction -= id
+              onAck(id, args)
 
-          case packet =>
-            log.debug("Got {}", packet)
-            onPacket(packet)
-        }
-      } catch {
-        case ex: ParseError =>
+            case packet =>
+              log.debug("Got {}", packet)
+              onPacket(packet)
+          }
+
+        case Failure(ex: ParseError) =>
           log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
           connection ! CloseFrame(StatusCode.InternalError, "Invalide socket.io packet")
-        case ex: Throwable =>
-          log.warning("Exception during parse socket.io packet {}", ex.getMessage)
+        case Failure(ex) =>
+          log.warning("Exception during parse socket.io packet: {} ..., due to: {}", payload.take(50).utf8String, ex)
       }
 
     // -- sending logic

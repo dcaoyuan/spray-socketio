@@ -128,7 +128,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     // optional: register cluster receptionist for cluster client
     ClusterReceptionistExtension(system).registerService(
-      ClusterSharding(system).shardRegion(ConnectionActive.shardName))
+      ClusterSharding(system).shardRegion(SocketIOExtension.shardName))
   }
 
   "Sharded socketio cluster" must {

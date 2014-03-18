@@ -5,6 +5,7 @@ import org.parboiled2._
 import scala.collection.immutable.Queue
 import scala.util.Failure
 import scala.util.Success
+import scala.util.Try
 
 class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
 
@@ -92,16 +93,9 @@ class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
 }
 
 object PacketParser {
-  def apply(input: ByteString): Seq[Packet] = apply(input.utf8String)
-  def apply(input: String): Seq[Packet] = apply(input.toCharArray)
-  def apply(input: Array[Char]): Seq[Packet] = {
-    val parser = new PacketParser(input)
-    parser.Packets.run() match {
-      case Success(packets)        => packets
-      case Failure(ex: ParseError) => throw ex
-      case Failure(ex)             => throw ex
-    }
-  }
+  def apply(input: ByteString): Try[Seq[Packet]] = apply(input.utf8String)
+  def apply(input: String): Try[Seq[Packet]] = apply(input.toCharArray)
+  def apply(input: Array[Char]): Try[Seq[Packet]] = new PacketParser(input).Packets.run()
 
   // -- simple test
   protected def testBatch() = {

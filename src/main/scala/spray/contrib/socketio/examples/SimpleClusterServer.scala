@@ -64,7 +64,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
       val config = parseString("akka.cluster.roles =[\"transport\"]").withFallback(commonSettings)
       system = startCluster(config)
 
-      implicit val resolver = ClusterSharding(system).shardRegion(ConnectionActive.shardName)
+      implicit val resolver = SocketIOExtension(system).resolver
       val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
       val host = config.getString("transport.hostname")
       val port = config.getInt("transport.port")
@@ -80,8 +80,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
     case "business" :: tail =>
       val config = parseString("akka.cluster.roles =[\"business\"]").withFallback(commonSettings)
       system = startCluster(config)
-      val socketioExt = SocketIOExtension(system)
-      implicit val resolver = socketioExt.resolver
+      implicit val resolver = SocketIOExtension(system).resolver
 
       val observer = Observer[OnEvent](
         (next: OnEvent) => {
@@ -97,8 +96,8 @@ object SimpleClusterServer extends App with MySslConfiguration {
           }
         })
 
-      socketioExt.startNamespace("")
-      socketioExt.namespace("") ! Namespace.Subscribe(observer)
+      SocketIOExtension(system).startNamespace("")
+      SocketIOExtension(system).namespace("") ! Namespace.Subscribe(observer)
 
     case _ =>
       exitWithUsage

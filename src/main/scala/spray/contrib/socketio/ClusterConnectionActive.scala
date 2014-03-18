@@ -1,31 +1,18 @@
 package spray.contrib.socketio
 
-import akka.actor.{ ActorLogging }
-import akka.contrib.pattern.{ DistributedPubSubExtension, ShardRegion }
+import akka.actor.ActorLogging
+import akka.actor.ActorRef
 import akka.persistence.{ PersistenceFailure, EventsourcedProcessor }
-import spray.contrib.socketio
-
-object ClusterConnectionActive {
-  lazy val idExtractor: ShardRegion.IdExtractor = {
-    case cmd: ConnectionActive.Command => (cmd.sessionId, cmd)
-  }
-
-  lazy val shardResolver: ShardRegion.ShardResolver = {
-    case cmd: ConnectionActive.Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
-  }
-}
 
 /**
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-class ClusterConnectionActive extends ConnectionActive with EventsourcedProcessor with ActorLogging {
+class ClusterConnectionActive(val mediator: ActorRef) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
 
   // have to call after log created
   enableCloseTimeout()
-
-  val mediator = DistributedPubSubExtension(context.system).mediator
 
   def receiveRecover: Receive = {
     case event: Event => update(event)

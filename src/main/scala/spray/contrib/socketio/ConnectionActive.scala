@@ -33,8 +33,6 @@ import spray.http.Uri
 
 object ConnectionActive {
 
-  val shardName: String = "connectionActives"
-
   case object AskConnectedTime
 
   sealed trait Event extends Serializable
@@ -89,6 +87,7 @@ trait ConnectionActive { _: Actor =>
   import context.dispatcher
 
   def log: LoggingAdapter
+
   def mediator: ActorRef
 
   var connectionContext: Option[ConnectionContext] = None
@@ -223,11 +222,10 @@ trait ConnectionActive { _: Actor =>
   // --- reacts
 
   private def onPayload(transportConnection: ActorRef, payload: ByteString) {
-    try {
-      PacketParser(payload) foreach onPacket
-    } catch {
-      case ex: ParseError => log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
-      case ex: Throwable  => log.warning("Exception during parse socket.io packet {}", ex.getMessage)
+    PacketParser(payload) match {
+      case Success(packets)        => packets foreach onPacket
+      case Failure(ex: ParseError) => log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
+      case Failure(ex)             => log.warning("Exception during parse socket.io packet: {} ..., due to: {}", payload.take(50).utf8String, ex)
     }
   }
 

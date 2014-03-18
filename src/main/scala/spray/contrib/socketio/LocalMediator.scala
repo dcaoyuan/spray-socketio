@@ -3,24 +3,12 @@ package spray.contrib.socketio
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
-import akka.actor.ActorSystem
-import akka.actor.Props
 import akka.actor.Terminated
 import scala.collection.concurrent
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Unsubscribe, SubscribeAck, Subscribe }
 
 object LocalMediator {
-  private var mediator: ActorRef = _
-  def apply(system: ActorSystem): ActorRef = {
-    if (mediator == null) {
-      mediator = system.actorOf(Props(classOf[LocalMediator]), name = name)
-    }
-    mediator
-  }
-
   private val topicToSubscitptions = concurrent.TrieMap[String, Set[ActorRef]]()
-
-  val name = "socketio-localmediator"
 }
 
 class LocalMediator extends Actor with ActorLogging {

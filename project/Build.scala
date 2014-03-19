@@ -73,7 +73,7 @@ object Dependencies {
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % "test"
   val akka_multinode_testkit = "com.typesafe.akka" %% "akka-multi-node-testkit" % AKKA_VERSION % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.0" % "test"
-  val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.16.1"
+  val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.17.1"
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
 
   val all = Seq(spray_websocket, spray_can, akka_actor, akka_contrib, parboiled2, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math)

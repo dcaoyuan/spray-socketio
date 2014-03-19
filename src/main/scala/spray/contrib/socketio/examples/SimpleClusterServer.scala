@@ -2,14 +2,12 @@ package spray.contrib.socketio.examples
 
 import com.typesafe.config.{ Config, ConfigFactory }
 import akka.actor.{ Props, ActorSystem }
-import akka.contrib.pattern.ClusterSharding
 import akka.io.IO
 import akka.persistence.Persistence
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import rx.lang.scala.Observer
 import spray.can.server.UHttp
 import spray.can.Http
-import spray.contrib.socketio.ConnectionActive
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Namespace
@@ -102,9 +100,4 @@ object SimpleClusterServer extends App with MySslConfiguration {
     case _ =>
       exitWithUsage
   }
-
-  readLine("Hit ENTER to exit ...\n")
-  system.shutdown()
-  system.awaitTermination()
-
 }

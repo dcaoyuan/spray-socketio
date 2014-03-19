@@ -47,7 +47,7 @@ object ConnectionActive {
   // called by connection
   final case class OnGet(sessionId: String, transportConnection: ActorRef) extends Command
   final case class OnPost(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
-  final case class OnFrame(sessionId: String, transportConnection: ActorRef, frame: TextFrame) extends Command
+  final case class OnFrame(sessionId: String, frame: TextFrame) extends Command
 
   // called by business logic
   final case class SendMessage(sessionId: String, endpoint: String, msg: String) extends Command
@@ -148,7 +148,7 @@ trait ConnectionActive { _: Actor =>
           processNewConnected(Connected(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
-    case OnFrame(sessionId, transportConnection, frame)  => onFrame(transportConnection, frame)
+    case OnFrame(sessionId, frame)                       => onFrame(frame)
     case OnGet(sessionId, transportConnection)           => onGet(transportConnection)
     case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)
 
@@ -219,7 +219,7 @@ trait ConnectionActive { _: Actor =>
 
   // --- reacts
 
-  private def onPayload(transportConnection: ActorRef, payload: ByteString) {
+  private def onPayload(payload: ByteString) {
     PacketParser(payload) match {
       case Success(packets)        => packets foreach onPacket
       case Failure(ex: ParseError) => log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
@@ -266,9 +266,9 @@ trait ConnectionActive { _: Actor =>
     }
   }
 
-  def onFrame(transportConnection: ActorRef, frame: TextFrame) {
+  def onFrame(frame: TextFrame) {
     disableCloseTimeout()
-    onPayload(transportConnection, frame.payload)
+    onPayload(frame.payload)
   }
 
   def onGet(transportConnection: ActorRef) {
@@ -284,7 +284,7 @@ trait ConnectionActive { _: Actor =>
       // response an empty entity to release POST before message processing
       ctx.transport.write(ctx, transportConnection, "")
     }
-    onPayload(transportConnection, payload)
+    onPayload(payload)
   }
 
   def sendMessage(endpoint: String, msg: String) {

@@ -26,4 +26,12 @@ class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins
     _transport = transport
     this
   }
+
+  override def equals(x: Any) = {
+    x match {
+      case x: ConnectionContext =>
+        x.sessionId == this.sessionId && x.query == this.query && x.origins == this.origins
+      case _ => false
+    }
+  }
 }

@@ -24,7 +24,7 @@ object Transport {
     HtmlFile,
     WebSocket,
     FlashSocket,
-    JsonpPolling).map(_.ID)
+    JsonpPolling).map(x => x.ID -> x).toMap
 
   def isSupported(id: String) = transportIds.contains(id)
 }

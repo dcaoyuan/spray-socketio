@@ -35,7 +35,7 @@ logback_conf=../conf/logback.xml
 cluster_seed=127.0.0.1:2551
 cluster_hostname=127.0.0.1
 
-nc -z 127.0.0.1 2551 < /dev/null
+2> /dev/null > /dev/tcp/127.0.0.1/2551
 if [ $? == 0 ]; then
     cluster_port=0
 else

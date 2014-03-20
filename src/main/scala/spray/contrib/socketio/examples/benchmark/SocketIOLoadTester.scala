@@ -137,28 +137,33 @@ class SocketIOLoadTester extends Actor with ActorLogging {
   private var nMessagesSent: Int = _
   private var isMessagesSent: Boolean = _
 
+  private var nConnectionsCreated: Int = _
+
   def receive = {
     case RoundBegin(nConns) =>
+      t0 = System.currentTimeMillis
+
       commander = sender()
+
       nConnections = nConns
       println("---------------- Concurrent connections " + nConnections + { if (isBroadcast) " (broadcast)" else " (single bounce)" } + " ----------------")
-      var i = 0
-      while (i < nConnections) {
-        val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
-        clients ::= client
-        i += 1
-      }
 
-      println("Clients created in " + ((System.currentTimeMillis - t0) / 1000.0) + "s.")
+      createNextBunchClients()
 
     case OnOpen =>
       nConnectionsOpened += 1
       if (nConnectionsOpened == nConnections) {
+
+        print(nConnectionsOpened + ".. ")
         println("\nAll " + nConnections + " clients connected successfully in " + ((System.currentTimeMillis - t0) / 1000.0) + "s.")
         println("Woken up - time to start load test!\n")
         performLoadTest()
-      } else if (nConnectionsOpened % 100 == 0) {
-        print(nConnectionsOpened + "... ")
+
+      } else if (nConnectionsOpened == nConnectionsCreated) {
+
+        print(".. ")
+
+        createNextBunchClients()
       }
 
     case OnClose =>
@@ -192,6 +197,22 @@ class SocketIOLoadTester extends Actor with ActorLogging {
         println("Failed - not all messages received in " + postTestReceptionTimeout + "s")
         println("Expected: " + nMessagesExpected + ", got: " + roundtripTimes.size)
       }
+  }
+
+  private def createNextBunchClients() {
+    if (nConnectionsCreated < nConnections) {
+      val nToCreate = math.min(nConnections - nConnectionsCreated, 100)
+      nConnectionsCreated += nToCreate
+      print(nConnectionsCreated)
+
+      var i = 0
+      while (i < nToCreate) {
+        val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
+        clients ::= client
+        i += 1
+      }
+      print(".")
+    }
   }
 
   private def nMessagesExpected = if (isBroadcast) nMessagesSent * nConnections else nMessagesSent

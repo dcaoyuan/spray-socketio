@@ -7,13 +7,18 @@ then
     exit 1
 fi
 
-if [ -z "$1" ]
-then
+arg="$1"
+usage() {
     echo "Usage: `basename $0` [transport|connectionActive|business]"
     exit 1
-fi
+}
 
-cluster_module=$1
+case $arg in
+    transport)   cluster_module="transport";;
+    connection*) cluster_module="connectionActive";;
+    business)    cluster_module="business";;
+    *) usage
+esac
 
 export JAVA=${JAVA_HOME}/bin/java
 export FLAGS="-server -Dfile.encoding=UTF8 -XX:+UseNUMA -XX:+UseCondCardMark -XX:-UseBiasedLocking"

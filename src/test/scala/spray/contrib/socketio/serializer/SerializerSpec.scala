@@ -31,6 +31,7 @@ akka {
       packet = "spray.contrib.socketio.serializer.PacketSerializer"
       connctx = "spray.contrib.socketio.serializer.ConnectionContextSerializer"
       onpacket = "spray.contrib.socketio.serializer.OnPacketSerializer"
+      onbroadcast = "spray.contrib.socketio.serializer.OnBroadcastSerializer"
     }
     serialization-bindings {
       "spray.can.websocket.frame.Frame" = frame
@@ -38,6 +39,7 @@ akka {
       "spray.contrib.socketio.packet.Packet" = packet
       "spray.contrib.socketio.ConnectionContext" = connctx
       "spray.contrib.socketio.ConnectionActive$OnPacket" = onpacket
+      "spray.contrib.socketio.ConnectionActive$OnBroadcast" = onbroadcast
     }
   }
 }
@@ -93,7 +95,7 @@ akka {
       }
 
       "OnPost" in {
-        val obj = OnPost(sessionId, self, ByteString("hello world") )
+        val obj = OnPost(sessionId, self, ByteString("hello world"))
         test(obj)
       }
 

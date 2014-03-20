@@ -154,7 +154,6 @@ class SocketIOLoadTester extends Actor with ActorLogging {
       nConnectionsOpened += 1
       if (nConnectionsOpened == nConnections) {
 
-        print(nConnectionsOpened + ".. ")
         println("\nAll " + nConnections + " clients connected successfully in " + ((System.currentTimeMillis - t0) / 1000.0) + "s.")
         println("Woken up - time to start load test!\n")
         performLoadTest()

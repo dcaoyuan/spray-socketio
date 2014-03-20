@@ -37,7 +37,7 @@ object ConnectionActive {
   final case class Connected(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Event
   final case class UpdatePackets(packets: Seq[Packet]) extends Event
 
-  sealed trait Command {
+  sealed trait Command extends Serializable {
     def sessionId: String
   }
 

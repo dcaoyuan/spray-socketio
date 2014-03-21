@@ -75,6 +75,7 @@ object Dependencies {
   val scalatest = "org.scalatest" %% "scalatest" % "2.0" % "test"
   val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.17.1"
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
+  val caliper = "com.google.caliper" % "caliper" % "0.5-rc1" % "test"
 
-  val all = Seq(spray_websocket, spray_can, akka_actor, akka_contrib, parboiled2, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math)
+  val all = Seq(spray_websocket, spray_can, akka_actor, akka_contrib, parboiled2, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math, caliper)
 }

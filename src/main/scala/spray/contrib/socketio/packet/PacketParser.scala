@@ -7,7 +7,7 @@ import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
-class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
+final class PacketParser(val input: ParserInput) extends Parser with StringBuilding {
 
   def Packets = rule {
     (oneOrMore(DelimitedPacket) | { Packet ~> (List(_)) /* ~ zeroOrMore(DelimitedPacket) ~> (_ +: _) */ }) ~ EOI

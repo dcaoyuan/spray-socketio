@@ -14,9 +14,9 @@ usage() {
 }
 
 case $arg in
-    transport)   cluster_module="transport";;
-    connection*) cluster_module="connectionActive";;
-    business)    cluster_module="business";;
+    tran*)   cluster_module="transport";;
+    conn*) cluster_module="connectionActive";;
+    busi*)    cluster_module="business";;
     *) usage
 esac
 

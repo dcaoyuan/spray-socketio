@@ -12,13 +12,13 @@ import java.io.BufferedWriter
 import java.io.FileNotFoundException
 import java.io.FileWriter
 import java.io.IOException
-import org.apache.commons.math3.stat.descriptive.SummaryStatistics;
+import org.apache.commons.math3.stat.descriptive.{StatisticalSummary, DescriptiveStatistics}
+;
 import scala.collection.mutable
 import scala.collection.JavaConversions._
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import spray.can.Http
-import spray.can.websocket
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnClose
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnOpen
@@ -44,7 +44,7 @@ object SocketIOLoadTester {
   implicit val system = ActorSystem()
 
   case class RoundBegin(concurrentConnections: Int)
-  case class StatsSummary(stats: mutable.Map[Double, SummaryStatistics])
+  case class StatsSummary(stats: mutable.Map[Double, StatisticalSummary])
   case object ReceivingTimeout
 
   def main(args: Array[String]) {
@@ -112,7 +112,7 @@ object SocketIOLoadTester {
 class SocketIOLoadTester extends Actor with ActorLogging {
   import SocketIOLoadTester._
 
-  final case class RoundContext(receivingTimeoutHandler: Option[Cancellable], statistics: mutable.Map[Double, SummaryStatistics], overallEffectiveRate: Double)
+  final case class RoundContext(receivingTimeoutHandler: Option[Cancellable], statistics: mutable.Map[Double, StatisticalSummary], overallEffectiveRate: Double)
 
   private var clients = List[ActorRef]()
 
@@ -217,7 +217,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
   private def nMessagesExpected = if (isBroadcast) nMessagesSent * nConnections else nMessagesSent
 
   private def performLoadTest() {
-    val statistics = new mutable.HashMap[Double, SummaryStatistics]()
+    val statistics = new mutable.HashMap[Double, StatisticalSummary]()
 
     isTestRunning = true
 
@@ -225,7 +225,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     triggerMessages(statistics, 0.0)
   }
 
-  private def triggerMessages(statistics: mutable.Map[Double, SummaryStatistics], _overallEffectiveRate: Double) {
+  private def triggerMessages(statistics: mutable.Map[Double, StatisticalSummary], _overallEffectiveRate: Double) {
     isMessagesSent = false
 
     var overallEffectiveRate = _overallEffectiveRate
@@ -261,7 +261,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
       statistics, overallEffectiveRate)
   }
 
-  private def goon(statistics: mutable.Map[Double, SummaryStatistics], overallEffectiveRate: Double) {
+  private def goon(statistics: mutable.Map[Double, StatisticalSummary], overallEffectiveRate: Double) {
     statistics.put(overallEffectiveRate, processRoundtripStats)
     nMessagesSentPerSecond += nMessageSentPerSecondRamp
 
@@ -296,13 +296,17 @@ class SocketIOLoadTester extends Actor with ActorLogging {
     totalMessages / ((System.currentTimeMillis - t0) / 1000.0)
   }
 
-  private def processRoundtripStats: SummaryStatistics = {
-    val stats = new SummaryStatistics()
+  private def processRoundtripStats: StatisticalSummary = {
+    val stats = new DescriptiveStatistics()
 
     roundtripTimes foreach stats.addValue
     println("     num      min    mean     max   stdev    rate")
     println("%8d   %6.0f  %6.0f  %6.0f  %6.0f   %5.0f\n".format(
       stats.getN, stats.getMin, stats.getMean, stats.getMax, stats.getStandardDeviation, stats.getN / (stats.getMean / 1000.0)))
+    println("     50%     66%     75%     80%     90%     95%     98%     99%    100%")
+    println("  %6.0f  %6.0f  %6.0f  %6.0f  %6.0f  %6.0f  %6.0f  %6.0f  %6.0f\n".format(
+      stats.getPercentile(50), stats.getPercentile(66), stats.getPercentile(75), stats.getPercentile(80),
+      stats.getPercentile(90), stats.getPercentile(95), stats.getPercentile(98), stats.getPercentile(99), stats.getPercentile(100)))
 
     stats
   }

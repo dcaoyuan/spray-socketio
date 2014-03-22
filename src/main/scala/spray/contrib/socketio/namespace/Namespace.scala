@@ -23,6 +23,14 @@ import scala.util.{ Failure, Success }
 /**
  *
  *
+ *    +===serverConn===+               +===connActive===+              +====namespace===+    
+ *    |                |    OnFrame    |                |   OnPacket   |                | 
+ *    |                | ------------> |                | -----------> |                | 
+ *    |                | <------------ |                | <----------- |                | 
+ *    |                |  FrameCommand |                |  SendPackets |                | 
+ *    +================+               +================+              +================+
+ *
+ *
  *    +======node======+
  *    |       mediator----\
  *    |     /     |    |  |

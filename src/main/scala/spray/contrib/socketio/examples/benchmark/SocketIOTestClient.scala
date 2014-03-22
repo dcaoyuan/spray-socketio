@@ -56,7 +56,7 @@ class SocketIOTestClient(connect: Http.Connect, commander: ActorRef) extends soc
   def onPacket(packet: Packet) {
     val messageArrivedAt = System.currentTimeMillis
     packet match {
-      case EventPacket(name, args) =>
+      case EventPacket("chat", args) =>
         JsonParser(args) match {
           case JsArray(xs) =>
             xs.headOption match {
@@ -84,7 +84,6 @@ class SocketIOTestClient(connect: Http.Connect, commander: ActorRef) extends soc
 
   def chat(message: String): String = {
     "5:::{\"name\":\"chat\", \"args\":[{\"text\":\"" + message + "\"}]}"
-
   }
 
   def timestampedChat = {

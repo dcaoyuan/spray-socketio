@@ -12,6 +12,7 @@ import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.json.JsArray
 import spray.json.JsString
@@ -80,13 +81,19 @@ object SimpleClusterServer extends App with MySslConfiguration {
       system = startCluster(config)
       implicit val resolver = SocketIOExtension(system).resolver
 
+      val appConfig = load()
+      val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
       val observer = Observer[OnEvent](
         (next: OnEvent) => {
           next match {
-            case OnEvent("chat", args, context) =>
+            case OnEvent("chat", args, context) => // for spec and load test
               spray.json.JsonParser(args) // test spray-json too.
-              next.replyEvent("chat", args)
-            case OnEvent("broadcast", args, context) =>
+              if (isBroadcast) {
+                next.broadcast("", EventPacket(-1L, false, next.endpoint, next.name, args))
+              } else {
+                next.replyEvent(next.name, args)
+              }
+            case OnEvent("broadcast", args, context) => // for spec test
               val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
               next.broadcast("", MessagePacket(-1, false, next.endpoint, msg))
             case _ =>

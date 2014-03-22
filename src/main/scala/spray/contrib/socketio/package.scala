@@ -41,7 +41,7 @@ package object socketio {
   /**
    * Topic for broadcast messages. Cannot contain '.' or '/'
    */
-  def topicForBroadcast(endpoint: String, room: String) = "socketio" + { if (endpoint != "") "-" + endpoint else "" } + { if (room != "") "-" + room else "" }
+  def topicForBroadcast(endpoint: String, room: String) = "socketio-broadcast" + { if (endpoint != "") "-" + endpoint else "" } + { if (room != "") "-" + room else "" }
 
   /**
    * The topic used only by namespace actor. @Note __not for connections and broadcast__.

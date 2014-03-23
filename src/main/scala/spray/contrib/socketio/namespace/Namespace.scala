@@ -23,11 +23,11 @@ import scala.util.{ Failure, Success }
 /**
  *
  *
- *    +===serverConn===+               +===connActive===+              +====namespace===+    
- *    |                |    OnFrame    |                |   OnPacket   |                | 
- *    |                | ------------> |                | -----------> |                | 
- *    |                | <------------ |                | <----------- |                | 
- *    |                |  FrameCommand |                |  SendPackets |                | 
+ *    +===serverConn===+               +===connActive===+              +====namespace===+
+ *    |                |    OnFrame    |                |   OnPacket   |                |
+ *    |                | ------------> |                | -----------> |                |
+ *    |                | <------------ |                | <----------- |                |
+ *    |                |  FrameCommand |                |  SendPackets |                |
  *    +================+               +================+              +================+
  *
  *
@@ -124,6 +124,7 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
     }
   }
 
+  import ConnectionActive.OnPacket
   def receive: Receive = {
     case x @ Subscribe(observer) =>
       subscribeMediatorForNamespace { () =>
@@ -137,11 +138,11 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
         }
       }
 
-    case ConnectionActive.OnPacket(packet: ConnectPacket, connContext)    => connectChannel.onNext(OnConnect(packet.args, connContext)(packet))
-    case ConnectionActive.OnPacket(packet: DisconnectPacket, connContext) => disconnectChannel.onNext(OnDisconnect(connContext)(packet))
-    case ConnectionActive.OnPacket(packet: MessagePacket, connContext)    => messageChannel.onNext(OnMessage(packet.data, connContext)(packet))
-    case ConnectionActive.OnPacket(packet: JsonPacket, connContext)       => jsonChannel.onNext(OnJson(packet.json, connContext)(packet))
-    case ConnectionActive.OnPacket(packet: EventPacket, connContext)      => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext)(packet))
+    case OnPacket(packet: ConnectPacket, connContext)    => connectChannel.onNext(OnConnect(packet.args, connContext)(packet))
+    case OnPacket(packet: DisconnectPacket, connContext) => disconnectChannel.onNext(OnDisconnect(connContext)(packet))
+    case OnPacket(packet: MessagePacket, connContext)    => messageChannel.onNext(OnMessage(packet.data, connContext)(packet))
+    case OnPacket(packet: JsonPacket, connContext)       => jsonChannel.onNext(OnJson(packet.json, connContext)(packet))
+    case OnPacket(packet: EventPacket, connContext)      => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext)(packet))
   }
 
 }

@@ -38,8 +38,8 @@ object SocketIOTestServer extends App {
   val socketioExt = SocketIOExtension(system)
   implicit val resolver = SocketIOExtension(system).resolver
 
-  val observer = new Observer[OnData] with Serializable {
-    override def onNext(value: OnData) {
+  val observer = new Observer[OnEvent] with Serializable {
+    override def onNext(value: OnEvent) {
       value match {
         case OnEvent("chat", args, context) =>
           spray.json.JsonParser(args) // test spray-json performance too.
@@ -54,7 +54,14 @@ object SocketIOTestServer extends App {
     }
   }
 
-  val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
+  val subscription = { channel: Observable[OnData] =>
+    // There is no channel.ofType method for RxScala, why?
+    val eventChannel = channel.flatMap {
+      case x: OnEvent => Observable.items(x)
+      case _          => Observable.empty
+    }
+    eventChannel.subscribe(observer)
+  }
 
   socketioExt.startNamespace("")
   socketioExt.namespace("") ! Namespace.Subscribe(subscription)

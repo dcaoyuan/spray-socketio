@@ -78,12 +78,12 @@ object SimpleServer extends App with MySslConfiguration {
   val socketioExt = SocketIOExtension(system)
   implicit val resolver = socketioExt.resolver
 
-  val observer = new Observer[OnData] {
-    override def onNext(value: OnData) {
+  val observer = new Observer[OnEvent] {
+    override def onNext(value: OnEvent) {
       value match {
-        case x @ OnEvent("Hi!", args, context) =>
+        case OnEvent("Hi!", args, context) =>
           println("observed: " + "Hi!" + ", " + args)
-          if (x.packet.hasAckData) {
+          if (value.packet.hasAckData) {
             value.ack("[]")
           }
           value.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
@@ -100,7 +100,14 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
-  val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
+  val subscription = { channel: Observable[OnData] =>
+    // There is no channel.ofType method for RxScala, why?
+    val eventChannel = channel.flatMap {
+      case x: OnEvent => Observable.items(x)
+      case _          => Observable.empty
+    }
+    eventChannel.subscribe(observer)
+  }
 
   socketioExt.startNamespace("testendpoint")
   socketioExt.namespace("testendpoint") ! Namespace.Subscribe(subscription)

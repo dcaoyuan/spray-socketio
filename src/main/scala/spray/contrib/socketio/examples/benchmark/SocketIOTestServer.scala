@@ -10,6 +10,7 @@ import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.EventPacket
 
@@ -36,20 +37,21 @@ object SocketIOTestServer extends App {
   val socketioExt = SocketIOExtension(system)
   implicit val resolver = SocketIOExtension(system).resolver
 
-  val observer = Observer[OnEvent](
-    (next: OnEvent) => {
-      next match {
+  val observer = new Observer[OnData] {
+    override def onNext(value: OnData) {
+      value match {
         case OnEvent("chat", args, context) =>
           spray.json.JsonParser(args) // test spray-json performance too.
           if (isBroadcast) {
-            next.broadcast("", EventPacket(-1L, false, next.endpoint, next.name, args))
+            value.broadcast("", EventPacket(-1L, false, value.endpoint, "chat", args))
           } else {
-            next.replyEvent(next.name, args)
+            value.replyEvent("chat", args)
           }
         case _ =>
-          println("observed: " + next.name + ", " + next.args)
+          println("observed: " + value)
       }
-    })
+    }
+  }
 
   socketioExt.startNamespace("")
   socketioExt.namespace("") ! Namespace.Subscribe(observer)

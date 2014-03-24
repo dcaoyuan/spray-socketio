@@ -10,6 +10,7 @@ import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
@@ -76,26 +77,27 @@ object SimpleServer extends App with MySslConfiguration {
   val socketioExt = SocketIOExtension(system)
   implicit val resolver = socketioExt.resolver
 
-  val observer = Observer[OnEvent](
-    (next: OnEvent) => {
-      next match {
-        case OnEvent("Hi!", args, context) =>
-          println("observed: " + next.name + ", " + next.args)
-          if (next.packet.hasAckData) {
-            next.ack("[]")
+  val observer = new Observer[OnData] {
+    override def onNext(value: OnData) {
+      value match {
+        case x @ OnEvent("Hi!", args, context) =>
+          println("observed: " +"Hi!" + ", " + args)
+          if (x.packet.hasAckData) {
+            value.ack("[]")
           }
-          next.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
-          next.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
+          value.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
+          value.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
           // batched packets
-          next.reply(
+          value.reply(
             EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio")).toJson.toString),
             EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString)).toJson.toString))
         case OnEvent("time", args, context) =>
-          println("observed: " + next.name + ", " + next.args)
+          println("observed: " + "time" + ", " + args)
         case _ =>
-          println("observed: " + next.name + ", " + next.args)
+          println("observed: " + value)
       }
-    })
+    }
+  }
 
   socketioExt.startNamespace("testendpoint")
   socketioExt.namespace("testendpoint") ! Namespace.Subscribe(observer)

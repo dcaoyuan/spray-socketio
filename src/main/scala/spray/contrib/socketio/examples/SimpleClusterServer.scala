@@ -11,6 +11,7 @@ import spray.can.Http
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.MessagePacket
@@ -83,23 +84,24 @@ object SimpleClusterServer extends App with MySslConfiguration {
 
       val appConfig = load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
-      val observer = Observer[OnEvent](
-        (next: OnEvent) => {
-          next match {
+      val observer = new Observer[OnData] {
+        override def onNext(value: OnData) {
+          value match {
             case OnEvent("chat", args, context) => // for spec and load test
               spray.json.JsonParser(args) // test spray-json too.
               if (isBroadcast) {
-                next.broadcast("", EventPacket(-1L, false, next.endpoint, next.name, args))
+                value.broadcast("", EventPacket(-1L, false, value.endpoint, "chat", args))
               } else {
-                next.replyEvent(next.name, args)
+                value.replyEvent("chat", args)
               }
             case OnEvent("broadcast", args, context) => // for spec test
               val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
-              next.broadcast("", MessagePacket(-1, false, next.endpoint, msg))
+              value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))
             case _ =>
-              println("observed: " + next.name + ", " + next.args)
+              println("observed: " + value)
           }
-        })
+        }
+      }
 
       SocketIOExtension(system).startNamespace("")
       SocketIOExtension(system).namespace("") ! Namespace.Subscribe(observer)

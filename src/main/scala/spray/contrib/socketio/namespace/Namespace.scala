@@ -68,32 +68,34 @@ import scala.util.{ Failure, Success }
  */
 object Namespace {
 
-  final case class Subscribe[T <: OnData](observer: Observer[T])(implicit val tag: TypeTag[T])
+  final case class Subscribe(observer: Observer[OnData])
 
   // --- Observable data
   sealed trait OnData {
     def context: ConnectionContext
     def packet: Packet
-    def endpoint = packet.endpoint
+
+    final def endpoint = packet.endpoint
+    final def sessionId = context.sessionId
 
     import ConnectionActive._
-    def replyMessage(msg: String)(implicit resolver: ActorRef) = resolver ! SendMessage(context.sessionId, endpoint, msg)
-    def replyJson(json: String)(implicit resolver: ActorRef) = resolver ! SendJson(context.sessionId, endpoint, json)
-    def replyEvent(name: String, args: String)(implicit resolver: ActorRef) = resolver ! SendEvent(context.sessionId, endpoint, name, Left(args))
-    def replyEvent(name: String, args: Seq[String])(implicit resolver: ActorRef) = resolver ! SendEvent(context.sessionId, endpoint, name, Right(args))
-    def reply(packets: Packet*)(implicit resolver: ActorRef) = resolver ! SendPackets(context.sessionId, packets)
-    def ack(args: String)(implicit resolver: ActorRef) = resolver ! SendAck(context.sessionId, packet.asInstanceOf[DataPacket], args)
+    def replyMessage(msg: String)(implicit resolver: ActorRef) = resolver ! SendMessage(sessionId, endpoint, msg)
+    def replyJson(json: String)(implicit resolver: ActorRef) = resolver ! SendJson(sessionId, endpoint, json)
+    def replyEvent(name: String, args: String)(implicit resolver: ActorRef) = resolver ! SendEvent(sessionId, endpoint, name, Left(args))
+    def replyEvent(name: String, args: Seq[String])(implicit resolver: ActorRef) = resolver ! SendEvent(sessionId, endpoint, name, Right(args))
+    def reply(packets: Packet*)(implicit resolver: ActorRef) = resolver ! SendPackets(sessionId, packets)
+    def ack(args: String)(implicit resolver: ActorRef) = resolver ! SendAck(sessionId, packet.asInstanceOf[DataPacket], args)
     /**
      * @param room    room to broadcast
      * @param packet  packet to broadcast
      */
-    def broadcast(room: String, packet: Packet)(implicit resolver: ActorRef) = resolver ! Broadcast(context.sessionId, room, packet)
+    def broadcast(room: String, packet: Packet)(implicit resolver: ActorRef) = resolver ! Broadcast(sessionId, room, packet)
   }
-  final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val packet: Packet) extends OnData
-  final case class OnDisconnect(context: ConnectionContext)(implicit val packet: Packet) extends OnData
-  final case class OnMessage(msg: String, context: ConnectionContext)(implicit val packet: DataPacket) extends OnData
-  final case class OnJson(json: String, context: ConnectionContext)(implicit val packet: DataPacket) extends OnData
-  final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val packet: DataPacket) extends OnData
+  final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val packet: ConnectPacket) extends OnData
+  final case class OnDisconnect(context: ConnectionContext)(implicit val packet: DisconnectPacket) extends OnData
+  final case class OnMessage(msg: String, context: ConnectionContext)(implicit val packet: MessagePacket) extends OnData
+  final case class OnJson(json: String, context: ConnectionContext)(implicit val packet: JsonPacket) extends OnData
+  final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val packet: EventPacket) extends OnData
 }
 
 /**
@@ -102,11 +104,7 @@ object Namespace {
 class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLogging {
   import Namespace._
 
-  val connectChannel = Subject[OnConnect]()
-  val disconnectChannel = Subject[OnDisconnect]()
-  val messageChannel = Subject[OnMessage]()
-  val jsonChannel = Subject[OnJson]()
-  val eventChannel = Subject[OnEvent]()
+  val channel = Subject[OnData]()
 
   private var isMediatorSubscribed: Boolean = _
   def subscribeMediatorForNamespace(action: () => Unit) = {
@@ -126,23 +124,13 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
 
   import ConnectionActive.OnPacket
   def receive: Receive = {
-    case x @ Subscribe(observer) =>
-      subscribeMediatorForNamespace { () =>
-        x.tag.tpe match {
-          case t if t =:= typeOf[OnConnect]    => connectChannel(observer.asInstanceOf[Observer[OnConnect]])
-          case t if t =:= typeOf[OnDisconnect] => disconnectChannel(observer.asInstanceOf[Observer[OnDisconnect]])
-          case t if t =:= typeOf[OnMessage]    => messageChannel(observer.asInstanceOf[Observer[OnMessage]])
-          case t if t =:= typeOf[OnJson]       => jsonChannel(observer.asInstanceOf[Observer[OnJson]])
-          case t if t =:= typeOf[OnEvent]      => eventChannel(observer.asInstanceOf[Observer[OnEvent]])
-          case _                               =>
-        }
-      }
+    case x @ Subscribe(observer)                         => subscribeMediatorForNamespace { () => channel(observer) }
 
-    case OnPacket(packet: ConnectPacket, connContext)    => connectChannel.onNext(OnConnect(packet.args, connContext)(packet))
-    case OnPacket(packet: DisconnectPacket, connContext) => disconnectChannel.onNext(OnDisconnect(connContext)(packet))
-    case OnPacket(packet: MessagePacket, connContext)    => messageChannel.onNext(OnMessage(packet.data, connContext)(packet))
-    case OnPacket(packet: JsonPacket, connContext)       => jsonChannel.onNext(OnJson(packet.json, connContext)(packet))
-    case OnPacket(packet: EventPacket, connContext)      => eventChannel.onNext(OnEvent(packet.name, packet.args, connContext)(packet))
+    case OnPacket(packet: ConnectPacket, connContext)    => channel.onNext(OnConnect(packet.args, connContext)(packet))
+    case OnPacket(packet: DisconnectPacket, connContext) => channel.onNext(OnDisconnect(connContext)(packet))
+    case OnPacket(packet: MessagePacket, connContext)    => channel.onNext(OnMessage(packet.data, connContext)(packet))
+    case OnPacket(packet: JsonPacket, connContext)       => channel.onNext(OnJson(packet.json, connContext)(packet))
+    case OnPacket(packet: EventPacket, connContext)      => channel.onNext(OnEvent(packet.name, packet.args, connContext)(packet))
   }
 
 }

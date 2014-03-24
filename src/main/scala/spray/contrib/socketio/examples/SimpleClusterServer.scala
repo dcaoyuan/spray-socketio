@@ -5,6 +5,7 @@ import akka.actor.{ Props, ActorSystem }
 import akka.io.IO
 import akka.persistence.Persistence
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
+import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import spray.can.server.UHttp
 import spray.can.Http
@@ -103,8 +104,10 @@ object SimpleClusterServer extends App with MySslConfiguration {
         }
       }
 
+      val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
+
       SocketIOExtension(system).startNamespace("")
-      SocketIOExtension(system).namespace("") ! Namespace.Subscribe(observer)
+      SocketIOExtension(system).namespace("") ! Namespace.Subscribe(subscription)
 
     case _ =>
       exitWithUsage

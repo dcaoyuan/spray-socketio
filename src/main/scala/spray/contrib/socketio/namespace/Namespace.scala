@@ -5,8 +5,9 @@ import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.contrib.pattern.DistributedPubSubMediator
 import akka.pattern.ask
-import rx.lang.scala.Observer
+import rx.lang.scala.Observable
 import rx.lang.scala.Subject
+import rx.lang.scala.Subscription
 import scala.reflect.runtime.universe._
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionActive
@@ -68,7 +69,7 @@ import scala.util.{ Failure, Success }
  */
 object Namespace {
 
-  final case class Subscribe(observer: Observer[OnData])
+  final case class Subscribe(subscription: Observable[OnData] => Subscription)
 
   // --- Observable data
   sealed trait OnData {
@@ -124,7 +125,7 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
 
   import ConnectionActive.OnPacket
   def receive: Receive = {
-    case x @ Subscribe(observer)                         => subscribeMediatorForNamespace { () => channel(observer) }
+    case x @ Subscribe(subscription)                     => subscribeMediatorForNamespace { () => subscription(channel) }
 
     case OnPacket(packet: ConnectPacket, connContext)    => channel.onNext(OnConnect(packet.args, connContext)(packet))
     case OnPacket(packet: DisconnectPacket, connContext) => channel.onNext(OnDisconnect(connContext)(packet))

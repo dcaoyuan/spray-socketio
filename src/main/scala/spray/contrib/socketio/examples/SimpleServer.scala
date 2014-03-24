@@ -2,6 +2,7 @@ package spray.contrib.socketio.examples
 
 import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
+import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
@@ -81,7 +82,7 @@ object SimpleServer extends App with MySslConfiguration {
     override def onNext(value: OnData) {
       value match {
         case x @ OnEvent("Hi!", args, context) =>
-          println("observed: " +"Hi!" + ", " + args)
+          println("observed: " + "Hi!" + ", " + args)
           if (x.packet.hasAckData) {
             value.ack("[]")
           }
@@ -99,8 +100,10 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
+  val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
+
   socketioExt.startNamespace("testendpoint")
-  socketioExt.namespace("testendpoint") ! Namespace.Subscribe(observer)
+  socketioExt.namespace("testendpoint") ! Namespace.Subscribe(subscription)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

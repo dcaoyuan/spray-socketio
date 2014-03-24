@@ -3,6 +3,7 @@ package spray.contrib.socketio.examples.benchmark
 import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import com.typesafe.config.ConfigFactory
+import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
@@ -37,7 +38,7 @@ object SocketIOTestServer extends App {
   val socketioExt = SocketIOExtension(system)
   implicit val resolver = SocketIOExtension(system).resolver
 
-  val observer = new Observer[OnData] {
+  val observer = new Observer[OnData] with Serializable {
     override def onNext(value: OnData) {
       value match {
         case OnEvent("chat", args, context) =>
@@ -53,8 +54,10 @@ object SocketIOTestServer extends App {
     }
   }
 
+  val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
+
   socketioExt.startNamespace("")
-  socketioExt.namespace("") ! Namespace.Subscribe(observer)
+  socketioExt.namespace("") ! Namespace.Subscribe(subscription)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

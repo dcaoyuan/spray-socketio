@@ -4,10 +4,6 @@ import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.persistence.{ PersistenceFailure, EventsourcedProcessor }
 
-/**
- *
- * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
- */
 class ClusterConnectionActive(val mediator: ActorRef) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
 

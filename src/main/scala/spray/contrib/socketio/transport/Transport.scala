@@ -11,6 +11,7 @@ import spray.contrib.socketio.packet.NoopPacket
 import spray.contrib.socketio.packet.Packet
 import spray.http.ContentType
 import spray.http.HttpEntity
+import spray.http.HttpHeader
 import spray.http.HttpHeaders
 import spray.http.HttpResponse
 import spray.http.MediaTypes
@@ -108,17 +109,19 @@ object WebSocket extends Transport {
 object XhrPolling extends Transport {
   val ID = "xhr-polling"
 
+  private val contentType = ContentType(MediaTypes.`text/plain`)
+  private val fixedHeaders: List[HttpHeader] = List(
+    HttpHeaders.`Access-Control-Allow-Credentials`(true),
+    HttpHeaders.Connection("keep-alive"))
+
   protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
     // will wait for onGet
     pendingPackets
   }
 
   protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
-    val originsHeaders = List(
-      HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(connContext.origins)),
-      HttpHeaders.`Access-Control-Allow-Credentials`(true))
-    val headers = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
-    transportConnection ! Http.MessageCommand(HttpResponse(headers = headers, entity = HttpEntity(ContentType(MediaTypes.`text/plain`), payload)))
+    val headers = HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(connContext.origins)) :: fixedHeaders
+    transportConnection ! Http.MessageCommand(HttpResponse(headers = headers, entity = HttpEntity(contentType, payload)))
   }
 
 }

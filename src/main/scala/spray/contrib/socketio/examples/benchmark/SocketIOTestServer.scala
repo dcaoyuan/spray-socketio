@@ -8,8 +8,7 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.SocketIOExtension
-import spray.contrib.socketio.SocketIOServerConnection
+import spray.contrib.socketio.{SocketIONamespaceExtension, SocketIOExtension, SocketIOServerConnection}
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
@@ -35,8 +34,8 @@ object SocketIOTestServer extends App {
   }
 
   implicit val system = ActorSystem()
-  val socketioExt = SocketIOExtension(system)
-  implicit val resolver = SocketIOExtension(system).resolver
+  SocketIOExtension(system)
+  implicit val resolver = SocketIONamespaceExtension(system).resolver
 
   val observer = new Observer[OnEvent] with Serializable {
     override def onNext(value: OnEvent) {
@@ -63,8 +62,8 @@ object SocketIOTestServer extends App {
     eventChannel.subscribe(observer)
   }
 
-  socketioExt.startNamespace("")
-  socketioExt.namespace("") ! Namespace.Subscribe(subscription)
+  SocketIONamespaceExtension(system).startNamespace("")
+  SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(subscription)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

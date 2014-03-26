@@ -86,7 +86,9 @@ trait ConnectionActive { _: Actor =>
 
   def log: LoggingAdapter
 
-  def mediator: ActorRef
+  def namespaceMediator: ActorRef
+
+  def broadcastMediator: ActorRef
 
   var connectionContext: Option[ConnectionContext] = None
   var transportConnection: ActorRef = _
@@ -322,20 +324,20 @@ trait ConnectionActive { _: Actor =>
     sendPacket(AckPacket(originalPacket.id, args))
   }
 
-  def publishToBroadcast(msg: OnBroadcast) {
-    mediator ! Publish(socketio.topicForBroadcast(msg.packet.endpoint, msg.room), msg)
+  def publishToNamespace[T <: Packet](msg: OnPacket[T]) {
+    namespaceMediator ! Publish(socketio.topicForNamespace(msg.packet.endpoint), msg)
   }
 
-  def publishToNamespace[T <: Packet](msg: OnPacket[T]) {
-    mediator ! Publish(socketio.topicForNamespace(msg.packet.endpoint), msg)
+  def publishToBroadcast(msg: OnBroadcast) {
+    broadcastMediator ! Publish(socketio.topicForBroadcast(msg.packet.endpoint, msg.room), msg)
   }
 
   def subscribeBroadcast(topic: String): Future[SubscribeAck] = {
-    mediator.ask(Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
+    broadcastMediator.ask(Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
   }
 
   def unsubscribeBroadcast(topic: String) {
-    mediator ! Unsubscribe(topic, self)
+    broadcastMediator ! Unsubscribe(topic, self)
   }
 
 }

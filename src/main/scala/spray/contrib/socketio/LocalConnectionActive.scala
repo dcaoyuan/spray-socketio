@@ -8,8 +8,7 @@ import akka.actor.Terminated
 import scala.collection.concurrent
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Unsubscribe, SubscribeAck, Subscribe }
 
-class LocalConnectionActive(val mediator: ActorRef) extends ConnectionActive with Actor with ActorLogging {
-  import ConnectionActive._
+class LocalConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with Actor with ActorLogging {
 
   // have to call after log created
   enableCloseTimeout()
@@ -17,15 +16,14 @@ class LocalConnectionActive(val mediator: ActorRef) extends ConnectionActive wit
   def receive = working
 }
 
-class LocalConnectionActiveResolver(mediator: ActorRef) extends Actor with ActorLogging {
-  import context.dispatcher
+class LocalConnectionActiveResolver(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends Actor with ActorLogging {
 
   def receive = {
     case ConnectionActive.CreateSession(sessionId: String) =>
       context.child(sessionId) match {
         case Some(_) =>
         case None =>
-          val connectActive = context.actorOf(Props(classOf[LocalConnectionActive], mediator), name = sessionId)
+          val connectActive = context.actorOf(Props(classOf[LocalConnectionActive], namespaceMediator, broadcastMediator), name = sessionId)
           context.watch(connectActive)
       }
 
@@ -40,31 +38,31 @@ class LocalConnectionActiveResolver(mediator: ActorRef) extends Actor with Actor
 }
 
 object LocalMediator {
-  private val topicToSubscitptions = concurrent.TrieMap[String, Set[ActorRef]]()
+  private val topicToSubscriptions = concurrent.TrieMap[String, Set[ActorRef]]()
 }
 
 class LocalMediator extends Actor with ActorLogging {
   import LocalMediator._
 
-  def subscitptionsFor(topic: String): Set[ActorRef] = {
-    topicToSubscitptions.getOrElseUpdate(topic, Set[ActorRef]())
+  def subscriptionsFor(topic: String): Set[ActorRef] = {
+    topicToSubscriptions.getOrElseUpdate(topic, Set[ActorRef]())
   }
 
   def receive: Receive = {
-    case x @ Subscribe(topic, subscitption) =>
-      val subs = subscitptionsFor(topic)
-      topicToSubscitptions(topic) = subs + subscitption
-      context.watch(subscitption)
+    case x @ Subscribe(topic, subscriptions) =>
+      val subs = subscriptionsFor(topic)
+      topicToSubscriptions(topic) = subs + subscriptions
+      context.watch(subscriptions)
       sender() ! SubscribeAck(x)
 
-    case Unsubscribe(topic, subscitption) =>
-      topicToSubscitptions.get(topic) match {
+    case Unsubscribe(topic, subscriptions) =>
+      topicToSubscriptions.get(topic) match {
         case Some(xs) =>
-          val subs = xs - subscitption
+          val subs = xs - subscriptions
           if (subs.isEmpty) {
-            topicToSubscitptions -= topic
+            topicToSubscriptions -= topic
           } else {
-            topicToSubscitptions(topic) = subs
+            topicToSubscriptions(topic) = subs
           }
 
         case None =>
@@ -72,18 +70,18 @@ class LocalMediator extends Actor with ActorLogging {
 
     case Terminated(ref) =>
       var topicsToRemove = List[String]()
-      for { (topic, xs) <- topicToSubscitptions } {
+      for { (topic, xs) <- topicToSubscriptions } {
         val subs = xs - ref
         if (subs.isEmpty) {
           topicsToRemove ::= topic
         } else {
-          topicToSubscitptions(topic) = subs
+          topicToSubscriptions(topic) = subs
         }
       }
-      topicToSubscitptions --= topicsToRemove
+      topicToSubscriptions --= topicsToRemove
 
     case Publish(topic: String, msg: Any) =>
-      topicToSubscitptions.get(topic) foreach { subs => subs foreach (_ ! msg) }
+      topicToSubscriptions.get(topic) foreach { subs => subs foreach (_ ! msg) }
   }
 }
 

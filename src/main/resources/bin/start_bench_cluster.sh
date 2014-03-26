@@ -13,10 +13,19 @@ usage() {
     exit 1
 }
 
+dir_conf=../conf
+benchserver_class_pgm=spray.contrib.socketio.examples.SimpleClusterServer
+benchserver_id_pgm=bench${cluster_module}
+benchserver_lock_file=.lock_bench${cluster_module}
+benchserver_conf=../conf/benchmark.conf
+logback_conf=../conf/logback.xml
+cluster_seed=127.0.0.1:2551
+cluster_hostname=127.0.0.1
+
 case $arg in
-    tran*)   cluster_module="transport";;
-    conn*) cluster_module="connectionActive";;
-    busi*)    cluster_module="business";;
+    tran*)   cluster_module="transport"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
+    conn*) cluster_module="connectionActive"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
+    busi*)    cluster_module="business"; akka_args="-Dspray.socketio.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}/user/receptionist";;
     *) usage
 esac
 
@@ -31,15 +40,6 @@ for f in ../libs/*.jar;
 do cp=${f}":"${cp};
 done;
 
-dir_conf=../conf
-benchserver_class_pgm=spray.contrib.socketio.examples.SimpleClusterServer
-benchserver_id_pgm=bench${cluster_module}
-benchserver_lock_file=.lock_bench${cluster_module}
-benchserver_conf=../conf/benchmark.conf
-logback_conf=../conf/logback.xml
-cluster_seed=127.0.0.1:2551
-cluster_hostname=127.0.0.1
-
 2> /dev/null > /dev/tcp/127.0.0.1/2551
 if [ $? == 0 ]; then
     cluster_port=0
@@ -47,7 +47,7 @@ else
     cluster_port=2551
 fi
 
-$JAVA $FLAGS $HEAP $GC -Dconfig.file=${benchserver_conf} -Dlogback.configurationFile=${logback_conf} -Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed} -Dakka.remote.netty.tcp.hostname=${cluster_hostname} -Dakka.remote.netty.tcp.port=${cluster_port} -cp ${cp} ${benchserver_class_pgm} ${cluster_module} > ../logs/bench${cluster_module}_rt.log &
+$JAVA $FLAGS $HEAP $GC -Dconfig.file=${benchserver_conf} -Dlogback.configurationFile=${logback_conf} ${akka_args} -Dakka.remote.netty.tcp.hostname=${cluster_hostname} -Dakka.remote.netty.tcp.port=${cluster_port} -cp ${cp} ${benchserver_class_pgm} ${cluster_module} > ../logs/bench${cluster_module}_rt.log &
 benchserver_pid=$!
 echo $benchserver_pid > ./${benchserver_lock_file}
 echo "Started ${benchserver_id_pgm}, pid is $benchserver_pid"

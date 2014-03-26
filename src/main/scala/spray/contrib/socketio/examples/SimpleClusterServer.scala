@@ -9,7 +9,7 @@ import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import spray.can.server.UHttp
 import spray.can.Http
-import spray.contrib.socketio.SocketIOExtension
+import spray.contrib.socketio.{SocketIONamespaceExtension, SocketIOExtension}
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
@@ -80,8 +80,8 @@ object SimpleClusterServer extends App with MySslConfiguration {
 
     case "business" :: tail =>
       val config = parseString("akka.cluster.roles =[\"business\"]").withFallback(commonSettings)
-      system = startCluster(config)
-      implicit val resolver = SocketIOExtension(system).resolver
+      system = ActorSystem("NamespaceSystem", config)
+      implicit val resolver = SocketIONamespaceExtension(system).resolver
 
       val appConfig = load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
@@ -90,6 +90,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
           value match {
             case OnEvent("chat", args, context) => // for spec and load test
               spray.json.JsonParser(args) // test spray-json too.
+              println("on chat event")
               if (isBroadcast) {
                 value.broadcast("", EventPacket(-1L, false, value.endpoint, "chat", args))
               } else {
@@ -106,8 +107,8 @@ object SimpleClusterServer extends App with MySslConfiguration {
 
       val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
 
-      SocketIOExtension(system).startNamespace("")
-      SocketIOExtension(system).namespace("") ! Namespace.Subscribe(subscription)
+      SocketIONamespaceExtension(system).startNamespace("")
+      SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(subscription)
 
     case _ =>
       exitWithUsage

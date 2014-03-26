@@ -116,7 +116,7 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
           isMediatorSubscribed = true
           action()
         case Failure(ex) =>
-          log.warning("Failed to subscribe to medietor on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
+          log.warning("Failed to subscribe to mediator on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
       }
     } else {
       action()

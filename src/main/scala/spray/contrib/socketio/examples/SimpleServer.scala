@@ -7,8 +7,7 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.SocketIOExtension
-import spray.contrib.socketio.SocketIOServerConnection
+import spray.contrib.socketio.{SocketIONamespaceExtension, SocketIOExtension, SocketIOServerConnection}
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
@@ -76,7 +75,8 @@ object SimpleServer extends App with MySslConfiguration {
 
   implicit val system = ActorSystem()
   val socketioExt = SocketIOExtension(system)
-  implicit val resolver = socketioExt.resolver
+  val namespaceExt = SocketIONamespaceExtension(system)
+  implicit val resolver = namespaceExt.resolver
 
   val observer = new Observer[OnEvent] {
     override def onNext(value: OnEvent) {
@@ -109,8 +109,8 @@ object SimpleServer extends App with MySslConfiguration {
     eventChannel.subscribe(observer)
   }
 
-  socketioExt.startNamespace("testendpoint")
-  socketioExt.namespace("testendpoint") ! Namespace.Subscribe(subscription)
+  namespaceExt.startNamespace("testendpoint")
+  namespaceExt.namespace("testendpoint") ! Namespace.Subscribe(subscription)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

@@ -1,22 +1,9 @@
 package spray.contrib.socketio
 
-import akka.actor.Actor
-import akka.actor.ActorRef
-import akka.actor.ActorSystem
-import akka.actor.ExtendedActorSystem
-import akka.actor.Extension
-import akka.actor.ExtensionId
-import akka.actor.ExtensionIdProvider
-import akka.actor.NoSerializationVerificationNeeded
-import akka.actor.Props
+import akka.actor._
 import akka.contrib.pattern._
-import akka.pattern.ask
-import scala.collection.concurrent.TrieMap
-import scala.concurrent.Await
-import spray.contrib.socketio
-import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.SocketIOGuardian.Start
-import spray.contrib.socketio.SocketIOGuardian.Started
+import scala.Some
+import akka.cluster.Cluster
 
 object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionIdProvider {
   override def get(system: ActorSystem): SocketIOExtension = super.get(system)
@@ -26,6 +13,9 @@ object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionId
   override def createExtension(system: ExtendedActorSystem): SocketIOExtension = new SocketIOExtension(system)
 
   val shardName: String = "connectionActives"
+
+  val mediatorName: String = "socketioMediator"
+  val mediatorSingleton: String = "active"
 
   lazy val idExtractor: ShardRegion.IdExtractor = {
     case cmd: ConnectionActive.Command => (cmd.sessionId, cmd)
@@ -43,56 +33,52 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   private[socketio] object Settings {
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
+    val ConnRole: String = "connectionActive"
   }
 
   import Settings._
 
-  private lazy val localMediator = system.actorOf(Props(classOf[LocalMediator]), name = "socketio-localmediator")
-  private lazy val localResolver = system.actorOf(Props(classOf[LocalConnectionActiveResolver], localMediator), name = SocketIOExtension.shardName)
+  private lazy val localMediator = system.actorOf(Props(classOf[LocalMediator]), name = SocketIOExtension.mediatorName)
+
+  private lazy val localResolver = system.actorOf(Props(classOf[LocalConnectionActiveResolver], localMediator, broadcastMediator), name = SocketIOExtension.shardName)
 
   /**
-   * Need to start immediatly to accept broadcase etc.
+   * Need to start immediately to accept broadcast etc.
    */
-  val mediator = if (isCluster) DistributedPubSubExtension(system).mediator else localMediator
+  val broadcastMediator = if (isCluster) DistributedPubSubExtension(system).mediator else localMediator
+
+  lazy val namespaceMediator = if (isCluster) {
+    val cluster = Cluster(system)
+    if (cluster.getSelfRoles.contains(ConnRole)) {
+      system.actorOf(
+        ClusterSingletonManager.defaultProps(singletonProps = Props(classOf[ClusterNamespaceMediator]),
+          singletonName = SocketIOExtension.mediatorSingleton,
+          terminationMessage = PoisonPill,
+          role = ConnRole
+        ),
+        name = SocketIOExtension.mediatorName
+      )
+    }
+    system.actorOf(ClusterSingletonProxy.props(
+      singletonPath = s"/user/${SocketIOExtension.mediatorName}/${SocketIOExtension.mediatorSingleton}",
+      role = Some(ConnRole)),
+      name = SocketIOExtension.mediatorName + "Proxy")
+  } else localMediator
+
 
   if (isCluster) {
+    ClusterReceptionistExtension(system)
     ClusterSharding(system).start(
       typeName = SocketIOExtension.shardName,
-      entryProps = Some(Props(classOf[ClusterConnectionActive], mediator)),
+      entryProps = Some(Props(classOf[ClusterConnectionActive], namespaceMediator, broadcastMediator)),
       idExtractor = SocketIOExtension.idExtractor,
       shardResolver = SocketIOExtension.shardResolver)
+    ClusterReceptionistExtension(system).registerService(
+      ClusterSharding(system).shardRegion(SocketIOExtension.shardName))
   }
 
-  lazy val resolver = if (isCluster) ClusterSharding(system).shardRegion(SocketIOExtension.shardName) else localResolver
+  lazy val resolver = if (isCluster) {
+    ClusterSharding(system).shardRegion(SocketIOExtension.shardName)
+  } else localResolver
 
-  private lazy val guardian = system.actorOf(Props[SocketIOGuardian], "socketio-guardian")
-  private lazy val namespaces = new TrieMap[String, ActorRef]
-
-  def startNamespace(endpoint: String) {
-    implicit val timeout = system.settings.CreationTimeout
-    val name = "socketio-namespace-" + { if (endpoint == "") "global" else endpoint }
-    val startMsg = Start(name, Props(classOf[Namespace], endpoint, mediator))
-    val Started(namespaceRef) = Await.result(guardian ? startMsg, timeout.duration)
-    namespaces(endpoint) = namespaceRef
-  }
-
-  def namespace(endpoint: String): ActorRef = namespaces.get(endpoint) match {
-    case None      => throw new IllegalArgumentException(s"Namespace endpoint [$endpoint] must be started first")
-    case Some(ref) => ref
-  }
-}
-
-private[socketio] object SocketIOGuardian {
-  final case class Start(name: String, entryProps: Props) extends NoSerializationVerificationNeeded
-  final case class Started(ref: ActorRef) extends NoSerializationVerificationNeeded
-}
-
-private[socketio] class SocketIOGuardian extends Actor {
-  override def receive: Actor.Receive = {
-    case Start(name, entryProps) =>
-      val ref: ActorRef = context.child(name).getOrElse {
-        context.actorOf(entryProps, name = name)
-      }
-      sender() ! Started(ref)
-  }
 }

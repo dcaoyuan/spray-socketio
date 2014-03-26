@@ -78,8 +78,19 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString("""akka.cluster.roles = ["connectionActive"]""")
   }
 
+  nodeConfig(connectionActive1) {
+    ConfigFactory.parseString("""akka.remote.netty.tcp.port = 2551""")
+  }
+
   nodeConfig(business1) {
-    ConfigFactory.parseString("""akka.cluster.roles = ["business"]""")
+    ConfigFactory.parseString(
+      """
+        akka.cluster.roles = ["business"]
+        spray.socketio {
+            seed-nodes = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
+        }
+      """)
+
   }
 }
 
@@ -127,10 +138,6 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
   def startSharding(): Unit = {
     // start shard region actor
     SocketIOExtension(system)
-
-    // optional: register cluster receptionist for cluster client
-    ClusterReceptionistExtension(system).registerService(
-      ClusterSharding(system).shardRegion(SocketIOExtension.shardName))
   }
 
   "Sharded socketio cluster" must {
@@ -156,7 +163,6 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       join(transport2, transport1)
       join(connectionActive1, transport1)
       join(connectionActive2, transport1)
-      join(business1, transport1)
 
       enterBarrier("join-cluster")
     }
@@ -174,8 +180,13 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         IO(UHttp) ! Http.Bind(server, host, port2)
       }
 
+      enterBarrier("startup-server")
+    }
+
+    "startup business" in within(15.seconds) {
       runOn(business1) {
-        val resolver = SocketIOExtension(system).resolver
+        waitForSeconds(5)(system)
+        val resolver = SocketIONamespaceExtension(system).resolver
 
         val observer = new Observer[OnData] {
           override def onNext(value: OnData) {
@@ -194,8 +205,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
         val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
 
-        SocketIOExtension(system).startNamespace("")
-        SocketIOExtension(system).namespace("") ! Namespace.Subscribe(subscription)
+        SocketIONamespaceExtension(system).startNamespace("")
+        SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(subscription)
       }
 
       enterBarrier("startup-server")

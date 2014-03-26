@@ -20,7 +20,7 @@ import java.lang.StringBuilder
 import annotation.tailrec
 
 /**
-  * A JsonPrinter that produces a nicely readable JSON source.
+ * A JsonPrinter that produces a nicely readable JSON source.
  */
 trait PrettyPrinter extends JsonPrinter {
   val Indent = 2
@@ -28,17 +28,17 @@ trait PrettyPrinter extends JsonPrinter {
   def print(x: JsValue, sb: StringBuilder) {
     print(x, sb, 0)
   }
-  
+
   private def print(x: JsValue, sb: StringBuilder, indent: Int) {
     x match {
       case JsObject(x) => printObject(x, sb, indent)
       case JsArray(x)  => printArray(x, sb, indent)
-      case _ => printLeaf(x, sb)
+      case _           => printLeaf(x, sb)
     }
   }
 
   private def printObject(members: Map[String, JsValue], sb: StringBuilder, indent: Int) {
-    sb.append("{\n")    
+    sb.append("{\n")
     printSeq(members, sb.append(",\n")) { m =>
       printIndent(sb, indent + Indent)
       printString(m._1, sb)
@@ -49,13 +49,13 @@ trait PrettyPrinter extends JsonPrinter {
     printIndent(sb, indent)
     sb.append("}")
   }
-  
+
   private def printArray(elements: List[JsValue], sb: StringBuilder, indent: Int) {
     sb.append('[')
     printSeq(elements, sb.append(", "))(print(_, sb, indent))
     sb.append(']')
   }
-  
+
   @tailrec
   private def printIndent(sb: StringBuilder, indent: Int) {
     if (indent > 0) {

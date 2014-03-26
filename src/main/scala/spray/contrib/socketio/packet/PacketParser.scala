@@ -3,8 +3,6 @@ package spray.contrib.socketio.packet
 import akka.util.ByteString
 import org.parboiled2._
 import scala.collection.immutable.Queue
-import scala.util.Failure
-import scala.util.Success
 import scala.util.Try
 
 final class PacketParser(val input: ParserInput) extends Parser with StringBuilding {

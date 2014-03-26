@@ -12,8 +12,7 @@ import java.io.BufferedWriter
 import java.io.FileNotFoundException
 import java.io.FileWriter
 import java.io.IOException
-import org.apache.commons.math3.stat.descriptive.{StatisticalSummary, DescriptiveStatistics}
-;
+import org.apache.commons.math3.stat.descriptive.{ StatisticalSummary, DescriptiveStatistics };
 import scala.collection.mutable
 import scala.collection.JavaConversions._
 import scala.concurrent.Await

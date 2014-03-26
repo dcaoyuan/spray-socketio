@@ -2,6 +2,8 @@ import sbt._
 import sbt.Keys._
 import com.typesafe.sbt.SbtMultiJvm
 import com.typesafe.sbt.SbtMultiJvm.MultiJvmKeys.MultiJvm
+import com.typesafe.sbt.SbtScalariform
+import com.typesafe.sbt.SbtScalariform.ScalariformKeys
 
 object Build extends sbt.Build {
 
@@ -14,6 +16,7 @@ object Build extends sbt.Build {
       distTask) ++ multiJvmSettings) configs (MultiJvm)
 
   def commonSettings = Defaults.defaultSettings ++
+    formatSettings ++
     Seq(
       organization := "com.wandoulabs",
       version := "0.1",
@@ -58,6 +61,20 @@ object Build extends sbt.Build {
       IO.copyFile(srcPath, destPath, preserveLastModified = true)
     }
   }
+
+  lazy val formatSettings = SbtScalariform.scalariformSettings ++ Seq(
+    ScalariformKeys.preferences in Compile := formattingPreferences,
+    ScalariformKeys.preferences in Test := formattingPreferences)
+
+  import scalariform.formatter.preferences._
+  def formattingPreferences =
+    FormattingPreferences()
+      .setPreference(RewriteArrowSymbols, false)
+      .setPreference(AlignParameters, true)
+      .setPreference(AlignSingleLineCaseStatements, true)
+      .setPreference(DoubleIndentClassDeclaration, true)
+      .setPreference(IndentSpaces, 2)
+
 }
 
 object Dependencies {

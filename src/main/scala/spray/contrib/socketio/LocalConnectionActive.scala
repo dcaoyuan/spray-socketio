@@ -17,7 +17,6 @@ class LocalConnectionActive(val mediator: ActorRef) extends ConnectionActive wit
   def receive = working
 }
 
-
 class LocalConnectionActiveResolver(mediator: ActorRef) extends Actor with ActorLogging {
   import context.dispatcher
 
@@ -39,7 +38,6 @@ class LocalConnectionActiveResolver(mediator: ActorRef) extends Actor with Actor
     case Terminated(ref) =>
   }
 }
-
 
 object LocalMediator {
   private val topicToSubscitptions = concurrent.TrieMap[String, Set[ActorRef]]()

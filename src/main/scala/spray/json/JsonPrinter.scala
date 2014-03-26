@@ -20,7 +20,7 @@ import annotation.tailrec
 import java.lang.StringBuilder
 
 /**
-  * A JsonPrinter serializes a JSON AST to a String.
+ * A JsonPrinter serializes a JSON AST to a String.
  */
 trait JsonPrinter extends (JsValue => String) {
 
@@ -40,9 +40,9 @@ trait JsonPrinter extends (JsValue => String) {
     }
     sb.toString
   }
-  
+
   def print(x: JsValue, sb: StringBuilder)
-  
+
   protected def printLeaf(x: JsValue, sb: StringBuilder) {
     x match {
       case JsNull      => sb.append("null")
@@ -68,17 +68,17 @@ trait JsonPrinter extends (JsValue => String) {
           if (ix < s.length) {
             s.charAt(ix) match {
               case c if !requiresEncoding(c) => sb.append(c)
-              case '"' => sb.append("\\\"")
-              case '\\' => sb.append("\\\\")
-              case '\b' => sb.append("\\b")
-              case '\f' => sb.append("\\f")
-              case '\n' => sb.append("\\n")
-              case '\r' => sb.append("\\r")
-              case '\t' => sb.append("\\t")
-              case x if x <= 0xF => sb.append("\\u000").append(Integer.toHexString(x))
-              case x if x <= 0xFF => sb.append("\\u00").append(Integer.toHexString(x))
-              case x if x <= 0xFFF => sb.append("\\u0").append(Integer.toHexString(x))
-              case x => sb.append("\\u").append(Integer.toHexString(x))
+              case '"'                       => sb.append("\\\"")
+              case '\\'                      => sb.append("\\\\")
+              case '\b'                      => sb.append("\\b")
+              case '\f'                      => sb.append("\\f")
+              case '\n'                      => sb.append("\\n")
+              case '\r'                      => sb.append("\\r")
+              case '\t'                      => sb.append("\\t")
+              case x if x <= 0xF             => sb.append("\\u000").append(Integer.toHexString(x))
+              case x if x <= 0xFF            => sb.append("\\u00").append(Integer.toHexString(x))
+              case x if x <= 0xFFF           => sb.append("\\u0").append(Integer.toHexString(x))
+              case x                         => sb.append("\\u").append(Integer.toHexString(x))
             }
             append(ix + 1)
           }
@@ -86,7 +86,7 @@ trait JsonPrinter extends (JsValue => String) {
     }
     sb.append('"')
   }
-  
+
   protected def printSeq[A](iterable: Iterable[A], printSeparator: => Unit)(f: A => Unit) {
     var first = true
     iterable.foreach { a =>

@@ -6,7 +6,7 @@ import akka.japi.Util.immutableSeq
 import scala.collection.concurrent.TrieMap
 import spray.contrib.socketio.namespace.Namespace
 import scala.concurrent.Await
-import spray.contrib.socketio.SocketIOGuardian.{Start, Started}
+import spray.contrib.socketio.SocketIOGuardian.{ Start, Started }
 import akka.contrib.pattern.ClusterClient
 import scala.collection.immutable
 import spray.contrib.socketio.SocketIOGuardian.Started

@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{Actor, ActorLogging, ActorRef}
+import akka.actor.{ Actor, ActorLogging, ActorRef }
 import akka.persistence.{ PersistenceFailure, EventsourcedProcessor }
 import akka.contrib.pattern.ClusterClient
 

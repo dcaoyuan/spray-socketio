@@ -1,10 +1,10 @@
 package spray.contrib.socketio
 
 import akka.pattern.ask
-import akka.actor.{ActorLogging, Actor, ActorRef}
+import akka.actor.{ ActorLogging, Actor, ActorRef }
 import scala.collection.immutable
 import spray.contrib.socketio
-import akka.contrib.pattern.{ClusterClient, ClusterReceptionistExtension}
+import akka.contrib.pattern.{ ClusterClient, ClusterReceptionistExtension }
 import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
 import akka.contrib.pattern.DistributedPubSubMediator.Publish
 import akka.contrib.pattern.DistributedPubSubMediator.Unsubscribe

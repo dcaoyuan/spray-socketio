@@ -54,17 +54,14 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
         ClusterSingletonManager.defaultProps(singletonProps = Props(classOf[ClusterNamespaceMediator]),
           singletonName = SocketIOExtension.mediatorSingleton,
           terminationMessage = PoisonPill,
-          role = ConnRole
-        ),
-        name = SocketIOExtension.mediatorName
-      )
+          role = ConnRole),
+        name = SocketIOExtension.mediatorName)
     }
     system.actorOf(ClusterSingletonProxy.props(
       singletonPath = s"/user/${SocketIOExtension.mediatorName}/${SocketIOExtension.mediatorSingleton}",
       role = Some(ConnRole)),
       name = SocketIOExtension.mediatorName + "Proxy")
   } else localMediator
-
 
   if (isCluster) {
     ClusterReceptionistExtension(system)

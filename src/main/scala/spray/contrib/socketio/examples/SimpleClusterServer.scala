@@ -9,7 +9,7 @@ import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import spray.can.server.UHttp
 import spray.can.Http
-import spray.contrib.socketio.{SocketIONamespaceExtension, SocketIOExtension}
+import spray.contrib.socketio.{ SocketIONamespaceExtension, SocketIOExtension }
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData

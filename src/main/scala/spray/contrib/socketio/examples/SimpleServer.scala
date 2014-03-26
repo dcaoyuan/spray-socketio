@@ -7,7 +7,7 @@ import rx.lang.scala.Observer
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.{SocketIONamespaceExtension, SocketIOExtension, SocketIOServerConnection}
+import spray.contrib.socketio.{ SocketIONamespaceExtension, SocketIOExtension, SocketIOServerConnection }
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData

@@ -5,9 +5,11 @@ import akka.event.LoggingAdapter
 import akka.pattern.ask
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
-import java.util.UUID
 import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 import scala.concurrent.duration._
+import scala.util.Failure
+import scala.util.Success
 import spray.can.Http
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio.transport
@@ -50,9 +52,10 @@ package object socketio {
 
   private[socketio] final class SoConnectingContext(
     var sessionId: String,
+    val sessionIdGenerator: HttpRequest => Future[String],
     val serverConnection: ActorRef,
-    val log: LoggingAdapter,
     val resolver: ActorRef,
+    val log: LoggingAdapter,
     implicit val ec: ExecutionContext)
 
   final case class HandshakeState(response: HttpResponse, sessionId: String, qurey: Uri.Query, origins: Seq[HttpOrigin])
@@ -64,22 +67,27 @@ package object socketio {
       case HttpRequest(_, uri, headers, _, _) =>
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion) =>
-            val sessionId = UUID.randomUUID.toString
-            ctx.resolver ! ConnectionActive.CreateSession(sessionId)
+            import ctx.ec
+            ctx.sessionIdGenerator(req) onComplete {
+              case Success(sessionId) =>
+                ctx.resolver ! ConnectionActive.CreateSession(sessionId)
 
-            val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
-            val originsHeaders = List(
-              HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(origins)),
-              HttpHeaders.`Access-Control-Allow-Credentials`(true))
+                val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
+                val originsHeaders = List(
+                  HttpHeaders.`Access-Control-Allow-Origin`(SomeOrigins(origins)),
+                  HttpHeaders.`Access-Control-Allow-Credentials`(true))
 
-            val respHeaders = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
-            val respEntity = List(sessionId, Settings.HeartbeatTimeout, Settings.CloseTimeout, Settings.SupportedTransports).mkString(":")
-            val resp = HttpResponse(
-              status = StatusCodes.OK,
-              entity = respEntity,
-              headers = respHeaders)
+                val respHeaders = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
+                val respEntity = List(sessionId, Settings.HeartbeatTimeout, Settings.CloseTimeout, Settings.SupportedTransports).mkString(":")
+                val resp = HttpResponse(
+                  status = StatusCodes.OK,
+                  entity = respEntity,
+                  headers = respHeaders)
 
-            ctx.serverConnection ! Http.MessageCommand(resp)
+                ctx.serverConnection ! Http.MessageCommand(resp)
+
+              case Failure(ex) =>
+            }
 
             Some(true)
 

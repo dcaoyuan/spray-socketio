@@ -3,11 +3,14 @@ package spray.contrib.socketio
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
+import java.util.UUID
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket
 import spray.contrib.socketio
+import spray.http.HttpRequest
 
 /**
  *
@@ -49,12 +52,13 @@ import spray.contrib.socketio
  * ================================================================
  */
 trait SocketIOServerConnection extends Actor with ActorLogging {
+  import context.dispatcher
+
   def serverConnection: ActorRef
   def resolver: ActorRef
+  def sessionIdGenerator: HttpRequest => Future[String] = { req => Future(UUID.randomUUID.toString) } // default one
 
-  implicit val soConnContext = new socketio.SoConnectingContext(null, serverConnection, log, resolver, context.dispatcher)
-
-  import context.dispatcher
+  implicit val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, resolver, log, context.dispatcher)
 
   def receive = socketioHandshake orElse websocketConnecting orElse xrhpollingConnecting orElse genericLogic orElse closeLogic
 

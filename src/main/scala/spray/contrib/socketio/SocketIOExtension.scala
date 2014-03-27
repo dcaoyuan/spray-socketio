@@ -50,17 +50,12 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   lazy val namespaceMediator = if (isCluster) {
     val cluster = Cluster(system)
     if (cluster.getSelfRoles.contains(ConnRole)) {
-      system.actorOf(
-        ClusterSingletonManager.defaultProps(singletonProps = Props(classOf[ClusterNamespaceMediator]),
-          singletonName = SocketIOExtension.mediatorSingleton,
-          terminationMessage = PoisonPill,
-          role = ConnRole),
-        name = SocketIOExtension.mediatorName)
+      val ref = system.actorOf(Props(classOf[DistributedBalancingPubSubMediator]), name = SocketIOExtension.mediatorName)
+      ClusterReceptionistExtension(system).registerService(ref)
+      ref
+    } else {
+      system.deadLetters
     }
-    system.actorOf(ClusterSingletonProxy.props(
-      singletonPath = s"/user/${SocketIOExtension.mediatorName}/${SocketIOExtension.mediatorSingleton}",
-      role = Some(ConnRole)),
-      name = SocketIOExtension.mediatorName + "Proxy")
   } else localMediator
 
   if (isCluster) {

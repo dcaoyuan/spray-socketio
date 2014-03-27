@@ -17,16 +17,22 @@ import spray.contrib.socketio.packet.EventPacket
 
 object SocketIOTestServer extends App {
 
+  object SocketIOServer {
+    def props(resolver: ActorRef) = Props(classOf[SocketIOServer], resolver)
+  }
   class SocketIOServer(val resolver: ActorRef) extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, resolver))
+        val conn = context.actorOf(SocketIOWorker.props(serverConnection, resolver))
         serverConnection ! Http.Register(conn)
     }
   }
 
+  object SocketIOWorker {
+    def props(serverConnection: ActorRef, resolver: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, resolver)
+  }
   class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends SocketIOServerConnection {
 
     def genericLogic: Receive = {
@@ -64,7 +70,7 @@ object SocketIOTestServer extends App {
   SocketIONamespaceExtension(system).startNamespace("")
   SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
 
-  val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
+  val server = system.actorOf(SocketIOServer.props(resolver), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val host = config.getString("host")

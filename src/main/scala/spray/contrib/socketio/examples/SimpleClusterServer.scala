@@ -67,7 +67,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
       system = startCluster(config)
 
       implicit val resolver = SocketIOExtension(system).resolver
-      val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
+      val server = system.actorOf(SocketIOServer.props(resolver), name = "socketio-server")
       val host = config.getString("transport.hostname")
       val port = config.getInt("transport.port")
       IO(UHttp) ! Http.Bind(server, host, port)

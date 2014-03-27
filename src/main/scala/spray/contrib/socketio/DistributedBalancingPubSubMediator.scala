@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ ActorLogging, Actor, ActorRef }
+import akka.actor.{ ActorLogging, Actor, ActorRef, Props }
 import akka.contrib.pattern.{ DistributedPubSubExtension, ClusterClient }
 import akka.contrib.pattern.DistributedPubSubMediator.Publish
 import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
@@ -17,6 +17,8 @@ import spray.contrib.socketio
 
 object DistributedBalancingPubSubMediator {
 
+  def props() = Props(classOf[DistributedBalancingPubSubMediator])
+
   case class SubscribeGroup(topic: String, group: String, ref: ActorRef)
 
   case class UnsubscribeGroup(topic: String, group: String, ref: ActorRef)
@@ -25,7 +27,7 @@ object DistributedBalancingPubSubMediator {
 
   case class PublishUnsubscribeGroup(unsubscribe: UnsubscribeGroup, origin: ActorRef)
 
-  final val InternalTopic = "ClusterNamespaceMediatorPubSub"
+  val InternalTopic = "ClusterNamespaceMediatorPubSub"
 
 }
 
@@ -74,16 +76,15 @@ class DistributedBalancingPubSubMediator extends Actor with ActorLogging {
       pubsubMediator ! Publish(InternalTopic, PublishUnsubscribeGroup(x, self))
       val subscriber = sender()
       val ack = UnsubscribeAck(Unsubscribe(topic, subscription))
-      val opt = getSubscription(topic, group)
-      if (opt.isDefined) {
-        val router = opt.get
-        router ! RemoveRoutee(ActorRefRoutee(subscription))
-        import context.dispatcher
-        (router ? GetRoutees)(socketio.actorResolveTimeout) onSuccess {
-          case _ => subscriber ! ack
-        }
-      } else {
-        subscriber ! ack
+      val opt = getSubscription(topic, group) match {
+        case Some(router) =>
+          router ! RemoveRoutee(ActorRefRoutee(subscription))
+          import context.dispatcher
+          (router ? GetRoutees)(socketio.actorResolveTimeout) onSuccess {
+            case _ => subscriber ! ack
+          }
+        case None =>
+          subscriber ! ack
       }
 
     case pub: PublishSubscribeGroup =>
@@ -104,6 +105,10 @@ class DistributedBalancingPubSubMediator extends Actor with ActorLogging {
     case x               => log.info("unhandled : " + x)
   }
 
+}
+
+object DistributedBalancingPubSubProxy {
+  def props(path: String, group: String, client: ActorRef) = Props(classOf[DistributedBalancingPubSubProxy], path, group, client)
 }
 
 /**

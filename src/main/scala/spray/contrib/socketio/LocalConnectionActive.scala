@@ -8,7 +8,13 @@ import akka.actor.Terminated
 import scala.collection.concurrent
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Unsubscribe, SubscribeAck, Subscribe }
 
-class LocalConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with Actor with ActorLogging {
+object LocalConnectionActive {
+  def props(mediator: ActorRef) = Props(classOf[LocalConnectionActive], mediator)
+}
+
+class LocalConnectionActive(mediator: ActorRef) extends ConnectionActive with Actor with ActorLogging {
+  val namespaceMediator = mediator
+  val broadcastMediator = mediator
 
   // have to call after log created
   enableCloseTimeout()
@@ -16,14 +22,18 @@ class LocalConnectionActive(val namespaceMediator: ActorRef, val broadcastMediat
   def receive = working
 }
 
-class LocalConnectionActiveResolver(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends Actor with ActorLogging {
+object LocalConnectionActiveResolver {
+  def props(mediator: ActorRef) = Props(classOf[LocalConnectionActiveResolver], mediator)
+}
+
+class LocalConnectionActiveResolver(val mediator: ActorRef) extends Actor with ActorLogging {
 
   def receive = {
     case ConnectionActive.CreateSession(sessionId: String) =>
       context.child(sessionId) match {
         case Some(_) =>
         case None =>
-          val connectActive = context.actorOf(Props(classOf[LocalConnectionActive], namespaceMediator, broadcastMediator), name = sessionId)
+          val connectActive = context.actorOf(LocalConnectionActive.props(mediator), name = sessionId)
           context.watch(connectActive)
       }
 
@@ -38,6 +48,8 @@ class LocalConnectionActiveResolver(val namespaceMediator: ActorRef, val broadca
 }
 
 object LocalMediator {
+  def props() = Props(classOf[LocalMediator])
+
   private val topicToSubscriptions = concurrent.TrieMap[String, Set[ActorRef]]()
 }
 

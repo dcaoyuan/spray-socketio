@@ -3,6 +3,7 @@ package spray.contrib.socketio.namespace
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
+import akka.actor.Props
 import akka.contrib.pattern.DistributedPubSubMediator
 import akka.pattern.ask
 import rx.lang.scala.Subject
@@ -66,6 +67,8 @@ import scala.util.{ Failure, Success }
  * @Note Akka can do millions of messages per second per actor per core.
  */
 object Namespace {
+
+  def props(endpoint: String, mediator: ActorRef) = Props(classOf[Namespace], endpoint, mediator)
 
   final case class Subscribe(channel: Subject[OnData])
   final case class Unsubscribe(channel: Subject[OnData])

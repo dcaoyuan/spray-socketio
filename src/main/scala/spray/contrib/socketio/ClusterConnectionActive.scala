@@ -1,8 +1,12 @@
 package spray.contrib.socketio
 
-import akka.actor.{ Actor, ActorLogging, ActorRef }
+import akka.actor.{ Actor, ActorLogging, ActorRef, Props }
 import akka.persistence.{ PersistenceFailure, EventsourcedProcessor }
 import akka.contrib.pattern.ClusterClient
+
+object ClusterConnectionActive {
+  def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef) = Props(classOf[ClusterConnectionActive], namespaceMediator, broadcastMediator)
+}
 
 /**
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
@@ -38,6 +42,10 @@ class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMedi
 
 }
 
+object ClusterConnectionActiveResolverProxy {
+  def props(path: String, client: ActorRef) = Props(classOf[ClusterConnectionActiveResolverProxy], path, client)
+}
+
 /**
  * The proxy actor is running on the namespace nodes to forward msg to ConnectionActive
  *
@@ -45,7 +53,7 @@ class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMedi
  * @param client [[ClusterClient]] to access SocketIO Cluster
  */
 class ClusterConnectionActiveResolverProxy(path: String, client: ActorRef) extends Actor with ActorLogging {
-  override def receive: Actor.Receive = {
+  def receive: Actor.Receive = {
     case cmd: ConnectionActive.Command => client forward ClusterClient.Send(path, cmd, false)
   }
 }

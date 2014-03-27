@@ -38,9 +38,9 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   import Settings._
 
-  private lazy val localMediator = system.actorOf(Props(classOf[LocalMediator]), name = SocketIOExtension.mediatorName)
+  private lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
 
-  private lazy val localResolver = system.actorOf(Props(classOf[LocalConnectionActiveResolver], localMediator, broadcastMediator), name = SocketIOExtension.shardName)
+  private lazy val localResolver = system.actorOf(LocalConnectionActiveResolver.props(localMediator), name = SocketIOExtension.shardName)
 
   /**
    * Need to start immediately to accept broadcast etc.
@@ -50,7 +50,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   lazy val namespaceMediator = if (isCluster) {
     val cluster = Cluster(system)
     if (cluster.getSelfRoles.contains(ConnRole)) {
-      val ref = system.actorOf(Props(classOf[DistributedBalancingPubSubMediator]), name = SocketIOExtension.mediatorName)
+      val ref = system.actorOf(DistributedBalancingPubSubMediator.props(), name = SocketIOExtension.mediatorName)
       ClusterReceptionistExtension(system).registerService(ref)
       ref
     } else {
@@ -62,7 +62,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     ClusterReceptionistExtension(system)
     ClusterSharding(system).start(
       typeName = SocketIOExtension.shardName,
-      entryProps = Some(Props(classOf[ClusterConnectionActive], namespaceMediator, broadcastMediator)),
+      entryProps = Some(ClusterConnectionActive.props(namespaceMediator, broadcastMediator)),
       idExtractor = SocketIOExtension.idExtractor,
       shardResolver = SocketIOExtension.shardResolver)
     ClusterReceptionistExtension(system).registerService(

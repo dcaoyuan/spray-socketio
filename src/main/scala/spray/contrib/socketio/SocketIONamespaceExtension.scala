@@ -43,14 +43,14 @@ class SocketIONamespaceExtension(system: ExtendedActorSystem) extends Extension 
     system.actorOf(ClusterClient.props(SeedNodes map (system.actorSelection) toSet), "socketio-cluster-client")
   } else ActorRef.noSender
 
-  val mediator = if (isCluster) system.actorOf(Props(classOf[DistributedBalancingPubSubProxy], s"/user/${SocketIOExtension.mediatorName}", system.name, client)) else SocketIOExtension(system).namespaceMediator
+  val mediator = if (isCluster) system.actorOf(DistributedBalancingPubSubProxy.props(s"/user/${SocketIOExtension.mediatorName}", system.name, client)) else SocketIOExtension(system).namespaceMediator
 
-  lazy val resolver = if (isCluster) system.actorOf(Props(classOf[ClusterConnectionActiveResolverProxy], s"/user/${shardingName}/${SocketIOExtension.shardName}", client)) else SocketIOExtension(system).resolver
+  lazy val resolver = if (isCluster) system.actorOf(ClusterConnectionActiveResolverProxy.props(s"/user/${shardingName}/${SocketIOExtension.shardName}", client)) else SocketIOExtension(system).resolver
 
   def startNamespace(endpoint: String) {
     implicit val timeout = system.settings.CreationTimeout
     val name = "socketio-namespace-" + { if (endpoint == "") "global" else endpoint }
-    val startMsg = Start(name, Props(classOf[Namespace], endpoint, mediator))
+    val startMsg = Start(name, Namespace.props(endpoint, mediator))
     val Started(namespaceRef) = Await.result(guardian ? startMsg, timeout.duration)
     namespaces(endpoint) = namespaceRef
   }

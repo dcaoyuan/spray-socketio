@@ -1,12 +1,12 @@
 package spray.contrib.socketio.serializer
 
 import spray.contrib.socketio.benchmark.SimpleScalaBenchmark
-import com.google.caliper.{Runner, Param}
+import com.google.caliper.{ Runner, Param }
 import spray.can.websocket.frame.TextFrame
-import akka.serialization.{Serializer, JavaSerializer}
-import akka.actor.{ExtendedActorSystem, ActorSystem}
+import akka.serialization.{ Serializer, JavaSerializer }
+import akka.actor.{ ExtendedActorSystem, ActorSystem }
 import com.typesafe.config.ConfigFactory
-import spray.contrib.socketio.ConnectionActive.{OnFrame, SendEvent}
+import spray.contrib.socketio.ConnectionActive.{ OnFrame, SendEvent }
 
 class SerializerBenchmark extends SimpleScalaBenchmark {
 

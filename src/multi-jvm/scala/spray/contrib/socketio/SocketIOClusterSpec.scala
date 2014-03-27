@@ -29,7 +29,7 @@ import akka.remote.testconductor.RoleName
 import scala.concurrent.Await
 import scala.concurrent.Promise
 import akka.actor.Identify
-import rx.lang.scala.Observable
+import rx.lang.scala.Subject
 import rx.lang.scala.Observer
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
@@ -203,10 +203,11 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
           }
         }
 
-        val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
+        val channel = Subject[OnData]()
+        channel.subscribe(observer)
 
         SocketIONamespaceExtension(system).startNamespace("")
-        SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(subscription)
+        SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
       }
 
       enterBarrier("startup-server")

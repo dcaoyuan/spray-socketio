@@ -5,6 +5,7 @@ import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import com.typesafe.config.ConfigFactory
 import rx.lang.scala.Observable
 import rx.lang.scala.Observer
+import rx.lang.scala.Subject
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
@@ -53,17 +54,15 @@ object SocketIOTestServer extends App {
     }
   }
 
-  val subscription = { channel: Observable[OnData] =>
-    // There is no channel.ofType method for RxScala, why?
-    val eventChannel = channel.flatMap {
-      case x: OnEvent => Observable.items(x)
-      case _          => Observable.empty
-    }
-    eventChannel.subscribe(observer)
-  }
+  val channel = Subject[OnData]()
+  // there is no channel.ofType method for RxScala, why?
+  channel.flatMap {
+    case x: OnEvent => Observable.items(x)
+    case _          => Observable.empty
+  }.subscribe(observer)
 
   SocketIONamespaceExtension(system).startNamespace("")
-  SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(subscription)
+  SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

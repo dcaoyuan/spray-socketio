@@ -8,6 +8,7 @@ import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbSto
 import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import spray.can.server.UHttp
+import rx.lang.scala.Subject
 import spray.can.Http
 import spray.contrib.socketio.{ SocketIONamespaceExtension, SocketIOExtension }
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
@@ -105,10 +106,11 @@ object SimpleClusterServer extends App with MySslConfiguration {
         }
       }
 
-      val subscription = { channel: Observable[OnData] => channel.subscribe(observer) }
+      val channel = Subject[OnData]()
+      channel.subscribe(observer)
 
       SocketIONamespaceExtension(system).startNamespace("")
-      SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(subscription)
+      SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
 
     case _ =>
       exitWithUsage

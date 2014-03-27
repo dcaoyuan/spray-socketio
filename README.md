@@ -21,11 +21,11 @@ import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import rx.lang.scala.Observable
 import rx.lang.scala.Observer
+import rx.lang.scala.Subject
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.SocketIOExtension
-import spray.contrib.socketio.SocketIOServerConnection
+import spray.contrib.socketio.{ SocketIONamespaceExtension, SocketIOExtension, SocketIOServerConnection }
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
@@ -93,7 +93,8 @@ object SimpleServer extends App with MySslConfiguration {
 
   implicit val system = ActorSystem()
   val socketioExt = SocketIOExtension(system)
-  implicit val resolver = socketioExt.resolver
+  val namespaceExt = SocketIONamespaceExtension(system)
+  implicit val resolver = namespaceExt.resolver
 
   val observer = new Observer[OnEvent] {
     override def onNext(value: OnEvent) {
@@ -117,17 +118,15 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
-  val subscription = { channel: Observable[OnData] =>
-    // There is no channel.ofType method for RxScala, why?
-    val eventChannel = channel.flatMap {
-      case x: OnEvent => Observable.items(x)
-      case _          => Observable.empty
-    }
-    eventChannel.subscribe(observer)
-  }
+  val channel = Subject[OnData]()
+  // there is no channel.ofType method for RxScala, why?
+  channel.flatMap {
+    case x: OnEvent => Observable.items(x)
+    case _          => Observable.empty
+  }.subscribe(observer)
 
-  socketioExt.startNamespace("testendpoint")
-  socketioExt.namespace("testendpoint") ! Namespace.Subscribe(subscription)
+  namespaceExt.startNamespace("testendpoint")
+  namespaceExt.namespace("testendpoint") ! Namespace.Subscribe(channel)
 
   val server = system.actorOf(Props(classOf[SocketIOServer], resolver), name = "socketio-server")
 

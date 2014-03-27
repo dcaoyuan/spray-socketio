@@ -5,9 +5,7 @@ import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.contrib.pattern.DistributedPubSubMediator
 import akka.pattern.ask
-import rx.lang.scala.Observable
 import rx.lang.scala.Subject
-import rx.lang.scala.Subscription
 import scala.reflect.runtime.universe._
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionActive
@@ -69,7 +67,8 @@ import scala.util.{ Failure, Success }
  */
 object Namespace {
 
-  final case class Subscribe(subscription: Observable[OnData] => Subscription)
+  final case class Subscribe(channel: Subject[OnData])
+  final case class Unsubscribe(channel: Subject[OnData])
 
   // --- Observable data
   sealed trait OnData {
@@ -105,7 +104,7 @@ object Namespace {
 class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLogging {
   import Namespace._
 
-  val channel = Subject[OnData]()
+  var channels = Set[Subject[OnData]]()
 
   private var isMediatorSubscribed: Boolean = _
   def subscribeMediatorForNamespace(action: () => Unit) = {
@@ -125,13 +124,14 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
 
   import ConnectionActive.OnPacket
   def receive: Receive = {
-    case x @ Subscribe(subscription)                     => subscribeMediatorForNamespace { () => subscription(channel) }
+    case Subscribe(channel)                              => subscribeMediatorForNamespace { () => channels += channel }
+    case Unsubscribe(channel)                            => channels -= channel
 
-    case OnPacket(packet: ConnectPacket, connContext)    => channel.onNext(OnConnect(packet.args, connContext)(packet))
-    case OnPacket(packet: DisconnectPacket, connContext) => channel.onNext(OnDisconnect(connContext)(packet))
-    case OnPacket(packet: MessagePacket, connContext)    => channel.onNext(OnMessage(packet.data, connContext)(packet))
-    case OnPacket(packet: JsonPacket, connContext)       => channel.onNext(OnJson(packet.json, connContext)(packet))
-    case OnPacket(packet: EventPacket, connContext)      => channel.onNext(OnEvent(packet.name, packet.args, connContext)(packet))
+    case OnPacket(packet: ConnectPacket, connContext)    => channels foreach (_.onNext(OnConnect(packet.args, connContext)(packet)))
+    case OnPacket(packet: DisconnectPacket, connContext) => channels foreach (_.onNext(OnDisconnect(connContext)(packet)))
+    case OnPacket(packet: MessagePacket, connContext)    => channels foreach (_.onNext(OnMessage(packet.data, connContext)(packet)))
+    case OnPacket(packet: JsonPacket, connContext)       => channels foreach (_.onNext(OnJson(packet.json, connContext)(packet)))
+    case OnPacket(packet: EventPacket, connContext)      => channels foreach (_.onNext(OnEvent(packet.name, packet.args, connContext)(packet)))
   }
 
 }

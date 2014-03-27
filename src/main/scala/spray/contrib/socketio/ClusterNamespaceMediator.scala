@@ -31,16 +31,12 @@ object ClusterNamespaceMediator {
 //TODO make this actor persistent
 class ClusterNamespaceMediator extends Actor with ActorLogging {
 
-  var topicToSubscriptions: immutable.Map[String, immutable.Map[String, ActorRef]] = Map.empty
+  var topicToSubscriptions: Map[String, Map[String, ActorRef]] = Map.empty.withDefaultValue(Map.empty)
 
   ClusterReceptionistExtension(context.system).registerService(self)
 
   def getSubscription(topic: String, group: String): Option[ActorRef] = {
-    if (topicToSubscriptions.contains(topic) && topicToSubscriptions(topic).contains(group)) {
-      Some(topicToSubscriptions(topic)(group))
-    } else {
-      None
-    }
+    topicToSubscriptions(topic).get(group)
   }
 
   def getOrElseInsertSubscription(topic: String, group: String, subscription: ActorRef): ActorRef = {
@@ -50,11 +46,7 @@ class ClusterNamespaceMediator extends Actor with ActorLogging {
     } else {
       //TODO use ConsistentHashingGroup
       val router = context.actorOf(RoundRobinGroup(List()).props(), topic + "-" + group)
-      if (topicToSubscriptions.contains(topic)) {
-        topicToSubscriptions += topic -> (topicToSubscriptions(topic) + (group -> router))
-      } else {
-        topicToSubscriptions += topic -> Map(group -> router)
-      }
+      topicToSubscriptions += topic -> (topicToSubscriptions(topic) + (group -> router))
       router
     }
   }

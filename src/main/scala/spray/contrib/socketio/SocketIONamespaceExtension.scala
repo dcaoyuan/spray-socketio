@@ -43,7 +43,7 @@ class SocketIONamespaceExtension(system: ExtendedActorSystem) extends Extension 
     system.actorOf(ClusterClient.props(SeedNodes map (system.actorSelection) toSet), "socketio-cluster-client")
   } else ActorRef.noSender
 
-  val mediator = if (isCluster) system.actorOf(Props(classOf[ClusterNamespaceMediatorProxy], s"/user/${SocketIOExtension.mediatorName}/${SocketIOExtension.mediatorSingleton}", client)) else SocketIOExtension(system).namespaceMediator
+  val mediator = if (isCluster) system.actorOf(Props(classOf[DistributedBalancingPubSubProxy], s"/user/${SocketIOExtension.mediatorName}", system.name, client)) else SocketIOExtension(system).namespaceMediator
 
   lazy val resolver = if (isCluster) system.actorOf(Props(classOf[ClusterConnectionActiveResolverProxy], s"/user/${shardingName}/${SocketIOExtension.shardName}", client)) else SocketIOExtension(system).resolver
 

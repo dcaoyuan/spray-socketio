@@ -121,7 +121,7 @@ class DistributedBalancingPubSubProxy(path: String, group: String, client: Actor
       client forward ClusterClient.Send(path, socketio.DistributedBalancingPubSubMediator.SubscribeGroup(topic, group, ref), false)
     case Unsubscribe(topic, ref) =>
       client forward ClusterClient.Send(path, socketio.DistributedBalancingPubSubMediator.UnsubscribeGroup(topic, group, ref), false)
-    case x: Publish => 
+    case x: Publish =>
       client forward ClusterClient.Send(path, x, false)
   }
 }

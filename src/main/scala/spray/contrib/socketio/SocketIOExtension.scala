@@ -4,6 +4,7 @@ import akka.actor._
 import akka.contrib.pattern._
 import scala.Some
 import akka.cluster.Cluster
+import akka.routing.RandomRoutingLogic
 
 object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionIdProvider {
   override def get(system: ActorSystem): SocketIOExtension = super.get(system)
@@ -50,7 +51,8 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   lazy val namespaceMediator = if (isCluster) {
     val cluster = Cluster(system)
     if (cluster.getSelfRoles.contains(ConnRole)) {
-      val ref = system.actorOf(DistributedBalancingPubSubMediator.props(), name = SocketIOExtension.mediatorName)
+      //TODO make routing logic configurable
+      val ref = system.actorOf(DistributedBalancingPubSubMediator.props(Some(ConnRole), RandomRoutingLogic()), name = SocketIOExtension.mediatorName)
       ClusterReceptionistExtension(system).registerService(ref)
       ref
     } else {

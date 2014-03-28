@@ -1,33 +1,38 @@
 package spray.contrib.socketio
 
-import akka.actor.{ ActorLogging, Actor, ActorRef, Props }
-import akka.contrib.pattern.{ DistributedPubSubExtension, ClusterClient }
+import akka.actor._
+import akka.contrib.pattern.{ ClusterSingletonProxy, ClusterSingletonManager, DistributedPubSubExtension, ClusterClient }
 import akka.contrib.pattern.DistributedPubSubMediator.Publish
-import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
-import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
 import akka.contrib.pattern.DistributedPubSubMediator.Unsubscribe
 import akka.contrib.pattern.DistributedPubSubMediator.UnsubscribeAck
-import akka.pattern.ask
+import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
+import akka.contrib.pattern.DistributedPubSubMediator.SubscribeAck
+import akka.routing.RoutingLogic
+import akka.routing.Router
 import akka.routing.ActorRefRoutee
-import akka.routing.AddRoutee
-import akka.routing.GetRoutees
-import akka.routing.RemoveRoutee
-import akka.routing.RoundRobinGroup
-import spray.contrib.socketio
 
 object DistributedBalancingPubSubMediator {
 
-  def props() = Props(classOf[DistributedBalancingPubSubMediator])
+  def props(role: Option[String], routingLogic: RoutingLogic) = Props(classOf[DistributedBalancingPubSubMediator], role, routingLogic)
 
   case class SubscribeGroup(topic: String, group: String, ref: ActorRef)
 
   case class UnsubscribeGroup(topic: String, group: String, ref: ActorRef)
 
-  case class PublishSubscribeGroup(subscribe: SubscribeGroup, origin: ActorRef)
+  private[socketio] object Internal {
 
-  case class PublishUnsubscribeGroup(unsubscribe: UnsubscribeGroup, origin: ActorRef)
+    case class PublishSubscribeGroup(subscribe: SubscribeGroup, origin: ActorRef)
 
-  val InternalTopic = "ClusterNamespaceMediatorPubSub"
+    case class PublishUnsubscribeGroup(unsubscribe: UnsubscribeGroup, origin: ActorRef)
+
+    case class GetSubscriptions(ref: ActorRef)
+
+    case class GetSubscriptionsAck(subscriptions: Seq[Subscription])
+
+    case class Subscription(topic: String, group: String, ref: ActorRef)
+
+    val InternalTopic = "DistributedBalancingPubSubMediatorInternalTopic"
+  }
 
 }
 
@@ -35,57 +40,114 @@ object DistributedBalancingPubSubMediator {
  * A mediator that can Subscribe by group and Publish to one actor each group
  *
  */
-class DistributedBalancingPubSubMediator extends Actor with ActorLogging {
+class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: RoutingLogic) extends Actor with Stash with ActorLogging {
 
   import DistributedBalancingPubSubMediator._
+  import DistributedBalancingPubSubMediator.Internal._
+  import DistributedBalancingPubSubCoordinator._
+
+  val router = Router(routingLogic)
+
+  var subscriptions: Set[ActorRef] = Set.empty
+
+  var topicToSubscriptions: Map[String, Map[String, Set[ActorRefRoutee]]] = Map.empty.withDefaultValue(Map.empty.withDefaultValue(Set.empty))
 
   val pubsubMediator = DistributedPubSubExtension(context.system).mediator
 
-  pubsubMediator ! Subscribe(InternalTopic, self)
+  var coordinator: ActorRef = _
 
-  var topicToSubscriptions: Map[String, Map[String, ActorRef]] = Map.empty.withDefaultValue(Map.empty)
+  override def preStart(): Unit = {
+    context.actorOf(ClusterSingletonManager.props(
+      singletonProps = DistributedBalancingPubSubCoordinator.props(self),
+      singletonName = "active",
+      terminationMessage = PoisonPill,
+      role = role),
+      name = "coordinator")
 
-  def getSubscription(topic: String, group: String): Option[ActorRef] = {
-    topicToSubscriptions(topic).get(group)
+    coordinator = context.actorOf(ClusterSingletonProxy.props(self.path.toStringWithoutAddress + "/coordinator/active", role))
+
+    pubsubMediator ! Subscribe(InternalTopic, self)
+    coordinator ! MediatorRegister(self)
   }
 
-  def getOrElseInsertSubscription(topic: String, group: String, subscription: ActorRef): ActorRef = {
-    val opt = getSubscription(topic, group)
-    if (opt.isDefined) {
-      opt.get
-    } else {
-      //TODO use ConsistentHashingGroup
-      val router = context.actorOf(RoundRobinGroup(List()).props(), topic + "-" + group)
-      topicToSubscriptions += topic -> (topicToSubscriptions(topic) + (group -> router))
-      router
+  override def postStop(): Unit = {
+    pubsubMediator ! Unsubscribe(InternalTopic, self)
+  }
+
+  def existSubscription(subscription: ActorRef) = {
+    topicToSubscriptions.exists {
+      case (topic, groups) => groups.exists {
+        case (group, refs) => refs.contains(ActorRefRoutee(subscription))
+      }
     }
   }
 
-  override def receive: Receive = {
+  def getSubscriptions: Seq[Subscription] = {
+    (for {
+      (topic, groups) <- topicToSubscriptions
+      (group, routees) <- groups
+      routee <- routees
+    } yield Subscription(topic, group, routee.ref)).toSeq
+  }
+
+  def insertSubscription(topic: String, group: String, subscription: ActorRef) {
+    if (!subscriptions(subscription)) {
+      context watch subscription
+      subscriptions += subscription
+    }
+    topicToSubscriptions += topic -> (topicToSubscriptions(topic) + (group -> (topicToSubscriptions(topic)(group) + ActorRefRoutee(subscription))))
+  }
+
+  def removeSubscription(topic: String, group: String, subscription: ActorRef) {
+    topicToSubscriptions += topic -> (topicToSubscriptions(topic) + (group -> (topicToSubscriptions(topic)(group) - ActorRefRoutee(subscription))))
+    if (!existSubscription(subscription)) {
+      context unwatch subscription
+      subscriptions -= subscription
+    }
+  }
+
+  def removeSubscription(subscription: ActorRef) {
+    context unwatch subscription
+    subscriptions -= subscription
+    topicToSubscriptions = for {
+      (topic, groups) <- topicToSubscriptions
+      (group, routees) <- groups
+    } yield topic -> (groups + (group -> (routees - ActorRefRoutee(subscription))))
+  }
+
+  override def receive: Receive = initial
+
+  def initial: Receive = {
+    case MediatorRegistered(ref) =>
+      if (ref == self) {
+        context.become(ready)
+      } else {
+        ref ! GetSubscriptions(self)
+      }
+
+    case GetSubscriptionsAck(list) =>
+      list foreach {
+        s => insertSubscription(s.topic, s.group, s.ref)
+      }
+      unstashAll()
+      context.become(ready)
+
+    case _ => stash()
+  }
+
+  def ready: Receive = {
     case x @ SubscribeGroup(topic, group, subscription) =>
       pubsubMediator ! Publish(InternalTopic, PublishSubscribeGroup(x, self))
       val subscriber = sender()
-      val router = getOrElseInsertSubscription(topic, group, subscription)
-      import context.dispatcher
-      router ! AddRoutee(ActorRefRoutee(subscription))
-      (router ? GetRoutees)(socketio.actorResolveTimeout) onSuccess {
-        case _ => subscriber ! SubscribeAck(Subscribe(topic, subscription))
-      }
+      insertSubscription(topic, group, subscription)
+      subscriber ! SubscribeAck(Subscribe(topic, subscription))
 
     case x @ UnsubscribeGroup(topic, group, subscription) =>
       pubsubMediator ! Publish(InternalTopic, PublishUnsubscribeGroup(x, self))
       val subscriber = sender()
       val ack = UnsubscribeAck(Unsubscribe(topic, subscription))
-      val opt = getSubscription(topic, group) match {
-        case Some(router) =>
-          router ! RemoveRoutee(ActorRefRoutee(subscription))
-          import context.dispatcher
-          (router ? GetRoutees)(socketio.actorResolveTimeout) onSuccess {
-            case _ => subscriber ! ack
-          }
-        case None =>
-          subscriber ! ack
-      }
+      removeSubscription(topic, group, subscription)
+      subscriber ! ack
 
     case pub: PublishSubscribeGroup =>
       if (pub.origin != self) {
@@ -98,13 +160,36 @@ class DistributedBalancingPubSubMediator extends Actor with ActorLogging {
       }
 
     case Publish(topic: String, msg: Any) =>
-      topicToSubscriptions.get(topic) foreach (_.values foreach (_ ! msg))
+      topicToSubscriptions.get(topic) foreach (_.values foreach {
+        refs => router.withRoutees(refs toVector).route(msg, sender())
+      })
 
-    case x: SubscribeAck =>
+    case GetSubscriptions(ref)                    => ref ! GetSubscriptionsAck(getSubscriptions)
 
-    case x               => log.info("unhandled : " + x)
+    case _: SubscribeAck | _: GetSubscriptionsAck =>
+
+    case x                                        => log.info("unhandled : " + x)
   }
 
+}
+
+object DistributedBalancingPubSubCoordinator {
+
+  def props(mediator: ActorRef) = Props(classOf[DistributedBalancingPubSubCoordinator], mediator)
+
+  case class MediatorRegister(ref: ActorRef)
+
+  case class MediatorRegistered(ref: ActorRef)
+
+}
+
+class DistributedBalancingPubSubCoordinator(mediator: ActorRef) extends Actor with Stash {
+  import DistributedBalancingPubSubCoordinator._
+
+  override def receive: Actor.Receive = {
+    case MediatorRegister(ref) => ref ! MediatorRegistered(mediator)
+    case _                     =>
+  }
 }
 
 object DistributedBalancingPubSubProxy {
@@ -121,7 +206,8 @@ object DistributedBalancingPubSubProxy {
  *    level transations, i.e. rollback unfinished transactions and optionally try again.
  * 3. We need to implement graceful offline logic for both cluster node and clusterclient
  *
- * @param path [[DistributedBalancingPubSubMediator]] singleton path
+ * @param path [[DistributedBalancingPubSubMediator]] service path
+ * @param group consumer group of the topics
  * @param client [[ClusterClient]] to access Cluster
  */
 class DistributedBalancingPubSubProxy(path: String, group: String, client: ActorRef) extends Actor with ActorLogging {

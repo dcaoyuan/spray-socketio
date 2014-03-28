@@ -42,19 +42,3 @@ class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMedi
 
 }
 
-object ClusterConnectionActiveResolverProxy {
-  def props(path: String, client: ActorRef) = Props(classOf[ClusterConnectionActiveResolverProxy], path, client)
-}
-
-/**
- * The proxy actor is running on the namespace nodes to forward msg to ConnectionActive
- *
- * @param path ConnectionActive sharding service's path
- * @param client [[ClusterClient]] to access SocketIO Cluster
- */
-class ClusterConnectionActiveResolverProxy(path: String, client: ActorRef) extends Actor with ActorLogging {
-  def receive: Actor.Receive = {
-    case cmd: ConnectionActive.Command => client forward ClusterClient.Send(path, cmd, false)
-  }
-}
-

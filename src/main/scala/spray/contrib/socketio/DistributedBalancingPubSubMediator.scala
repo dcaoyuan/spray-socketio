@@ -112,7 +112,14 @@ object DistributedBalancingPubSubProxy {
 }
 
 /**
- * This actor is running on the nodes out of the cluster
+ * This actor is running on the business logic nodes out of cluster
+ *
+ * @Note:
+ * 1. Messages between cluster client and cluster nodes may be lost if client down
+ *    or the node that holds the receptionist which client connect to down.
+ * 2. For above condition, the business logic should decide if it needs business
+ *    level transations, i.e. rollback unfinished transactions and optionally try again.
+ * 3. We need to implement graceful offline logic for both cluster node and clusterclient
  *
  * @param path [[DistributedBalancingPubSubMediator]] singleton path
  * @param client [[ClusterClient]] to access Cluster

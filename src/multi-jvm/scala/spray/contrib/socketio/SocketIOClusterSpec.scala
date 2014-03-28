@@ -17,6 +17,7 @@ import spray.can.Http
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.examples.benchmark.{ SocketIOTestClient, SocketIOTestServer }
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
@@ -186,7 +187,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "startup business" in within(15.seconds) {
       runOn(business1) {
         waitForSeconds(5)(system)
-        val resolver = SocketIONamespaceExtension(system).resolver
+        val resolver = NamespaceExtension(system).resolver
 
         val observer = new Observer[OnData] {
           override def onNext(value: OnData) {
@@ -206,8 +207,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val channel = Subject[OnData]()
         channel.subscribe(observer)
 
-        SocketIONamespaceExtension(system).startNamespace("")
-        SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
+        NamespaceExtension(system).startNamespace("")
+        NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
       }
 
       enterBarrier("startup-server")

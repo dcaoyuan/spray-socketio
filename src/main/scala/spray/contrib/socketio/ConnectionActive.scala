@@ -308,7 +308,7 @@ trait ConnectionActive { _: Actor =>
   }
 
   /**
-   * enqueue packets, and let tranport decide if flush them or pending flush
+   * enqueue packets, and let tranport decide whether to flush them right now or pend flush
    */
   def sendPacket(packets: Packet*) {
     var updatePendingPackets = pendingPackets

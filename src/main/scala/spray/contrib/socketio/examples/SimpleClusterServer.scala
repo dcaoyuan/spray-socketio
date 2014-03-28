@@ -5,16 +5,16 @@ import akka.actor.{ Props, ActorSystem }
 import akka.io.IO
 import akka.persistence.Persistence
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
-import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import spray.can.server.UHttp
 import rx.lang.scala.Subject
 import spray.can.Http
-import spray.contrib.socketio.{ SocketIONamespaceExtension, SocketIOExtension }
+import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.json.JsArray
@@ -82,7 +82,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
     case "business" :: tail =>
       val config = parseString("akka.cluster.roles =[\"business\"]").withFallback(commonSettings)
       system = ActorSystem("NamespaceSystem", config)
-      implicit val resolver = SocketIONamespaceExtension(system).resolver
+      implicit val resolver = NamespaceExtension(system).resolver
 
       val appConfig = load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
@@ -109,8 +109,8 @@ object SimpleClusterServer extends App with MySslConfiguration {
       val channel = Subject[OnData]()
       channel.subscribe(observer)
 
-      SocketIONamespaceExtension(system).startNamespace("")
-      SocketIONamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
+      NamespaceExtension(system).startNamespace("")
+      NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
 
     case _ =>
       exitWithUsage

@@ -82,17 +82,31 @@ object Namespace {
     final def sessionId = context.sessionId
 
     import ConnectionActive._
-    def replyMessage(msg: String)(implicit resolver: ActorRef) = resolver ! SendMessage(sessionId, endpoint, msg)
-    def replyJson(json: String)(implicit resolver: ActorRef) = resolver ! SendJson(sessionId, endpoint, json)
-    def replyEvent(name: String, args: String)(implicit resolver: ActorRef) = resolver ! SendEvent(sessionId, endpoint, name, Left(args))
-    def replyEvent(name: String, args: Seq[String])(implicit resolver: ActorRef) = resolver ! SendEvent(sessionId, endpoint, name, Right(args))
-    def reply(packets: Packet*)(implicit resolver: ActorRef) = resolver ! SendPackets(sessionId, packets)
-    def ack(args: String)(implicit resolver: ActorRef) = resolver ! SendAck(sessionId, packet.asInstanceOf[DataPacket], args)
+
+    def replyMessage(msg: String)(implicit resolver: ActorRef) =
+      resolver ! SendMessage(sessionId, endpoint, msg)
+
+    def replyJson(json: String)(implicit resolver: ActorRef) =
+      resolver ! SendJson(sessionId, endpoint, json)
+
+    def replyEvent(name: String, args: String)(implicit resolver: ActorRef) =
+      resolver ! SendEvent(sessionId, endpoint, name, Left(args))
+
+    def replyEvent(name: String, args: Seq[String])(implicit resolver: ActorRef) =
+      resolver ! SendEvent(sessionId, endpoint, name, Right(args))
+
+    def reply(packets: Packet*)(implicit resolver: ActorRef) =
+      resolver ! SendPackets(sessionId, packets)
+
+    def ack(args: String)(implicit resolver: ActorRef) =
+      resolver ! SendAck(sessionId, packet.asInstanceOf[DataPacket], args)
+
     /**
      * @param room    room to broadcast
      * @param packet  packet to broadcast
      */
-    def broadcast(room: String, packet: Packet)(implicit resolver: ActorRef) = resolver ! Broadcast(sessionId, room, packet)
+    def broadcast(room: String, packet: Packet)(implicit resolver: ActorRef) =
+      resolver ! Broadcast(sessionId, room, packet)
   }
   final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val packet: ConnectPacket) extends OnData
   final case class OnDisconnect(context: ConnectionContext)(implicit val packet: DisconnectPacket) extends OnData

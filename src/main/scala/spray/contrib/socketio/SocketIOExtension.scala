@@ -38,9 +38,9 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   import Settings._
 
-  private lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
+  lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
 
-  private lazy val localResolver = system.actorOf(LocalConnectionActiveResolver.props(localMediator), name = SocketIOExtension.shardName)
+  lazy val localResolver = system.actorOf(LocalConnectionActiveResolver.props(localMediator), name = SocketIOExtension.shardName)
 
   /**
    * Need to start immediately to accept broadcast etc.

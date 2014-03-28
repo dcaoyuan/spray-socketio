@@ -8,11 +8,13 @@ import rx.lang.scala.Subject
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
-import spray.contrib.socketio.{ SocketIONamespaceExtension, SocketIOExtension, SocketIOServerConnection }
+import spray.contrib.socketio.SocketIOExtension
+import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
 import spray.http.HttpResponse
@@ -82,7 +84,7 @@ object SimpleServer extends App with MySslConfiguration {
 
   implicit val system = ActorSystem()
   val socketioExt = SocketIOExtension(system)
-  val namespaceExt = SocketIONamespaceExtension(system)
+  val namespaceExt = NamespaceExtension(system)
   implicit val resolver = namespaceExt.resolver
 
   val observer = new Observer[OnEvent] {

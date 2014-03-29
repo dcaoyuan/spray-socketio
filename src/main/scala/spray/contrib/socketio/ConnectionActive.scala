@@ -28,6 +28,7 @@ import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
+import akka.routing.ConsistentHashingRouter.ConsistentHashable
 
 object ConnectionActive {
 
@@ -73,7 +74,9 @@ object ConnectionActive {
   /**
    * Packet event to be published
    */
-  final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext)
+  final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext) extends ConsistentHashable {
+    override def consistentHashKey: Any = connContext.sessionId
+  }
 }
 
 /**

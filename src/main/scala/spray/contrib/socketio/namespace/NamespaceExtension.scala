@@ -112,7 +112,8 @@ object DistributedBalancingPubSubProxy {
  *    level transations, i.e. rollback unfinished transactions and optionally try again.
  * 3. We need to implement graceful offline logic for both cluster node and clusterclient
  *
- * @param path [[DistributedBalancingPubSubMediator]] singleton path
+ * @param path [[spray.contrib.socketio.DistributedBalancingPubSubMediator]] service path
+ * @param group consumer group of the topics
  * @param client [[ClusterClient]] to access Cluster
  */
 class DistributedBalancingPubSubProxy(path: String, group: String, client: ActorRef) extends Actor with ActorLogging {

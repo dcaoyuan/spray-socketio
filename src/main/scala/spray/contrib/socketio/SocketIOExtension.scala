@@ -48,7 +48,10 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
    */
   val broadcastMediator = if (isCluster) DistributedPubSubExtension(system).mediator else localMediator
 
-  lazy val namespaceMediator = if (isCluster) {
+  /**
+   * Need to start immediately to accept subscriptions msg etc.
+   */
+  val namespaceMediator = if (isCluster) {
     val cluster = Cluster(system)
     if (cluster.getSelfRoles.contains(ConnRole)) {
       val routingLogic = Settings.config.getString("routing-logic") match {

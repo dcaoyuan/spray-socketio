@@ -6,9 +6,9 @@ import java.io.File
 import org.iq80.leveldb.util.FileUtils
 import akka.cluster.Cluster
 import akka.actor._
-import akka.contrib.pattern.{ ClusterReceptionistExtension, ClusterSharding }
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import akka.persistence.Persistence
+import akka.pattern.ask
 import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
 import akka.io.IO
@@ -21,7 +21,6 @@ import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.examples.benchmark.{ SocketIOTestClient, SocketIOTestServer }
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
-import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnClose
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnOpen
 import spray.json.JsArray
 import spray.json.JsString
@@ -32,6 +31,7 @@ import scala.concurrent.Promise
 import akka.actor.Identify
 import rx.lang.scala.Subject
 import rx.lang.scala.Observer
+import spray.contrib.socketio.DistributedBalancingPubSubMediator.Internal.{Subscription, GetSubscriptionsAck, GetSubscriptions}
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -75,12 +75,16 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString("""akka.cluster.roles =["transport"]""")
   }
 
-  nodeConfig(connectionActive1, connectionActive2) {
+  nodeConfig(connectionActive2) {
     ConfigFactory.parseString("""akka.cluster.roles = ["connectionActive"]""")
   }
 
   nodeConfig(connectionActive1) {
-    ConfigFactory.parseString("""akka.remote.netty.tcp.port = 2551""")
+    ConfigFactory.parseString(
+      """
+        akka.remote.netty.tcp.port = 2551
+        akka.cluster.roles = ["connectionActive"]
+      """)
   }
 
   nodeConfig(business1) {
@@ -212,6 +216,38 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       enterBarrier("startup-server")
+    }
+
+    "broadcast subscribers" in within(15.seconds) {
+      runOn(connectionActive1) {
+        val client = self
+        system.actorOf(Props(new Actor {
+          override def receive: Receive = {
+            case seq: Seq[Subscription] => client ! seq
+          }
+        }), name="test")
+      }
+
+      runOn(connectionActive2) {
+        waitForSeconds(5)(system)
+        val subscriptions = Await.result(system.actorSelection(node(connectionActive2).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
+        log.info("subscriptions: " + subscriptions.toString)
+        import system.dispatcher
+        system.actorSelection(node(connectionActive1).toSerializationFormat + "user/test").resolveOne()(5 seconds).onSuccess {
+          case actor => actor ! subscriptions.subscriptions
+        }
+      }
+
+      runOn(connectionActive1) {
+        waitForSeconds(5)(system)
+        val subscriptions = Await.result(system.actorSelection(node(connectionActive1).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
+        log.info("subscriptions: " + subscriptions.toString)
+        awaitAssert {
+          within(10 seconds) {
+            expectMsg(subscriptions.subscriptions)
+          }
+        }
+      }
     }
 
     "chat with client1 and server1" in within(15.seconds) {

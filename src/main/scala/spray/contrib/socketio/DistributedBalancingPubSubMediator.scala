@@ -1,7 +1,7 @@
 package spray.contrib.socketio
 
 import akka.actor._
-import akka.contrib.pattern.{ ClusterSingletonProxy, ClusterSingletonManager, DistributedPubSubExtension, ClusterClient }
+import akka.contrib.pattern.{ ClusterSingletonProxy, ClusterSingletonManager, DistributedPubSubExtension }
 import akka.contrib.pattern.DistributedPubSubMediator.Publish
 import akka.contrib.pattern.DistributedPubSubMediator.Unsubscribe
 import akka.contrib.pattern.DistributedPubSubMediator.UnsubscribeAck
@@ -25,7 +25,7 @@ object DistributedBalancingPubSubMediator {
 
     case class PublishUnsubscribeGroup(unsubscribe: UnsubscribeGroup, origin: ActorRef)
 
-    case class GetSubscriptions(ref: ActorRef)
+    case object GetSubscriptions
 
     case class GetSubscriptionsAck(subscriptions: Seq[Subscription])
 
@@ -64,7 +64,7 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
       role = role),
       name = "coordinator")
 
-    coordinator = context.actorOf(ClusterSingletonProxy.props(self.path.toStringWithoutAddress + "/coordinator/active", role))
+    coordinator = context.actorOf(ClusterSingletonProxy.props(self.path.toStringWithoutAddress + "/coordinator/active", role), name = "coordinatorProxy")
 
     pubsubMediator ! Subscribe(InternalTopic, self)
     coordinator ! MediatorRegister(self)
@@ -120,9 +120,10 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
   def initial: Receive = {
     case MediatorRegistered(ref) =>
       if (ref == self) {
+        unstashAll()
         context.become(ready)
       } else {
-        ref ! GetSubscriptions(self)
+        ref ! GetSubscriptions
       }
 
     case GetSubscriptionsAck(list) =>
@@ -164,7 +165,7 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
         refs => router.withRoutees(refs toVector).route(msg, sender())
       })
 
-    case GetSubscriptions(ref)                    => ref ! GetSubscriptionsAck(getSubscriptions)
+    case GetSubscriptions                         => sender() ! GetSubscriptionsAck(getSubscriptions)
 
     case _: SubscribeAck | _: GetSubscriptionsAck =>
 

@@ -167,6 +167,8 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
 
     case GetSubscriptions                         => sender() ! GetSubscriptionsAck(getSubscriptions)
 
+    case Terminated(ref)                          => removeSubscription(ref)
+
     case _: SubscribeAck | _: GetSubscriptionsAck =>
 
     case x                                        => log.info("unhandled : " + x)

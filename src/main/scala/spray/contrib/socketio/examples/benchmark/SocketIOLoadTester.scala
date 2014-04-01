@@ -21,24 +21,28 @@ import spray.can.Http
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnClose
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnOpen
+import scala.util.Random
 
 object SocketIOLoadTester {
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
+  val clientConfig = config.getConfig("client")
 
-  val postTestReceptionTimeout = config.getInt("post-test-reception-timeout")
-  val initailMessagesPerSecond = config.getInt("initail-messages-sent-per-second")
-  val nSecondsToTestEachLoadState = config.getInt("seconds-to-test-each-load-state")
-  val secondsBetweenRounds = config.getInt("seconds-between-rounds")
-  val nMessageSentPerSecondRamp = config.getInt("messages-sent-per-second-ramp")
-  val maxMessagesSentPerSecond = config.getInt("max-messages-sent-per-second")
+  val postTestReceptionTimeout = clientConfig.getInt("post-test-reception-timeout")
+  val initailMessagesPerSecond = clientConfig.getInt("initail-messages-sent-per-second")
+  val nSecondsToTestEachLoadState = clientConfig.getInt("seconds-to-test-each-load-state")
+  val secondsBetweenRounds = clientConfig.getInt("seconds-between-rounds")
+  val nMessageSentPerSecondRamp = clientConfig.getInt("messages-sent-per-second-ramp")
+  val maxMessagesSentPerSecond = clientConfig.getInt("max-messages-sent-per-second")
   val isBroadcast = config.getBoolean("broadcast")
 
-  val host = config.getString("host")
-  val port = config.getInt("port")
+  val addresses = clientConfig.getStringList("addresses")
 
-  val connect = Http.Connect(host, port)
+  val connect = addresses map (
+    _ split (":") match {
+      case Array(host: String, port: String) => Http.Connect(host, port.toInt)
+    })
 
-  var concurrencyLevels = config.getIntList("concurrencyLevels")
+  var concurrencyLevels = clientConfig.getIntList("concurrencyLevels")
 
   implicit val system = ActorSystem()
 
@@ -205,7 +209,7 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
       var i = 0
       while (i < nToCreate) {
-        val client = system.actorOf(Props(new SocketIOTestClient(connect, self)))
+        val client = system.actorOf(Props(new SocketIOTestClient(connect(Random.nextInt(connect.size)), self)))
         clients ::= client
         i += 1
       }

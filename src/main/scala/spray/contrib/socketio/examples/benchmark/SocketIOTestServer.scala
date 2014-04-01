@@ -75,8 +75,8 @@ object SocketIOTestServer extends App {
   val server = system.actorOf(SocketIOServer.props(resolver), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
-  val host = config.getString("host")
-  val port = config.getInt("port")
+  val host = config.getString("server.host")
+  val port = config.getInt("server.port")
   val isBroadcast = config.getBoolean("broadcast")
   IO(UHttp) ! Http.Bind(server, host, port)
 }

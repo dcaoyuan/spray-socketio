@@ -21,9 +21,9 @@ object DistributedBalancingPubSubMediator {
 
   private[socketio] object Internal {
 
-    case class PublishSubscribeGroup(subscribe: SubscribeGroup, origin: ActorRef)
+    case class PublishSubscribeGroup(subscribe: SubscribeGroup, subscriber: ActorRef, origin: ActorRef)
 
-    case class PublishUnsubscribeGroup(unsubscribe: UnsubscribeGroup, origin: ActorRef)
+    case class PublishUnsubscribeGroup(unsubscribe: UnsubscribeGroup, subscriber: ActorRef, origin: ActorRef)
 
     case object GetSubscriptions
 
@@ -121,6 +121,7 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
     case MediatorRegistered(ref) =>
       if (ref == self) {
         unstashAll()
+        log.info("become ready after registered")
         context.become(ready)
       } else {
         ref ! GetSubscriptions
@@ -131,6 +132,7 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
         s => insertSubscription(s.topic, s.group, s.ref)
       }
       unstashAll()
+      log.info("become ready after got subscriptions: " + list)
       context.become(ready)
 
     case _ => stash()
@@ -138,26 +140,23 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
 
   def ready: Receive = {
     case x @ SubscribeGroup(topic, group, subscription) =>
-      pubsubMediator ! Publish(InternalTopic, PublishSubscribeGroup(x, self))
-      val subscriber = sender()
-      insertSubscription(topic, group, subscription)
-      subscriber ! SubscribeAck(Subscribe(topic, subscription))
+      pubsubMediator ! Publish(InternalTopic, PublishSubscribeGroup(x, sender(), self))
 
     case x @ UnsubscribeGroup(topic, group, subscription) =>
-      pubsubMediator ! Publish(InternalTopic, PublishUnsubscribeGroup(x, self))
-      val subscriber = sender()
-      val ack = UnsubscribeAck(Unsubscribe(topic, subscription))
-      removeSubscription(topic, group, subscription)
-      subscriber ! ack
+      pubsubMediator ! Publish(InternalTopic, PublishUnsubscribeGroup(x, sender(), self))
 
-    case pub: PublishSubscribeGroup =>
-      if (pub.origin != self) {
-        self ! pub.subscribe
+    case PublishSubscribeGroup(SubscribeGroup(topic, group, subscription), subscriber, origin) =>
+      log.info("receive subscribe group: " + topic + " " + group + " " + subscription)
+      insertSubscription(topic, group, subscription)
+      if (self == origin) {
+        subscriber ! SubscribeAck(Subscribe(topic, subscription))
       }
 
-    case pub: PublishUnsubscribeGroup =>
-      if (pub.origin != self) {
-        self ! pub.unsubscribe
+    case PublishUnsubscribeGroup(UnsubscribeGroup(topic, group, subscription), subscriber, origin) =>
+      log.info("receive unsubscribe group: " + topic + " " + group + " " + subscription)
+      removeSubscription(topic, group, subscription)
+      if (self == origin) {
+        subscriber ! UnsubscribeAck(Unsubscribe(topic, subscription))
       }
 
     case Publish(topic: String, msg: Any) =>
@@ -166,6 +165,8 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
       })
 
     case GetSubscriptions                         => sender() ! GetSubscriptionsAck(getSubscriptions)
+
+    case Terminated(ref)                          => removeSubscription(ref)
 
     case _: SubscribeAck | _: GetSubscriptionsAck =>
 

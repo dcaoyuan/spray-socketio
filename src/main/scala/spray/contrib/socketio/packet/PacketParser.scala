@@ -144,5 +144,6 @@ object PacketParser {
       apply(testBatch)) foreach println
 
     println(EventPacket.splitNameArgs(""" { "name" : "edwald", "args" :[{"a": "b"},2,"3"] } """))
+    println(EventPacket.splitNameArgs(""" { "args" :[{"a": "b"},2,"3"], "name" : "edwald" } """))
   }
 }

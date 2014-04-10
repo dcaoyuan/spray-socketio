@@ -181,23 +181,42 @@ final case class JsonPacket(id: Long, hasAckData: Boolean, endpoint: String, jso
  * is a string and args an array.
  */
 object EventPacket {
-  private val nameHeading = "{\"name\":\""
-  private val argsHeading = "\",\"args\":"
-
-  private val namePart = nameHeading.getBytes
-  private val argsPart = argsHeading.getBytes
-  private val endsPart = "}".getBytes
+  private val NamePart = "{\"name\":\"".getBytes
+  private val ArgsPart = "\",\"args\":".getBytes
+  private val EndsPart = "}".getBytes
 
   def splitNameArgs(json: String): (String, String) = {
-    val nameStart = skip(json, 0, nameHeading, 0)
+    val nameStart = skip(json, 0, "{\"name\":\"", 0)
     if (nameStart != -1) {
       val nameEnd = eat(json, nameStart, '"')
       val name = json.substring(nameStart, nameEnd)
-      val argsStart = skip(json, nameEnd, argsHeading, 0)
+      val argsStart = skip(json, nameEnd, "\",\"args\":", 0)
       if (argsStart != -1) {
         val argsEnd = stripEnds(json, json.length - 1, argsStart)
         if (argsEnd != -1) {
           val args = json.substring(argsStart, argsEnd)
+          (name, args)
+        } else {
+          (name, "[]")
+        }
+      } else {
+        (name, "[]")
+      }
+    } else {
+      splitNameArgsBackward(json)
+    }
+  }
+
+  def splitNameArgsBackward(json: String): (String, String) = {
+    val nameEnd = skip(json, json.length - 1, "}\"", 0, forward = false)
+    if (nameEnd != -1) {
+      val nameStart = eat(json, nameEnd, '"', forward = false) // will stay at ix of "
+      val name = json.substring(nameStart + 1, nameEnd + 1)
+      val argsEnd = skip(json, nameStart - 1, ":\"eman\",", 0, forward = false)
+      if (argsEnd != -1) {
+        val argsStart = skip(json, 0, "{\"args\":", 0, forward = true)
+        if (argsStart != -1) {
+          val args = json.substring(argsStart, argsEnd + 1)
           (name, args)
         } else {
           (name, "[]")
@@ -211,13 +230,13 @@ object EventPacket {
   }
 
   @tailrec
-  private def skip(json: String, ix: Int, toSkip: String, skipIx: Int): Int = {
-    if (skipIx == toSkip.length) {
+  private def skip(json: String, ix: Int, toSkip: String, count: Int, forward: Boolean = true): Int = {
+    if (count == toSkip.length) {
       ix
     } else {
-      val ix1 = skipWs(json, ix)
-      if (json(ix1) == toSkip(skipIx)) {
-        skip(json, ix1 + 1, toSkip, skipIx + 1)
+      val ix1 = skipWs(json, ix, forward)
+      if (json(ix1) == toSkip(count)) {
+        skip(json, if (forward) ix1 + 1 else ix1 - 1, toSkip, count + 1, forward)
       } else {
         -1
       }
@@ -225,30 +244,30 @@ object EventPacket {
   }
 
   @tailrec
-  private def skipWs(json: String, ix: Int): Int = {
-    if (ix < json.length) {
+  private def skipWs(json: String, ix: Int, forward: Boolean = true): Int = {
+    if (forward && ix < json.length || !forward && ix >= 0) {
       json(ix) match {
-        case ' ' | '\t' => skipWs(json, ix + 1)
+        case ' ' | '\t' => skipWs(json, if (forward) ix + 1 else ix - 1, forward)
         case _          => ix
       }
     } else {
-      json.length - 1
+      if (forward) 0 else json.length - 1
     }
   }
 
-  private def eat(json: String, ix: Int, until: Char): Int = {
+  private def eat(json: String, ix: Int, until: Char, forward: Boolean = true): Int = {
     var i = ix
-    while (i < json.length && json(i) != until) {
-      i += 1
+    while ((forward && i < json.length || !forward && i >= 0) && json(i) != until) {
+      if (forward) i += 1 else i -= 1
     }
     i
   }
 
   @tailrec
-  private def stripEnds(json: String, ix: Int, until: Int): Int = {
-    if (ix > until) {
+  private def stripEnds(json: String, ix: Int, until: Int, forward: Boolean = true): Int = {
+    if (forward && ix > until || !forward && ix < until) {
       json(ix) match {
-        case ' ' | '\t' => stripEnds(json, ix - 1, until)
+        case ' ' | '\t' => stripEnds(json, if (forward) ix - 1 else ix + 1, until, forward)
         case '}'        => ix
       }
     } else {
@@ -286,11 +305,11 @@ final class EventPacket private (val id: Long, val hasAckData: Boolean, val endp
     val builder = renderPacketHead
 
     builder.putByte(':')
-    builder.putBytes(namePart)
+    builder.putBytes(NamePart)
     builder.putBytes(name.getBytes)
-    builder.putBytes(argsPart)
+    builder.putBytes(ArgsPart)
     builder.putBytes(args.getBytes)
-    builder.putBytes(endsPart)
+    builder.putBytes(EndsPart)
 
     builder.result.compact
   }

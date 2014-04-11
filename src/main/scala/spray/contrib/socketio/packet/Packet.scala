@@ -313,6 +313,21 @@ final class EventPacket private (val id: Long, val hasAckData: Boolean, val endp
 
     builder.result.compact
   }
+
+  override def equals(other: Any): Boolean = other match {
+    case that: EventPacket =>
+      id == that.id &&
+        hasAckData == that.hasAckData &&
+        endpoint == that.endpoint &&
+        name == that.name &&
+        args == that.args
+    case _ => false
+  }
+
+  override def hashCode(): Int = {
+    val state = Seq(id, hasAckData, endpoint, name, args)
+    state.map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+  }
 }
 
 /**

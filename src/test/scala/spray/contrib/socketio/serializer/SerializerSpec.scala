@@ -28,6 +28,7 @@ akka {
     serializers {
       frame = "spray.contrib.socketio.serializer.FrameSerializer"
       command = "spray.contrib.socketio.serializer.CommandSerializer"
+      event = "spray.contrib.socketio.serializer.EventSerializer"
       packet = "spray.contrib.socketio.serializer.PacketSerializer"
       connctx = "spray.contrib.socketio.serializer.ConnectionContextSerializer"
       onpacket = "spray.contrib.socketio.serializer.OnPacketSerializer"
@@ -36,6 +37,7 @@ akka {
     serialization-bindings {
       "spray.can.websocket.frame.Frame" = frame
       "spray.contrib.socketio.ConnectionActive$Command" = command
+      "spray.contrib.socketio.ConnectionActive$Event" = event
       "spray.contrib.socketio.packet.Packet" = packet
       "spray.contrib.socketio.ConnectionContext" = connctx
       "spray.contrib.socketio.ConnectionActive$OnPacket" = onpacket
@@ -78,7 +80,7 @@ akka {
       test(obj)
     }
 
-    "handle Command".when {
+    "handle Command" when {
       "CreateSession" in {
         val obj = CreateSession(sessionId)
         test(obj)
@@ -148,5 +150,16 @@ akka {
       }
     }
 
+    "handle Event" when {
+      "Connected" in {
+        val obj = Connected(sessionId, query, origins, self, WebSocket)
+        test(obj)
+      }
+
+      "UpdatePackets" in {
+        val obj = UpdatePackets(List[Packet](packet, packet.copy(data = "hello world2")))
+        test(obj)
+      }
+    }
   }
 }

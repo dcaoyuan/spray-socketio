@@ -43,9 +43,8 @@ object SimpleClusterServer extends App with MySslConfiguration {
 
   import ConfigFactory._
 
-  val commonSettings = load(ConfigFactory.parseString(
+  val commonSettings = parseString(
     """
-      |akka.loglevel = INFO
       |akka.actor.provider = "akka.cluster.ClusterActorRefProvider"
       |akka.persistence.journal.plugin = "akka.persistence.journal.leveldb-shared"
       |akka.persistence.journal.leveldb-shared.store {
@@ -57,7 +56,7 @@ object SimpleClusterServer extends App with MySslConfiguration {
       |transport.hostname = "0.0.0.0"
       |transport.port = 8080
       |spray.socketio.mode = "cluster"
-    """.stripMargin))
+    """.stripMargin).withFallback(load())
 
   implicit var system: ActorSystem = _
 

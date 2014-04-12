@@ -527,3 +527,84 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
   }
 
 }
+
+class EventSerializer(val system: ExtendedActorSystem) extends Serializer {
+  implicit val byteOrder = ByteOrder.BIG_ENDIAN
+
+  final def includeManifest: Boolean = true
+
+  final def identifier: Int = 2005
+
+  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Event], Array[Byte] => AnyRef](
+    classOf[Connected] -> (bytes => toConnected(bytes)),
+    classOf[UpdatePackets] -> (bytes => toUpdatePackets(bytes)))
+
+  final def toBinary(o: AnyRef): Array[Byte] = {
+    o match {
+      case evt: Connected     => fromConnected(evt)
+      case evt: UpdatePackets => fromUpdatePackets(evt)
+    }
+  }
+
+  final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
+    manifest match {
+      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[Event]]) match {
+        case Some(f) => f(bytes)
+        case None    => throw new IllegalArgumentException(s"Unimplemented deserialization of message class $clazz in CommandSerializer")
+      }
+      case _ => throw new IllegalArgumentException("Need a command message class to be able to deserialize bytes in CommandSerializer")
+    }
+  }
+
+  final def fromConnected(evt: Connected) = {
+    val builder = ByteString.newBuilder
+
+    StringSerializer.appendToBuilder(builder, evt.sessionId)
+    StringSerializer.appendToBuilder(builder, evt.query.render(new StringRendering).get)
+    if (evt.transport != null) {
+      StringSerializer.appendToBuilder(builder, evt.transport.ID)
+    } else {
+      StringSerializer.appendToBuilder(builder, "")
+    }
+    StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(evt.transportConnection))
+    evt.origins.foreach { origin =>
+      StringSerializer.appendToBuilder(builder, origin.render(new StringRendering).get)
+    }
+
+    builder.result.toArray
+  }
+
+  final def toConnected(bytes: Array[Byte]) = {
+    val data = ByteString(bytes).iterator
+
+    val sessionId = StringSerializer.fromByteIterator(data)
+    val query = Query.apply(StringSerializer.fromByteIterator(data))
+    val transport = Transport.transportIds.getOrElse(StringSerializer.fromByteIterator(data), null)
+    val ref = system.actorFor(StringSerializer.fromByteIterator(data))
+    val origins = ListBuffer[HttpOrigin]()
+    while (data.nonEmpty) {
+      origins.append(HttpOrigin(StringSerializer.fromByteIterator(data)))
+    }
+    Connected(sessionId, query, origins, ref, transport)
+  }
+
+  final def fromUpdatePackets(evt: UpdatePackets) = {
+    val builder = ByteString.newBuilder
+
+    evt.packets.foreach(PacketSerializer.appendToBuilder(builder, _))
+
+    builder.result.toArray
+  }
+
+  final def toUpdatePackets(bytes: Array[Byte]) = {
+    val data = ByteString(bytes).iterator
+
+    val packets = ListBuffer[Packet]()
+    while (data.nonEmpty) {
+      packets.append(PacketSerializer.fromByteIterator(data))
+    }
+
+    UpdatePackets(packets)
+  }
+
+}

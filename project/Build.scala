@@ -19,15 +19,10 @@ object Build extends sbt.Build {
     formatSettings ++
     Seq(
       organization := "com.wandoulabs",
-      version := "0.1",
+      version := "0.1.1-SNAPSHOT",
       scalaVersion := "2.10.3",
       scalacOptions ++= Seq("-unchecked", "-deprecation"),
-      publishTo <<= isSnapshot { isSnapshot =>
-        val id = if (isSnapshot) "snapshots" else "releases"
-        val uri = "http://repo.scala-sbt.org/scalasbt/sbt-plugin-" + id
-        Some(Resolver.url("sbt-plugin-" + id, url(uri))(Resolver.ivyStylePatterns))
-      },
-      publishMavenStyle := false,
+      publishMavenStyle := true,
       resolvers ++= Seq(
         "Sonatype OSS Releases" at "https://oss.sonatype.org/content/repositories/releases",
         "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
@@ -81,7 +76,7 @@ object Dependencies {
   val SPRAY_VERSION = "1.3.0"
   val AKKA_VERSION = "2.3.2"
 
-  val spray_websocket = "com.wandoulabs" % "spray-websocket_2.10" % "0.1"
+  val spray_websocket = "com.wandoulabs" % "spray-websocket_2.10" % "0.1.1-SNAPSHOT"
   val spray_can = "io.spray" % "spray-can" % SPRAY_VERSION
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
   val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION

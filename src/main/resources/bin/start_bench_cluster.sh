@@ -31,7 +31,7 @@ esac
 
 export JAVA=${JAVA_HOME}/bin/java
 export FLAGS="-server -Dfile.encoding=UTF8 -XX:+UseNUMA -XX:+UseCondCardMark -XX:-UseBiasedLocking"
-export HEAP="-Xms1024M -Xmx6000M -Xss1M -XX:MaxPermSize=128m"
+export HEAP="-Xms1024M -Xmx10240M -Xss1M -XX:MaxPermSize=256m"
 export GC="-XX:+UseParallelGC"
 
 

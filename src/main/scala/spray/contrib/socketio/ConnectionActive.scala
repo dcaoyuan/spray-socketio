@@ -190,7 +190,7 @@ trait ConnectionActive { _: Actor =>
   def enableHeartbeat() {
     log.debug("{}: heartbeat enabled.", self.path)
     if (heartbeatHandler.isEmpty || heartbeatHandler.nonEmpty && heartbeatHandler.get.isCancelled) {
-      heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds, self, SendPackets(null, List(HeartbeatPacket))))
+      heartbeatHandler = Some(context.system.scheduler.schedule(heartbeatInterval.seconds, heartbeatInterval.seconds, self, SendPackets(null, List(HeartbeatPacket))))
     }
   }
 

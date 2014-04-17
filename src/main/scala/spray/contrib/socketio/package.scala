@@ -3,6 +3,7 @@ package spray.contrib
 import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import akka.pattern.ask
+import akka.util.ByteString
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import scala.concurrent.ExecutionContext
@@ -54,6 +55,7 @@ package object socketio {
     var sessionId: String,
     val sessionIdGenerator: HttpRequest => Future[String],
     val serverConnection: ActorRef,
+    val socketioConnection: ActorRef,
     val resolver: ActorRef,
     val log: LoggingAdapter,
     implicit val ec: ExecutionContext)
@@ -136,7 +138,13 @@ package object socketio {
     def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = {
       import ctx.ec
       // ctx.sessionId should have been set during wsConnected
-      ctx.resolver ! ConnectionActive.OnFrame(ctx.sessionId, frame.payload)
+      val payload = frame.payload
+      if (isHeartbeatPacket(payload)) {
+        ctx.socketioConnection ! GotHeartbeat
+      } else {
+        ctx.resolver ! ConnectionActive.OnFrame(ctx.sessionId, payload)
+      }
+
       Some(true)
     }
   }
@@ -171,7 +179,13 @@ package object socketio {
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
-            ctx.resolver ! ConnectionActive.OnPost(sessionId, ctx.serverConnection, entity.data.toByteString)
+            val payload = entity.data.toByteString
+            if (isHeartbeatPacket(payload)) {
+              ctx.socketioConnection ! GotHeartbeat
+            } else {
+              ctx.resolver ! ConnectionActive.OnPost(sessionId, ctx.serverConnection, payload)
+            }
+
             Some(true)
           case _ => None
         }
@@ -179,5 +193,10 @@ package object socketio {
     }
   }
 
+  case object GotHeartbeat
+
+  def isHeartbeatPacket(data: ByteString) = {
+    (data.length == 3) && data(0) == '2' && data(1) == ':' && data(2) == ':'
+  }
 }
 

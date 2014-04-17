@@ -7,11 +7,11 @@ import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket
-import spray.contrib.socketio
-import spray.http.HttpRequest
-import spray.contrib.socketio.packet.HeartbeatPacket
-import spray.can.websocket.frame.TextFrame
 import spray.can.websocket.FrameCommand
+import spray.can.websocket.frame.TextFrame
+import spray.contrib.socketio
+import spray.contrib.socketio.packet.HeartbeatPacket
+import spray.http.HttpRequest
 
 /**
  *
@@ -70,7 +70,7 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
 
   val heartbeatFrameCommand = FrameCommand(TextFrame(HeartbeatPacket.render))
 
-  implicit val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, resolver, log, context.dispatcher)
+  implicit val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, resolver, log, context.dispatcher)
 
   def receive = handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate
 
@@ -92,6 +92,10 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
   def handleHeartbeat: Receive = {
     case HeartbeatPacket => // schedule to send heartbeat
       serverConnection ! heartbeatFrameCommand
+
+    case socketio.GotHeartbeat =>
+      disableCloseTimeout
+      resetHeartbeatTimeout
   }
 
   def handleSocketioHandshake: Receive = {
@@ -115,15 +119,10 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
       disableCloseTimeout
       enableHeartbeat
       resetHeartbeatTimeout
-      context.become(handleHeartbeat orElse handleWebsocketLogic orElse handleTerminate)
+      context.become(handleHeartbeat orElse handleWebsocket orElse handleTerminate)
   }
 
-  def handleWebsocketLogic: Receive = {
-    case frame @ TextFrame(payload) if payload.nonEmpty && payload(0) == '2' =>
-      // receive heartbeat
-      disableCloseTimeout
-      resetHeartbeatTimeout
-
+  def handleWebsocket: Receive = {
     case frame @ socketio.WsFrame(ok) =>
       log.debug("Got {}", frame)
   }
@@ -139,6 +138,8 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
   }
 
   def genericLogic: Receive
+
+  // --- timeout handling:
 
   def disableHeartbeat() {
     heartbeatHandler foreach (_.cancel)

@@ -1,8 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.Actor
-import akka.actor.ActorLogging
-import akka.actor.ActorRef
+import akka.actor.{ PoisonPill, Cancellable, Actor, ActorLogging, ActorRef }
 import java.util.UUID
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -11,6 +9,9 @@ import spray.can.server.UHttp
 import spray.can.websocket
 import spray.contrib.socketio
 import spray.http.HttpRequest
+import spray.contrib.socketio.packet.HeartbeatPacket
+import spray.can.websocket.frame.TextFrame
+import spray.can.websocket.FrameCommand
 
 /**
  *
@@ -58,14 +59,39 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
   def resolver: ActorRef
   def sessionIdGenerator: HttpRequest => Future[String] = { req => Future(UUID.randomUUID.toString) } // default one
 
+  var closeTimeout: Option[Cancellable] = None
+
+  // It seems socket.io client may fire heartbeat only when it received heartbeat
+  // from server, or, just bounce heartheat instead of firing heartbeat standalone.
+  var heartbeatHandler: Option[Cancellable] = None
+  var heartbeatTimeout: Option[Cancellable] = None
+
+  val heartbeatInterval = socketio.Settings.HeartbeatTimeout * 0.618
+
+  val heartbeatFrameCommand = FrameCommand(TextFrame(HeartbeatPacket.render))
+
   implicit val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, resolver, log, context.dispatcher)
 
-  def receive = socketioHandshake orElse websocketConnecting orElse xrhpollingConnecting orElse genericLogic orElse closeLogic
+  def receive = socketioHandshake orElse websocketConnecting orElse xrhpollingConnecting orElse heartbeatLogic orElse genericLogic orElse closeLogic
+
+  override def postStop(): Unit = {
+    disableHeartbeat
+    disableHeartbeatTimeout
+    disableCloseTimeout
+    if (soConnContext.sessionId != null) {
+      resolver ! ConnectionActive.Closing(soConnContext.sessionId)
+    }
+  }
 
   def closeLogic: Receive = {
     case x: Http.ConnectionClosed =>
       context.stop(self)
       log.debug("{}: http connection stopped due to {}.", serverConnection.path, x)
+  }
+
+  def heartbeatLogic: Receive = {
+    case HeartbeatPacket => // schedule to send heartbeat
+      serverConnection ! heartbeatFrameCommand
   }
 
   def socketioHandshake: Receive = {
@@ -86,22 +112,76 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
 
     case UHttp.Upgraded =>
       log.debug("{}: upgraded.", serverConnection.path)
-      context.become(websocketLogic orElse closeLogic)
+      disableCloseTimeout
+      enableHeartbeat
+      resetHeartbeatTimeout
+      context.become(heartbeatLogic orElse websocketLogic orElse closeLogic)
   }
 
   def websocketLogic: Receive = {
+    case frame @ TextFrame(payload) if payload.nonEmpty && payload(0) == '2' =>
+      // receive heartbeat
+      disableCloseTimeout
+      resetHeartbeatTimeout
+
     case frame @ socketio.WsFrame(ok) =>
       log.debug("Got {}", frame)
   }
 
   def xrhpollingConnecting: Receive = {
     case req @ socketio.HttpGet(ok) =>
+      disableCloseTimeout
       log.debug("{}: socketio GET {}", serverConnection.path, req.entity)
 
     case req @ socketio.HttpPost(ok) =>
+      disableCloseTimeout
       log.debug("{}: socketio POST {}", serverConnection.path, req.entity)
   }
 
   def genericLogic: Receive
+
+  def disableHeartbeat() {
+    heartbeatHandler foreach (_.cancel)
+    heartbeatHandler = None
+  }
+
+  def enableHeartbeat() {
+    if (heartbeatHandler.isEmpty || heartbeatHandler.nonEmpty && heartbeatHandler.get.isCancelled) {
+      heartbeatHandler = Some(context.system.scheduler.schedule(heartbeatInterval.seconds, heartbeatInterval.seconds, self, HeartbeatPacket))
+    }
+  }
+
+  // --- heartbeat timeout
+
+  def resetHeartbeatTimeout() {
+    heartbeatTimeout foreach (_.cancel)
+    heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.HeartbeatTimeout.seconds) {
+      enableCloseTimeout()
+    })
+  }
+
+  def disableHeartbeatTimeout() {
+    heartbeatTimeout foreach (_.cancel)
+    heartbeatTimeout = None
+  }
+
+  // --- close timeout
+
+  def enableCloseTimeout() {
+    log.debug("{}: close timeout, will close in {} seconds", self.path, socketio.Settings.CloseTimeout)
+    closeTimeout foreach (_.cancel)
+    if (context != null) {
+      closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
+        log.warning("{}: stoped due to close timeout", self.path)
+        disableHeartbeat()
+        self ! PoisonPill
+      })
+    }
+  }
+
+  def disableCloseTimeout() {
+    closeTimeout foreach (_.cancel)
+    closeTimeout = None
+  }
 
 }

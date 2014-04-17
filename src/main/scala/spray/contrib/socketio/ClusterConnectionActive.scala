@@ -17,9 +17,6 @@ object ClusterConnectionActive {
 class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
 
-  // have to call after log created
-  enableCloseTimeout()
-
   def receiveRecover: Receive = {
     case event: Event => update(event)
   }

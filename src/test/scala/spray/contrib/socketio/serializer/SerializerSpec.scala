@@ -91,6 +91,11 @@ akka {
         test(obj)
       }
 
+      "Closing" in {
+        val obj = Closing(sessionId)
+        test(obj)
+      }
+
       "OnGet" in {
         val obj = OnGet(sessionId, self)
         test(obj)

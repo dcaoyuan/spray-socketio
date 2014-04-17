@@ -232,6 +232,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
   private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Command], Array[Byte] => AnyRef](
     classOf[CreateSession] -> (bytes => toCreateSession(bytes)),
     classOf[Connecting] -> (bytes => toConnecting(bytes)),
+    classOf[Closing] -> (bytes => toClosing(bytes)),
     classOf[OnGet] -> (bytes => toOnGet(bytes)),
     classOf[OnPost] -> (bytes => toOnPost(bytes)),
     classOf[OnFrame] -> (bytes => toOnFrame(bytes)),
@@ -248,6 +249,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     o match {
       case cmd: CreateSession        => fromCreateSession(cmd)
       case cmd: Connecting           => fromConnecting(cmd)
+      case cmd: Closing              => fromClosing(cmd)
       case cmd: OnGet                => fromOnGet(cmd)
       case cmd: OnPost               => fromOnPost(cmd)
       case cmd: OnFrame              => fromOnFrame(cmd)
@@ -307,6 +309,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     }
     Connecting(sessionId, query, origins, ref, transport)
   }
+
+  final def fromClosing(cmd: Closing) = cmd.sessionId.getBytes
+
+  final def toClosing(bytes: Array[Byte]) = Closing(new String(bytes))
 
   final def fromOnGet(cmd: OnGet) = {
     val builder = ByteString.newBuilder

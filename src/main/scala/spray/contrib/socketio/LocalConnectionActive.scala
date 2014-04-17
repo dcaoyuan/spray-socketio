@@ -16,9 +16,6 @@ class LocalConnectionActive(mediator: ActorRef) extends ConnectionActive with Ac
   val namespaceMediator = mediator
   val broadcastMediator = mediator
 
-  // have to call after log created
-  enableCloseTimeout()
-
   def receive = working
 }
 

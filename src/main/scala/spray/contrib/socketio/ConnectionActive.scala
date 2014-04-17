@@ -1,8 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.Actor
-import akka.actor.ActorRef
-import akka.actor.Cancellable
+import akka.actor.{ PoisonPill, Actor, ActorRef, Cancellable }
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
 import akka.pattern.ask
 import akka.event.LoggingAdapter
@@ -46,6 +44,7 @@ object ConnectionActive {
 
   final case class CreateSession(sessionId: String) extends Command
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command
+  final case class Closing(sessionId: String) extends Command
 
   // called by connection
   final case class OnGet(sessionId: String, transportConnection: ActorRef) extends Command
@@ -98,25 +97,13 @@ trait ConnectionActive { _: Actor =>
   var connectionContext: Option[ConnectionContext] = None
   var transportConnection: ActorRef = _
 
-  var closeTimeout: Option[Cancellable] = None
-
-  // It seems socket.io client may fire heartbeat only when it received heartbeat
-  // from server, or, just bounce heartheat instead of firing heartbeat standalone.
-  var heartbeatHandler: Option[Cancellable] = None
-  var heartbeatTimeout: Option[Cancellable] = None
-
   var pendingPackets = immutable.Queue[Packet]()
   var topics = immutable.Set[String]()
 
   val startTime = System.currentTimeMillis
 
-  val heartbeatInterval = socketio.Settings.HeartbeatTimeout * 0.618
-
   def connected() {
     sendPacket(ConnectPacket())
-
-    enableHeartbeat()
-    resetHeartbeatTimeout()
   }
 
   def update(event: Event) = {
@@ -154,7 +141,6 @@ trait ConnectionActive { _: Actor =>
 
     case conn @ Connecting(sessionId, query, origins, transportConn, transport) =>
       log.debug("Connecting request: {}", sessionId)
-      disableCloseTimeout()
 
       connectionContext match {
         case Some(existed) =>
@@ -165,6 +151,7 @@ trait ConnectionActive { _: Actor =>
           processConnectingEvent(ConnectingEvent(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
+    case Closing(sessionId)                              => self ! PoisonPill
     case OnFrame(sessionId, frame)                       => onFrame(frame)
     case OnGet(sessionId, transportConnection)           => onGet(transportConnection)
     case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)
@@ -189,47 +176,6 @@ trait ConnectionActive { _: Actor =>
       sender() ! System.currentTimeMillis - startTime
   }
 
-  def disableHeartbeat() {
-    log.debug("{}: heartbeat disabled.", self.path)
-    heartbeatHandler foreach (_.cancel)
-    heartbeatHandler = None
-  }
-
-  def enableHeartbeat() {
-    log.debug("{}: heartbeat enabled.", self.path)
-    if (heartbeatHandler.isEmpty || heartbeatHandler.nonEmpty && heartbeatHandler.get.isCancelled) {
-      heartbeatHandler = Some(context.system.scheduler.schedule(heartbeatInterval.seconds, heartbeatInterval.seconds, self, SendPackets(null, List(HeartbeatPacket))))
-    }
-  }
-
-  // --- heartbeat timeout
-
-  def resetHeartbeatTimeout() {
-    heartbeatTimeout foreach (_.cancel)
-    heartbeatTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.HeartbeatTimeout.seconds) {
-      enableCloseTimeout()
-    })
-  }
-
-  // --- close timeout
-
-  def enableCloseTimeout() {
-    log.debug("{}: close timeout, will close in {} seconds", self.path, socketio.Settings.CloseTimeout)
-    closeTimeout foreach (_.cancel)
-    if (context != null) {
-      closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-        log.warning("{}: stoped due to close timeout", self.path)
-        disableHeartbeat()
-        context.stop(self)
-      })
-    }
-  }
-
-  def disableCloseTimeout() {
-    closeTimeout foreach (_.cancel)
-    closeTimeout = None
-  }
-
   // --- reacts
 
   private def onPayload(payload: ByteString) {
@@ -243,7 +189,6 @@ trait ConnectionActive { _: Actor =>
   private def onPacket(packet: Packet) {
     packet match {
       case HeartbeatPacket =>
-        resetHeartbeatTimeout()
 
       case ConnectPacket(endpoint, args) =>
         connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
@@ -280,19 +225,16 @@ trait ConnectionActive { _: Actor =>
   }
 
   def onFrame(frame: TextFrame) {
-    disableCloseTimeout()
     onPayload(frame.payload)
   }
 
   def onGet(transportConnection: ActorRef) {
-    disableCloseTimeout()
     connectionContext foreach { ctx =>
       pendingPackets = ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
     }
   }
 
   def onPost(transportConnection: ActorRef, payload: ByteString) {
-    disableCloseTimeout()
     connectionContext foreach { ctx =>
       // response an empty entity to release POST before message processing
       ctx.transport.write(ctx, transportConnection, "")

@@ -1,8 +1,9 @@
 package spray.contrib.socketio
 
-import akka.actor.{ Actor, ActorLogging, ActorRef, Props }
-import akka.persistence.{ PersistenceFailure, EventsourcedProcessor }
-import akka.contrib.pattern.ClusterClient
+import akka.actor._
+import akka.persistence.EventsourcedProcessor
+import akka.persistence.PersistenceFailure
+import akka.contrib.pattern.ShardRegion.Passivate
 
 object ClusterConnectionActive {
   def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef) = Props(classOf[ClusterConnectionActive], namespaceMediator, broadcastMediator)
@@ -35,6 +36,10 @@ class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMedi
 
   override def processUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcastEvent) {
     persist(evt)(super.processUnsubscribeBroadcastEvent(_))
+  }
+
+  override def close() {
+    context.parent ! Passivate(stopMessage = PoisonPill)
   }
 }
 

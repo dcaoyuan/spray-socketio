@@ -8,7 +8,6 @@ import akka.util.ByteString
 import org.parboiled2.ParseError
 import scala.collection.immutable
 import scala.concurrent.Future
-import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
 import spray.contrib.socketio
@@ -135,6 +134,10 @@ trait ConnectionActive { _: Actor =>
     update(evt)
   }
 
+  def close() {
+    self ! PoisonPill
+  }
+
   def working: Receive = {
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
@@ -150,7 +153,7 @@ trait ConnectionActive { _: Actor =>
           processConnectingEvent(ConnectingEvent(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
-    case Closing(sessionId)                              => self ! PoisonPill
+    case Closing(_)                                      => close
     case OnFrame(sessionId, payload)                     => onFrame(payload)
     case OnGet(sessionId, transportConnection)           => onGet(transportConnection)
     case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)

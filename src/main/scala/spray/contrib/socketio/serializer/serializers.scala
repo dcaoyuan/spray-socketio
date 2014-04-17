@@ -356,7 +356,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
-    builder.append(FrameRender(cmd.frame))
+    builder.append(cmd.payload)
 
     builder.result.toArray
   }
@@ -365,13 +365,9 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val data = ByteString(bytes).iterator
 
     val sessionId = StringSerializer.fromByteIterator(data)
-
-    var r: OnFrame = null
-    new FrameParser().onReceive(data) {
-      case FrameParser.Success(frame: TextFrame) => r = OnFrame(sessionId, frame)
-      case _                                     =>
-    }
-    r
+    val payload = Array.ofDim[Byte](data.len)
+    data.getBytes(payload)
+    OnFrame(sessionId, ByteString(payload))
   }
 
   final def fromSendMessage(cmd: SendMessage) = {

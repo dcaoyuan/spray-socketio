@@ -107,7 +107,7 @@ akka {
       }
 
       "OnFrame" in {
-        val obj = OnFrame(sessionId, TextFrame("hello world"))
+        val obj = OnFrame(sessionId, ByteString("hello world"))
         test(obj)
       }
 

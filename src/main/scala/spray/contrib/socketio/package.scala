@@ -136,7 +136,7 @@ package object socketio {
     def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = {
       import ctx.ec
       // ctx.sessionId should have been set during wsConnected
-      ctx.resolver ! ConnectionActive.OnFrame(ctx.sessionId, frame)
+      ctx.resolver ! ConnectionActive.OnFrame(ctx.sessionId, frame.payload)
       Some(true)
     }
   }

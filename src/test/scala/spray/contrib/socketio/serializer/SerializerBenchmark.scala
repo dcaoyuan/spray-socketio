@@ -1,8 +1,8 @@
 package spray.contrib.socketio.serializer
 
 import spray.contrib.socketio.benchmark.SimpleScalaBenchmark
+import akka.util.ByteString
 import com.google.caliper.{ Runner, Param }
-import spray.can.websocket.frame.TextFrame
 import akka.serialization.{ Serializer, JavaSerializer }
 import akka.actor.{ ExtendedActorSystem, ActorSystem }
 import com.typesafe.config.ConfigFactory
@@ -31,11 +31,11 @@ class SerializerBenchmark extends SimpleScalaBenchmark {
   }
 
   def timeOnFrameSerializer(reps: Int) = repeat(reps) {
-    run(commandSerializer, OnFrame("123456", TextFrame("hello world")))
+    run(commandSerializer, OnFrame("123456", ByteString("hello world")))
   }
 
   def timeOnFrameJavaSerializer(reps: Int) = repeat(reps) {
-    run(javaSerializer, OnFrame("123456", TextFrame("hello world")))
+    run(javaSerializer, OnFrame("123456", ByteString("hello world")))
   }
 
   def timeSendEventSerializer(reps: Int) = repeat(reps) {

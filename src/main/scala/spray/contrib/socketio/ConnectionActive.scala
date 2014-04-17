@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef, Cancellable }
+import akka.actor.{ PoisonPill, Actor, ActorRef }
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
 import akka.pattern.ask
 import akka.event.LoggingAdapter
@@ -11,7 +11,6 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
-import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.AckPacket
 import spray.contrib.socketio.packet.ConnectPacket
@@ -49,7 +48,7 @@ object ConnectionActive {
   // called by connection
   final case class OnGet(sessionId: String, transportConnection: ActorRef) extends Command
   final case class OnPost(sessionId: String, transportConnection: ActorRef, payload: ByteString) extends Command
-  final case class OnFrame(sessionId: String, frame: TextFrame) extends Command
+  final case class OnFrame(sessionId: String, payload: ByteString) extends Command
 
   // called by business logic
   final case class SendMessage(sessionId: String, endpoint: String, msg: String) extends Command
@@ -152,7 +151,7 @@ trait ConnectionActive { _: Actor =>
       }
 
     case Closing(sessionId)                              => self ! PoisonPill
-    case OnFrame(sessionId, frame)                       => onFrame(frame)
+    case OnFrame(sessionId, payload)                     => onFrame(payload)
     case OnGet(sessionId, transportConnection)           => onGet(transportConnection)
     case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)
 
@@ -224,8 +223,8 @@ trait ConnectionActive { _: Actor =>
     }
   }
 
-  def onFrame(frame: TextFrame) {
-    onPayload(frame.payload)
+  def onFrame(payload: ByteString) {
+    onPayload(payload)
   }
 
   def onGet(transportConnection: ActorRef) {

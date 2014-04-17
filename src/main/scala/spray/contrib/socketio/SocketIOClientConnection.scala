@@ -42,15 +42,15 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
 
   private var idToAckAction = Map[Long, AckPostAction]()
 
-  def receive = handshaking orElse closeLogic
+  def receive = handleHandshake orElse handleTeminate
 
-  def closeLogic: Receive = {
+  def handleTeminate: Receive = {
     case ev: Http.ConnectionClosed =>
       context.stop(self)
       log.debug("Connection closed on event: {}", ev)
   }
 
-  def handshaking: Receive = {
+  def handleHandshake: Receive = {
     case Http.Connected(remoteAddress, localAddress) =>
       val host = remoteAddress.getHostName
       val port = remoteAddress.getPort
@@ -86,7 +86,7 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
           packets.headOption match {
             case Some(ConnectPacket(_, _)) =>
               onOpen()
-              context.become(businessLogic orElse socketioLogic orElse closeLogic)
+              context.become(businessLogic orElse handleSocketio orElse handleTeminate)
             case _ =>
           }
         case Failure(ex: ParseError) =>
@@ -97,7 +97,7 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
       }
   }
 
-  def socketioLogic: Receive = {
+  def handleSocketio: Receive = {
     case TextFrame(payload) =>
       PacketParser(payload) match {
         case Success(packets) =>

@@ -72,7 +72,7 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
 
   implicit val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, resolver, log, context.dispatcher)
 
-  def receive = socketioHandshake orElse websocketConnecting orElse xrhpollingConnecting orElse heartbeatLogic orElse genericLogic orElse closeLogic
+  def receive = handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate
 
   override def postStop(): Unit = {
     disableHeartbeat
@@ -83,23 +83,23 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
     }
   }
 
-  def closeLogic: Receive = {
+  def handleTerminate: Receive = {
     case x: Http.ConnectionClosed =>
       context.stop(self)
       log.debug("{}: http connection stopped due to {}.", serverConnection.path, x)
   }
 
-  def heartbeatLogic: Receive = {
+  def handleHeartbeat: Receive = {
     case HeartbeatPacket => // schedule to send heartbeat
       serverConnection ! heartbeatFrameCommand
   }
 
-  def socketioHandshake: Receive = {
+  def handleSocketioHandshake: Receive = {
     case socketio.HandshakeRequest(ok) =>
       log.debug("{}: socketio handshaked.", serverConnection.path)
   }
 
-  def websocketConnecting: Receive = {
+  def handleWebsocketConnecting: Receive = {
     case req @ websocket.HandshakeRequest(state) =>
       state match {
         case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
@@ -115,10 +115,10 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
       disableCloseTimeout
       enableHeartbeat
       resetHeartbeatTimeout
-      context.become(heartbeatLogic orElse websocketLogic orElse closeLogic)
+      context.become(handleHeartbeat orElse handleWebsocketLogic orElse handleTerminate)
   }
 
-  def websocketLogic: Receive = {
+  def handleWebsocketLogic: Receive = {
     case frame @ TextFrame(payload) if payload.nonEmpty && payload(0) == '2' =>
       // receive heartbeat
       disableCloseTimeout
@@ -128,7 +128,7 @@ trait SocketIOServerConnection extends Actor with ActorLogging {
       log.debug("Got {}", frame)
   }
 
-  def xrhpollingConnecting: Receive = {
+  def handleXrhpollingConnecting: Receive = {
     case req @ socketio.HttpGet(ok) =>
       disableCloseTimeout
       log.debug("{}: socketio GET {}", serverConnection.path, req.entity)

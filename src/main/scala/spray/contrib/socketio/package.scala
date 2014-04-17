@@ -197,7 +197,7 @@ package object socketio {
 
   def isHeartbeatPacket(data: ByteString) = {
     (data.length == 3) && data(0) == '2' && data(1) == ':' && data(2) == ':' ||
-    (data.length == 1) && data(0) == '2'  
+      (data.length == 1) && data(0) == '2'
   }
 }
 

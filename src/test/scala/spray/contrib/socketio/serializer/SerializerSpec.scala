@@ -151,13 +151,18 @@ akka {
     }
 
     "handle Event" when {
-      "Connected" in {
-        val obj = Connected(sessionId, query, origins, self, WebSocket)
+      "ConnectingEvent" in {
+        val obj = ConnectingEvent(sessionId, query, origins, self, WebSocket)
         test(obj)
       }
 
-      "UpdatePackets" in {
-        val obj = UpdatePackets(List[Packet](packet, packet.copy(data = "hello world2")))
+      "SubscribeBroadcastEvent" in {
+        val obj = SubscribeBroadcastEvent(sessionId, "chat", "room1")
+        test(obj)
+      }
+
+      "UnsubscribeBroadcastEvent" in {
+        val obj = UnsubscribeBroadcastEvent(sessionId, "chat", "room1")
         test(obj)
       }
     }

@@ -28,17 +28,16 @@ class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMedi
     case PersistenceFailure(_, _, ex) => log.error("Failed to persistence: {}", ex.getMessage)
   }
 
-  override def processNewConnected(conn: Connected) {
-    persist(conn)(super.processNewConnected(_))
+  override def processConnectingEvent(conn: ConnectingEvent) {
+    persist(conn)(super.processConnectingEvent(_))
   }
 
-  override def processUpdatePackets(packets: UpdatePackets) {
-    if (packets.packets.isEmpty && pendingPackets.isEmpty) {
-      super.processUpdatePackets(packets)
-    } else {
-      persist(packets)(super.processUpdatePackets(_))
-    }
+  override def processSubscribeBroadcastEvent(evt: SubscribeBroadcastEvent) {
+    persist(evt)(super.processSubscribeBroadcastEvent(_))
   }
 
+  override def processUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcastEvent) {
+    persist(evt)(super.processUnsubscribeBroadcastEvent(_))
+  }
 }
 

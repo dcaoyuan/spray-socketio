@@ -35,8 +35,10 @@ object ConnectionActive {
   case object AskConnectedTime
 
   sealed trait Event extends Serializable
-  final case class Connected(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Event
-  final case class UpdatePackets(packets: Seq[Packet]) extends Event
+
+  final case class ConnectingEvent(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Event
+  final case class SubscribeBroadcastEvent(sessionId: String, endpoint: String, room: String) extends Event
+  final case class UnsubscribeBroadcastEvent(sessionId: String, endpoint: String, room: String) extends Event
 
   sealed trait Command extends Serializable {
     def sessionId: String
@@ -119,22 +121,32 @@ trait ConnectionActive { _: Actor =>
 
   def update(event: Event) = {
     event match {
-      case x: Connected =>
-        connectionContext = Some(new ConnectionContext(x.sessionId, x.query, x.origins))
-        transportConnection = x.transportConnection
-        connectionContext.foreach(_.bindTransport(x.transport))
-      case x: UpdatePackets =>
-        pendingPackets = immutable.Queue(x.packets: _*)
+      case ConnectingEvent(sessionId, query, origins, ref, transport) =>
+        connectionContext = Some(new ConnectionContext(sessionId, query, origins))
+        transportConnection = ref
+        connectionContext.foreach(_.bindTransport(transport))
+      case SubscribeBroadcastEvent(_, endpoint, room) =>
+        val topic = socketio.topicForBroadcast(endpoint, room)
+        topics += topic
+        subscribeBroadcast(topic)
+      case UnsubscribeBroadcastEvent(_, endpoint, room) =>
+        val topic = socketio.topicForBroadcast(endpoint, room)
+        topics -= topic
+        unsubscribeBroadcast(topic)
     }
   }
 
-  def processNewConnected(conn: Connected) {
+  def processConnectingEvent(conn: ConnectingEvent) {
     update(conn)
     connected()
   }
 
-  def processUpdatePackets(packets: UpdatePackets) {
-    update(packets)
+  def processSubscribeBroadcastEvent(evt: SubscribeBroadcastEvent) {
+    update(evt)
+  }
+
+  def processUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcastEvent) {
+    update(evt)
   }
 
   def working: Receive = {
@@ -150,7 +162,7 @@ trait ConnectionActive { _: Actor =>
           existed.bindTransport(transport)
           connected()
         case None =>
-          processNewConnected(Connected(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
+          processConnectingEvent(ConnectingEvent(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
     case OnFrame(sessionId, frame)                       => onFrame(frame)
@@ -168,14 +180,10 @@ trait ConnectionActive { _: Actor =>
     case OnBroadcast(senderSessionId, room, packet)      => sendPacket(packet) // write to client
 
     case SubscribeBroadcast(sessionId, endpoint, room) =>
-      val topic = socketio.topicForBroadcast(endpoint, room)
-      topics += topic
-      subscribeBroadcast(topic)
+      processSubscribeBroadcastEvent(SubscribeBroadcastEvent(sessionId, endpoint, room))
 
     case UnsubscribeBroadcast(sessionId, endpoint, room) =>
-      val topic = socketio.topicForBroadcast(endpoint, room)
-      topics -= topic
-      unsubscribeBroadcast(topic)
+      processUnsubscribeBroadcastEvent(UnsubscribeBroadcastEvent(sessionId, endpoint, room))
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
@@ -190,7 +198,7 @@ trait ConnectionActive { _: Actor =>
   def enableHeartbeat() {
     log.debug("{}: heartbeat enabled.", self.path)
     if (heartbeatHandler.isEmpty || heartbeatHandler.nonEmpty && heartbeatHandler.get.isCancelled) {
-      heartbeatHandler = Some(context.system.scheduler.schedule(0.seconds, heartbeatInterval.seconds, self, SendPackets(null, List(HeartbeatPacket))))
+      heartbeatHandler = Some(context.system.scheduler.schedule(heartbeatInterval.seconds, heartbeatInterval.seconds, self, SendPackets(null, List(HeartbeatPacket))))
     }
   }
 
@@ -279,7 +287,7 @@ trait ConnectionActive { _: Actor =>
   def onGet(transportConnection: ActorRef) {
     disableCloseTimeout()
     connectionContext foreach { ctx =>
-      processUpdatePackets(UpdatePackets(ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)))
+      pendingPackets = ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
     }
   }
 
@@ -320,7 +328,7 @@ trait ConnectionActive { _: Actor =>
     connectionContext foreach { ctx =>
       updatePendingPackets = ctx.transport.flushOrWait(ctx, transportConnection, updatePendingPackets)
     }
-    processUpdatePackets(UpdatePackets(updatePendingPackets))
+    pendingPackets = updatePendingPackets
   }
 
   def sendAck(originalPacket: DataPacket, args: String) {

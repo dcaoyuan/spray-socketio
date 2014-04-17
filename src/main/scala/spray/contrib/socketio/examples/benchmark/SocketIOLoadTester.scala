@@ -28,6 +28,7 @@ object SocketIOLoadTester {
   val clientConfig = config.getConfig("client")
 
   val postTestReceptionTimeout = clientConfig.getInt("post-test-reception-timeout")
+  val creatingBunchClientsTimeout = clientConfig.getInt("create-bunch-clients-timeout")
   val initailMessagesPerSecond = clientConfig.getInt("initail-messages-sent-per-second")
   val nSecondsToTestEachLoadState = clientConfig.getInt("seconds-to-test-each-load-state")
   val secondsBetweenRounds = clientConfig.getInt("seconds-between-rounds")
@@ -49,6 +50,7 @@ object SocketIOLoadTester {
   case class RoundBegin(concurrentConnections: Int)
   case class StatsSummary(stats: mutable.Map[Double, StatisticalSummary])
   case object ReceivingTimeout
+  case object CreatingTimeout
 
   def main(args: Array[String]) {
     run(args.map(_.toInt))
@@ -142,6 +144,8 @@ class SocketIOLoadTester extends Actor with ActorLogging {
 
   private var nConnectionsCreated: Int = _
 
+  var creatingTimeout: Option[Cancellable] = None
+
   def receive = {
     case RoundBegin(nConns) =>
       t0 = System.currentTimeMillis
@@ -199,9 +203,17 @@ class SocketIOLoadTester extends Actor with ActorLogging {
         println("Failed - not all messages received in " + postTestReceptionTimeout + "s")
         println("Expected: " + nMessagesExpected + ", got: " + roundtripTimes.size)
       }
+
+    case CreatingTimeout =>
+      if (nConnectionsOpened < nConnectionsCreated) {
+        println(s"\n connection opened ${nConnectionsOpened} is less than ${nConnectionsCreated}")
+        nConnectionsOpened = nConnectionsCreated
+        createNextBunchClients()
+      }
   }
 
   private def createNextBunchClients() {
+    creatingTimeout foreach (_.cancel)
     if (nConnectionsCreated < nConnections) {
       val nToCreate = math.min(nConnections - nConnectionsCreated, 100)
       nConnectionsCreated += nToCreate
@@ -213,6 +225,8 @@ class SocketIOLoadTester extends Actor with ActorLogging {
         clients ::= client
         i += 1
       }
+      import system.dispatcher
+      creatingTimeout = Some(system.scheduler.scheduleOnce(creatingBunchClientsTimeout.seconds, self, CreatingTimeout))
       print(".")
     }
   }

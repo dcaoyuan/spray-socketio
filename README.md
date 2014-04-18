@@ -5,11 +5,22 @@ Socket.IO implementation on Spray with cluster sharding.
 
 Supported transports : WebSocket, XHR-Polling.
 
+<a href="https://travis-ci.org/wandoulabs/spray-socketio"><img src="https://travis-ci.org/wandoulabs/spray-socketio.png" alt="spray-socketio build status"></a>
+
 ### Benchmark
 
 We did a simple load test on laptop (i7-2630QM 4xcore CPU @2.00GHz), with Client/Server both run on it. It could process about 80k messages/second under 50k long-live connections.
 
 The test code could be found at spray.contrib.socketio.examples.benchmark
+
+## Usage
+The artifact is published to Sonatype, so in order to use it you just have to add the following dependency:
+
+```scala
+resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
+
+libraryDependencies += "com.wandoulabs.akka" %% "spray-socketio" % "0.1.1-SNAPSHOT"
+```
 
 ### Example
 

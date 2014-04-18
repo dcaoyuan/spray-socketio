@@ -14,8 +14,8 @@ branches:
   - master
 env:
   global:
-  - secure: GmNbo4pJ/evd996E26uwWvCQP0c59HcizK2YSFO1gxH7PhBj3DMtnn02Oio22RobkDqWE8llbuBAS6GilcfoVhG8xMmlKDmpGCyy1v38r/c6wjnq3pc7O52Q/IzauWOLK3FFsFnPaNUm6S6JS0ayGzgRLsGwrKB4Obaz15tU0Hc=
-  - secure: CHNfAWexK7xYyY+4anWFKWj0PjM9SPSiA4Tjn6lb+tWEqDw+Cqkj5RtmMy7A3u1omKQc80Bmc2JKYdr8/bEAsH/EE9ofgLW6DWpGpuZ3Q9k0NxTzQ0ubQTVo3p9mRRp5XnV5i3SaKlAocjd3PpTbxKoxNu8/oVn41EB/JUePKmM=
+  - secure: fLcPdIjQbBb+TXd3/ICviHCUIrnN2Myn2EIh5D2ZYAxM6JsxpR5Dns9gqLVF8fPCdcEk33uDR6jQO1UIpIuclsysFTXnVZP9APTYinN44tn8iVAdSTsHge1DwpR3tElJGeRoGUNhuZXUp2I2EGCUdL/TNtj2r0kcbGinEiIbqQc=
+  - secure: ZoJklvurpmlMnzcLFuhFsf6asaAhaaVaFM2Qdcg2RSjQbzPvP8CFGji2cqGV+Ll3F+jmtlQX6vULQJa7gUohVwZiz2913tOqh5wcGXo/HPj/XcSzWlet2vfs82hFRxQMpNYomweexwuSfusCRpjx75m2+VcoZ7qvfupAY+Avms4=
 notifications:
   email:
   - dcaoyuan@wandoujia.com

@@ -51,6 +51,8 @@ package object socketio {
    */
   def topicForNamespace(endpoint: String) = "socketio-namespace-" + { if (endpoint == "") "global" else endpoint }
 
+  val topicForDisconnect = "socketio-global-disconnect"
+
   private[socketio] final class SoConnectingContext(
     var sessionId: String,
     val sessionIdGenerator: HttpRequest => Future[String],

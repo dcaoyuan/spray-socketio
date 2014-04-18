@@ -19,6 +19,7 @@ import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.packet.Packet
 import scala.util.{ Failure, Success }
+import akka.util.Timeout
 
 /**
  *
@@ -127,12 +128,16 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
   def subscribeMediatorForNamespace(action: () => Unit) = {
     if (!isMediatorSubscribed) {
       import context.dispatcher
-      mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForNamespace(endpoint), self))(socketio.actorResolveTimeout).mapTo[DistributedPubSubMediator.SubscribeAck] onComplete {
+      implicit val timeout = Timeout(socketio.actorResolveTimeout)
+      mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForDisconnect, self)).mapTo[DistributedPubSubMediator.SubscribeAck] onComplete {
         case Success(ack) =>
-          isMediatorSubscribed = true
-          action()
-        case Failure(ex) =>
-          log.warning("Failed to subscribe to mediator on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
+          mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForNamespace(endpoint), self)).mapTo[DistributedPubSubMediator.SubscribeAck] onComplete {
+            case Success(ack) =>
+              isMediatorSubscribed = true
+              action()
+            case Failure(ex) =>
+              log.warning("Failed to subscribe to mediator on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
+          }
       }
     } else {
       action()

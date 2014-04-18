@@ -218,7 +218,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("startup-server")
     }
 
-    "broadcast subscribers" in within(15.seconds) {
+    "broadcast subscribers" in within(20.seconds) {
       runOn(connectionActive1) {
         val client = self
         system.actorOf(Props(new Actor {
@@ -229,7 +229,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(connectionActive2) {
-        waitForSeconds(5)(system)
+        waitForSeconds(6)(system)
         val subscriptions = Await.result(system.actorSelection(node(connectionActive2).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
         log.info("subscriptions: " + subscriptions.toString)
         import system.dispatcher
@@ -239,7 +239,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(connectionActive1) {
-        waitForSeconds(5)(system)
+        waitForSeconds(6)(system)
         val subscriptions = Await.result(system.actorSelection(node(connectionActive1).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
         log.info("subscriptions: " + subscriptions.toString)
         awaitAssert {

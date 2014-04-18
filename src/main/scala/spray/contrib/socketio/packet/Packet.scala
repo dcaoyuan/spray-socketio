@@ -50,7 +50,7 @@ sealed trait Packet extends Serializable {
 final case class DisconnectPacket(endpoint: String = "") extends Packet {
   def code = '0'
 
-  def render = if (endpoint == "") ByteString(0) else ByteString("0::/" + endpoint)
+  def render = if (endpoint == "") ByteString('0') else ByteString("0::/" + endpoint)
 }
 
 /**

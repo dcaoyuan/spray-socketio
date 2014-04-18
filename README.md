@@ -13,7 +13,7 @@ We did a simple load test on laptop (i7-2630QM 4xcore CPU @2.00GHz), with Client
 
 The test code could be found at spray.contrib.socketio.examples.benchmark
 
-## Usage
+### Usage
 The artifact is published to Sonatype, so in order to use it you just have to add the following dependency:
 
 ```scala

@@ -12,8 +12,7 @@ import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnData
-import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.namespace.Namespace.{ OnConnect, OnDisconnect, OnData, OnEvent }
 import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
@@ -87,18 +86,18 @@ object SimpleServer extends App with MySslConfiguration {
   val namespaceExt = NamespaceExtension(system)
   implicit val resolver = namespaceExt.resolver
 
-  val observer = new Observer[OnEvent] {
-    override def onNext(value: OnEvent) {
+  val observer = new Observer[OnData] {
+    override def onNext(value: OnData) {
       value match {
-        case OnEvent("Hi!", args, context) =>
+        case event @ OnEvent("Hi!", args, context) =>
           println("observed: " + "Hi!" + ", " + args)
-          if (value.packet.hasAckData) {
-            value.ack("[]")
+          if (event.packet.hasAckData) {
+            event.ack("[]")
           }
-          value.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
-          value.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
+          event.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
+          event.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
           // batched packets
-          value.reply(
+          event.reply(
             EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio")).toJson.toString),
             EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString)).toJson.toString))
         case OnEvent("time", args, context) =>
@@ -112,8 +111,10 @@ object SimpleServer extends App with MySslConfiguration {
   val channel = Subject[OnData]()
   // there is no channel.ofType method for RxScala, why?
   channel.flatMap {
-    case x: OnEvent => Observable.items(x)
-    case _          => Observable.empty
+    case x: OnEvent      => Observable.items(x)
+    case x: OnConnect    => Observable.items(x)
+    case x: OnDisconnect => Observable.items(x)
+    case _               => Observable.empty
   }.subscribe(observer)
 
   namespaceExt.startNamespace("testendpoint")

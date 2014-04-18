@@ -100,8 +100,13 @@ trait ConnectionActive { _: Actor =>
 
   val startTime = System.currentTimeMillis
 
+  val connectPacket = ConnectPacket()
+  val disconnectPacket = DisconnectPacket()
+
+  var disconnected = false
+
   def connected() {
-    sendPacket(ConnectPacket())
+    onPacket(connectPacket)
   }
 
   def update(event: Event) = {
@@ -153,7 +158,13 @@ trait ConnectionActive { _: Actor =>
           processConnectingEvent(ConnectingEvent(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
-    case Closing(_)                                      => close
+    case Closing(_) =>
+      if (!disconnected) { //make sure only send disconnect packet one time
+        disconnected = true
+        onPacket(disconnectPacket)
+      }
+      close
+
     case OnFrame(sessionId, payload)                     => onFrame(payload)
     case OnGet(sessionId, transportConnection)           => onGet(transportConnection)
     case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)
@@ -205,14 +216,16 @@ trait ConnectionActive { _: Actor =>
         }
 
       case DisconnectPacket(endpoint) =>
-        connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
         val topic = socketio.topicForBroadcast(endpoint, "")
         topics -= topic
         if (endpoint == "") {
+          connectionContext foreach { ctx => publishDisconnect(ctx) }
+          disconnected = true
           topics foreach unsubscribeBroadcast
           topics = Set()
-          context.stop(self)
+          // do not stop self, waiting for Closing message
         } else {
+          connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
           unsubscribeBroadcast(topic)
         }
 
@@ -277,6 +290,10 @@ trait ConnectionActive { _: Actor =>
 
   def sendAck(originalPacket: DataPacket, args: String) {
     sendPacket(AckPacket(originalPacket.id, args))
+  }
+
+  def publishDisconnect(ctx: ConnectionContext) {
+    namespaceMediator ! Publish(socketio.topicForDisconnect, OnPacket(disconnectPacket, ctx))
   }
 
   def publishToNamespace[T <: Packet](msg: OnPacket[T]) {

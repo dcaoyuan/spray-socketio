@@ -13,8 +13,7 @@ import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnData
-import spray.contrib.socketio.namespace.Namespace.OnEvent
+import spray.contrib.socketio.namespace.Namespace.{ OnDisconnect, OnConnect, OnData, OnEvent }
 import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.EventPacket
 
@@ -70,8 +69,8 @@ object SocketIOTestServer extends App {
   SocketIOExtension(system)
   implicit val resolver = NamespaceExtension(system).resolver
 
-  val observer = new Observer[OnEvent] with Serializable {
-    override def onNext(value: OnEvent) {
+  val observer = new Observer[OnData] with Serializable {
+    override def onNext(value: OnData) {
       value match {
         case OnEvent("chat", args, context) =>
           spray.json.JsonParser(args) // test spray-json performance too.
@@ -89,8 +88,10 @@ object SocketIOTestServer extends App {
   val channel = Subject[OnData]()
   // there is no channel.ofType method for RxScala, why?
   channel.flatMap {
-    case x: OnEvent => Observable.items(x)
-    case _          => Observable.empty
+    case x: OnEvent      => Observable.items(x)
+    case x: OnConnect    => Observable.items(x)
+    case x: OnDisconnect => Observable.items(x)
+    case _               => Observable.empty
   }.subscribe(observer)
 
   NamespaceExtension(system).startNamespace("")

@@ -24,6 +24,7 @@ object SocketIOTestServer extends App {
   object SocketIOServer {
     def props(resolver: ActorRef) = Props(classOf[SocketIOServer], resolver)
   }
+
   class SocketIOServer(val resolver: ActorRef) extends Actor with ActorLogging {
     var connected = 0
     var preconnected = 0

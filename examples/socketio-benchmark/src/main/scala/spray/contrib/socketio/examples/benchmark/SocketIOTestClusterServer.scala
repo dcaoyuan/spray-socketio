@@ -1,4 +1,4 @@
-package spray.contrib.socketio.examples
+package spray.contrib.socketio.examples.benchmark
 
 import com.typesafe.config.{ Config, ConfigFactory }
 import akka.actor.{ Props, ActorSystem }
@@ -20,7 +20,7 @@ import spray.contrib.socketio.packet.MessagePacket
 import spray.json.JsArray
 import spray.json.JsString
 
-object SimpleClusterServer extends App with MySslConfiguration {
+object SocketIOTestClusterServer extends App {
   val usage = """
     Usage: SimpleClusterServer [transport|connectionActive|business] -Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@host1:port -Dakka.remote.netty.tcp.hostname=host1 -Dakka.remote.netty.tcp.port=port
               """

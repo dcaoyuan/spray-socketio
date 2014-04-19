@@ -7,17 +7,36 @@ import com.typesafe.sbt.SbtScalariform.ScalariformKeys
 
 object Build extends sbt.Build {
 
-  lazy val proj = Project(
-    "spray-socketio",
-    file("."),
-    settings = commonSettings ++ SbtMultiJvm.multiJvmSettings ++ Seq(
-      libraryDependencies ++= Dependencies.all,
-      unmanagedSourceDirectories in Test += baseDirectory.value / "multi-jvm/scala",
-      distTask) ++ multiJvmSettings) configs (MultiJvm)
+  lazy val root = Project("spray-socketio-root", file("."))
+    .aggregate(examples, socketio)
+    .settings(basicSettings: _*)
+    .settings(noPublishing: _*)
 
-  def commonSettings = Defaults.defaultSettings ++
-    formatSettings ++
-    Seq(
+ lazy val socketio = Project("spray-socketio", file("spray-socketio"))
+    .settings(basicSettings: _*)
+    .settings(formatSettings: _*)
+    .settings(releaseSettings: _*)
+    .settings(SbtMultiJvm.multiJvmSettings ++ multiJvmSettings: _*)
+    .settings(libraryDependencies ++= Dependencies.all)
+    .settings(unmanagedSourceDirectories in Test += baseDirectory.value / "multi-jvm/scala")
+    .configs(MultiJvm)
+
+  lazy val examples = Project("spray-socketio-examples", file("examples"))
+    .aggregate(sprayBenchmark, sprayServer)
+    .settings(exampleSettings: _*)
+
+  lazy val sprayBenchmark = Project("spray-socketio-examples-benchmark", file("examples/socketio-benchmark"))
+    .settings(exampleSettings: _*)
+    .settings(formatSettings: _*)
+    .settings(distTask)
+    .dependsOn(socketio)
+
+  lazy val sprayServer = Project("spray-socketio-examples-server", file("examples/socketio-server"))
+    .settings(exampleSettings: _*)
+    .settings(formatSettings: _*)
+    .dependsOn(socketio)
+
+  lazy val basicSettings = Seq(
       organization := "com.wandoulabs.akka",
       version := "0.1.1-SNAPSHOT",
       scalaVersion := "2.10.3",
@@ -27,7 +46,12 @@ object Build extends sbt.Build {
         "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
         "Typesafe repo" at "http://repo.typesafe.com/typesafe/releases/",
         "spray" at "http://repo.spray.io",
-        "spray nightly" at "http://nightlies.spray.io/"),
+        "spray nightly" at "http://nightlies.spray.io/")
+      )
+
+  lazy val exampleSettings = basicSettings ++ noPublishing
+
+  lazy val releaseSettings = Seq(
       publishTo := {
         val nexus = "https://oss.sonatype.org/"
         if (version.value.trim.endsWith("SNAPSHOT"))
@@ -92,6 +116,14 @@ object Build extends sbt.Build {
       IO.copyFile(srcPath, destPath, preserveLastModified = true)
     }
   }
+
+  lazy val noPublishing = Seq(
+    publish := (),
+    publishLocal := (),
+    // required until these tickets are closed https://github.com/sbt/sbt-pgp/issues/42,
+    // https://github.com/sbt/sbt-pgp/issues/36
+    publishTo := None
+  )
 
   lazy val formatSettings = SbtScalariform.scalariformSettings ++ Seq(
     ScalariformKeys.preferences in Compile := formattingPreferences,

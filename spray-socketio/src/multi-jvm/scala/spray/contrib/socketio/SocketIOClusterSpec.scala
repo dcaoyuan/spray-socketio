@@ -18,12 +18,8 @@ import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.namespace.NamespaceExtension
-import spray.contrib.socketio.packet.MessagePacket
-import spray.contrib.socketio.examples.benchmark.{ SocketIOTestClient, SocketIOTestServer }
-import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
-import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnOpen
-import spray.json.JsArray
-import spray.json.JsString
+import spray.contrib.socketio.packet.{EventPacket, Packet, MessagePacket}
+import spray.json.{JsArray, JsString}
 import akka.actor.ActorIdentity
 import akka.remote.testconductor.RoleName
 import scala.concurrent.Await
@@ -32,6 +28,7 @@ import akka.actor.Identify
 import rx.lang.scala.Subject
 import rx.lang.scala.Observer
 import spray.contrib.socketio.DistributedBalancingPubSubMediator.Internal.{Subscription, GetSubscriptionsAck, GetSubscriptions}
+import spray.can.websocket.frame.{TextFrame, Frame}
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -108,9 +105,73 @@ class SocketIOClusterSpecMultiJvmNode6 extends SocketIOClusterSpec
 class SocketIOClusterSpecMultiJvmNode7 extends SocketIOClusterSpec
 class SocketIOClusterSpecMultiJvmNode8 extends SocketIOClusterSpec
 
+object SocketIOClusterSpec {
+  object SocketIOServer {
+    def props(resolver: ActorRef) = Props(classOf[SocketIOServer], resolver)
+  }
+
+  class SocketIOServer(val resolver: ActorRef) extends Actor with ActorLogging {
+
+    def receive = {
+      // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
+      case Http.Connected(remoteAddress, localAddress) =>
+        val serverConnection = sender()
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, resolver))
+        serverConnection ! Http.Register(conn)
+    }
+
+  }
+
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends SocketIOServerConnection {
+
+    def genericLogic: Receive = {
+      case x: Frame =>
+    }
+  }
+
+  object SocketIOClient {
+
+    case object OnOpen
+    case object OnClose
+
+    case object SendHello
+    case class SendBroadcast(msg: String)
+  }
+
+  class SocketIOClient(connect: Http.Connect, commander: ActorRef) extends SocketIOClientConnection {
+    import SocketIOClient._
+
+    import context.system
+    IO(UHttp) ! connect
+
+    def businessLogic: Receive = {
+      case SendHello           => connection ! TextFrame("5:::{\"name\":\"chat\", \"args\":[]}")
+      case SendBroadcast(msg)  => connection ! TextFrame("""5:::{"name":"broadcast", "args":[""" + "\"" + msg + "\"" + "]}")
+    }
+
+    override def onDisconnected(endpoint: String) {
+      commander ! OnClose
+    }
+
+    override def onOpen() {
+      commander ! OnOpen
+    }
+
+    def onPacket(packet: Packet) {
+      packet match {
+        case EventPacket("chat", args) => commander ! SendHello
+        case msg: MessagePacket => commander ! msg.data
+        case _ =>
+      }
+
+    }
+  }
+}
+
 class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with STMultiNodeSpec with ImplicitSender {
 
   import SocketIOClusterSpecConfig._
+  import SocketIOClusterSpec._
 
   override def initialParticipants: Int = roles.size
 
@@ -175,13 +236,13 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "startup server" in within(15.seconds) {
       runOn(transport1) {
         val resolver = SocketIOExtension(system).resolver
-        val server = system.actorOf(SocketIOTestServer.SocketIOServer.props(resolver), "socketio-server")
+        val server = system.actorOf(SocketIOServer.props(resolver), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port1)
       }
 
       runOn(transport2) {
         val resolver = SocketIOExtension(system).resolver
-        val server = system.actorOf(SocketIOTestServer.SocketIOServer.props(resolver), "socketio-server")
+        val server = system.actorOf(SocketIOServer.props(resolver), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port2)
       }
 
@@ -196,8 +257,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val observer = new Observer[OnData] {
           override def onNext(value: OnData) {
             value match {
-              case OnEvent("chat", args, context) =>
-                spray.json.JsonParser(args) // test spray-json too.
+              case x @ OnEvent("chat", args, context) =>
                 value.replyEvent("chat", args)(resolver)
               case OnEvent("broadcast", args, context) =>
                 val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
@@ -257,19 +317,15 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val testing = self
         val commander = system.actorOf(Props(new Actor {
           def receive = {
-            case OnOpen                   => sender() ! SocketIOTestClient.SendTimestampedChat
-            case x @ MessageArrived(time) => testing ! x
+            case SocketIOClient.OnOpen        => sender() ! SocketIOClient.SendHello
+            case x @ SocketIOClient.SendHello => testing ! x
           }
         }))
-        val client = system.actorOf(Props(new SocketIOTestClient(connect, commander)))
-
+        val client = system.actorOf(Props(classOf[SocketIOClient], connect, commander))
         awaitAssert {
           within(10.second) {
-            expectMsgPF() {
-              case MessageArrived(time) =>
-                println("round time: " + time)
-                client ! Http.CloseAll
-            }
+            expectMsg(SocketIOClient.SendHello)
+            client ! Http.CloseAll
           }
         }
       }
@@ -285,11 +341,11 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val testing = self
         val commander = system.actorOf(Props(new Actor {
           def receive = {
-            case OnOpen =>
+            case SocketIOClient.OnOpen =>
             case `msg`  => testing ! msg
           }
         }))
-        val client = system.actorOf(Props(new SocketIOTestClient(connect, commander)))
+        val client = system.actorOf(Props(classOf[SocketIOClient], connect, commander))
 
         awaitAssert {
           within(10.second) {
@@ -304,13 +360,13 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val testing = self
         val commander = system.actorOf(Props(new Actor {
           def receive = {
-            case OnOpen =>
+            case SocketIOClient.OnOpen =>
               waitForSeconds(5)(system) // wait for client2 connected
-              sender() ! SocketIOTestClient.SendBroadcast(msg)
+              sender() ! SocketIOClient.SendBroadcast(msg)
             case `msg` => testing ! msg
           }
         }))
-        val client = system.actorOf(Props(new SocketIOTestClient(connect, commander)))
+        val client = system.actorOf(Props(classOf[SocketIOClient], connect, commander))
 
         awaitAssert {
           within(10.second) {

@@ -36,7 +36,7 @@ export GC="-XX:+UseParallelGC"
 
 
 cp="";
-for f in ../libs/*.jar;
+for f in ../lib/*.jar;
 do cp=${f}":"${cp};
 done;
 

@@ -138,6 +138,8 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
             case Failure(ex) =>
               log.warning("Failed to subscribe to mediator on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
           }
+        case Failure(ex) =>
+          log.warning("Failed to subscribe to mediator on topic {}: {}", socketio.topicForDisconnect, ex.getMessage)
       }
     } else {
       action()

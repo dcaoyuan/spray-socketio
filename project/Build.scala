@@ -11,6 +11,7 @@ object Build extends sbt.Build {
     .aggregate(examples, socketio)
     .settings(basicSettings: _*)
     .settings(noPublishing: _*)
+    .settings(XitrumPackage.skip: _*)
 
  lazy val socketio = Project("spray-socketio", file("spray-socketio"))
     .settings(basicSettings: _*)
@@ -19,21 +20,24 @@ object Build extends sbt.Build {
     .settings(SbtMultiJvm.multiJvmSettings ++ multiJvmSettings: _*)
     .settings(libraryDependencies ++= Dependencies.all)
     .settings(unmanagedSourceDirectories in Test += baseDirectory.value / "multi-jvm/scala")
+    .settings(XitrumPackage.skip: _*)
     .configs(MultiJvm)
 
   lazy val examples = Project("spray-socketio-examples", file("examples"))
     .aggregate(sprayBenchmark, sprayServer)
+    .settings(XitrumPackage.skip: _*)
     .settings(exampleSettings: _*)
 
   lazy val sprayBenchmark = Project("spray-socketio-examples-benchmark", file("examples/socketio-benchmark"))
     .settings(exampleSettings: _*)
     .settings(formatSettings: _*)
-    .settings(distTask)
+    .settings(XitrumPackage.copy("bin", "conf", "logs"): _*)
     .dependsOn(socketio)
 
   lazy val sprayServer = Project("spray-socketio-examples-server", file("examples/socketio-server"))
     .settings(exampleSettings: _*)
     .settings(formatSettings: _*)
+    .settings(XitrumPackage.skip: _*)
     .dependsOn(socketio)
 
   lazy val basicSettings = Seq(
@@ -108,14 +112,6 @@ object Build extends sbt.Build {
           testResults.events ++ multiNodeResults.events,
           testResults.summaries ++ multiNodeResults.summaries)
     })
-
-  lazy val distDependencies = TaskKey[Unit]("dist")
-  def distTask = distDependencies <<= (packageBin in Compile, update, crossTarget, scalaVersion) map { (bin, updateReport, out, scalaVer) =>
-    (bin :: updateReport.allFiles.toList) foreach { srcPath =>
-      val destPath = out / "dist/libs" / srcPath.getName
-      IO.copyFile(srcPath, destPath, preserveLastModified = true)
-    }
-  }
 
   lazy val noPublishing = Seq(
     publish := (),

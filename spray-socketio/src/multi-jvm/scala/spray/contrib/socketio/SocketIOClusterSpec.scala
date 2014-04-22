@@ -249,7 +249,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("startup-server")
     }
 
-    "startup business" in within(15.seconds) {
+    "startup business" in within(25.seconds) {
       runOn(business1) {
         waitForSeconds(5)(system)
         val resolver = NamespaceExtension(system).resolver
@@ -278,7 +278,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("startup-server")
     }
 
-    "broadcast subscribers" in within(20.seconds) {
+    "broadcast subscribers" in within(25.seconds) {
       runOn(connectionActive1) {
         val client = self
         system.actorOf(Props(new Actor {

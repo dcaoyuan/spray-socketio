@@ -11,7 +11,7 @@ import akka.persistence.Persistence
 import akka.pattern.ask
 import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
-import akka.io.IO
+import akka.io.{Tcp, IO}
 import spray.can.server.UHttp
 import spray.can.Http
 import spray.contrib.socketio.namespace.Namespace
@@ -29,6 +29,9 @@ import rx.lang.scala.Subject
 import rx.lang.scala.Observer
 import spray.contrib.socketio.DistributedBalancingPubSubMediator.Internal.{Subscription, GetSubscriptionsAck, GetSubscriptions}
 import spray.can.websocket.frame.{TextFrame, Frame}
+import akka.contrib.pattern.DistributedPubSubExtension
+import akka.contrib.pattern.DistributedPubSubMediator.Count
+import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.OnOpen
 
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -47,13 +50,6 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
 
   val port1 = 8081
   val port2 = 8082
-
-  def waitForSeconds(secs: Int)(system: ActorSystem) {
-    val p = Promise[Boolean]()
-    import system.dispatcher
-    system.scheduler.scheduleOnce(secs.seconds) { p.success(true) }
-    Await.ready(p.future, (secs + 10).seconds)
-  }
 
   commonConfig(ConfigFactory.parseString("""
     akka.loglevel = INFO
@@ -107,12 +103,13 @@ class SocketIOClusterSpecMultiJvmNode8 extends SocketIOClusterSpec
 
 object SocketIOClusterSpec {
   object SocketIOServer {
-    def props(resolver: ActorRef) = Props(classOf[SocketIOServer], resolver)
+    def props(resolver: ActorRef, commander:ActorRef) = Props(classOf[SocketIOServer], resolver, commander)
   }
 
-  class SocketIOServer(val resolver: ActorRef) extends Actor with ActorLogging {
+  class SocketIOServer(val resolver: ActorRef, val commander: ActorRef) extends Actor with ActorLogging {
 
     def receive = {
+      case x: Tcp.Bound => commander ! x
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
@@ -175,6 +172,15 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
   override def initialParticipants: Int = roles.size
 
+  def mediator: ActorRef = DistributedPubSubExtension(system).mediator
+
+  def awaitCount(expected: Int): Unit = {
+    awaitAssert {
+      mediator ! Count
+      expectMsgType[Int] should be(expected)
+    }
+  }
+
   val storageLocations = List(
     "akka.persistence.journal.leveldb.dir",
     "akka.persistence.journal.leveldb-shared.store.dir",
@@ -194,7 +200,6 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
   def join(from: RoleName, to: RoleName): Unit = {
     runOn(from) {
-      waitForSeconds(1)(system)
       Cluster(system) join node(to).address
       startSharding()
     }
@@ -230,20 +235,29 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       join(connectionActive1, transport1)
       join(connectionActive2, transport1)
 
+      runOn(transport1, transport2, connectionActive1, connectionActive2) {
+        awaitCount(8)
+      }
       enterBarrier("join-cluster")
     }
 
     "startup server" in within(15.seconds) {
       runOn(transport1) {
         val resolver = SocketIOExtension(system).resolver
-        val server = system.actorOf(SocketIOServer.props(resolver), "socketio-server")
+        val server = system.actorOf(SocketIOServer.props(resolver, self), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port1)
+        awaitAssert {
+          expectMsgType[Tcp.Bound]
+        }
       }
 
       runOn(transport2) {
         val resolver = SocketIOExtension(system).resolver
-        val server = system.actorOf(SocketIOServer.props(resolver), "socketio-server")
+        val server = system.actorOf(SocketIOServer.props(resolver, self), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port2)
+        awaitAssert {
+          expectMsgType[Tcp.Bound]
+        }
       }
 
       enterBarrier("startup-server")
@@ -251,7 +265,6 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "startup business" in within(25.seconds) {
       runOn(business1) {
-        waitForSeconds(5)(system)
         val resolver = NamespaceExtension(system).resolver
 
         val observer = new Observer[OnData] {
@@ -273,6 +286,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
         NamespaceExtension(system).startNamespace("")
         NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
+        awaitAssert {
+          expectMsgType[Namespace.SubscribeAck]
+        }
       }
 
       enterBarrier("startup-server")
@@ -283,13 +299,12 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val client = self
         system.actorOf(Props(new Actor {
           override def receive: Receive = {
-            case seq: Seq[Subscription] => client ! seq
+            case seq: Seq[Subscription] => client ! seq.toSet
           }
         }), name="test")
       }
 
       runOn(connectionActive2) {
-        waitForSeconds(6)(system)
         val subscriptions = Await.result(system.actorSelection(node(connectionActive2).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
         log.info("subscriptions: " + subscriptions.toString)
         import system.dispatcher
@@ -299,20 +314,18 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(connectionActive1) {
-        waitForSeconds(6)(system)
         val subscriptions = Await.result(system.actorSelection(node(connectionActive1).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
         log.info("subscriptions: " + subscriptions.toString)
         awaitAssert {
-          within(10 seconds) {
-            expectMsg(subscriptions.subscriptions)
-          }
+           expectMsg(subscriptions.subscriptions.toSet)
         }
       }
+
+      enterBarrier("broadcast-subscribers")
     }
 
-    "chat with client1 and server1" in within(15.seconds) {
+    "chat with client1 and server1" in within(25.seconds) {
       runOn(client1) {
-        waitForSeconds(5)(system)
         val connect = Http.Connect(host, port1)
         val testing = self
         val commander = system.actorOf(Props(new Actor {
@@ -323,10 +336,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         }))
         val client = system.actorOf(Props(classOf[SocketIOClient], connect, commander))
         awaitAssert {
-          within(10.second) {
-            expectMsg(SocketIOClient.SendHello)
-            client ! Http.CloseAll
-          }
+          expectMsg(SocketIOClient.SendHello)
         }
       }
 
@@ -336,43 +346,29 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "broadcast" in within(15.seconds) {
       val msg = "hello world"
       runOn(client2) {
-        waitForSeconds(5)(system)
         val connect = Http.Connect(host, port2)
-        val testing = self
-        val commander = system.actorOf(Props(new Actor {
-          def receive = {
-            case SocketIOClient.OnOpen =>
-            case `msg`  => testing ! msg
-          }
-        }))
-        val client = system.actorOf(Props(classOf[SocketIOClient], connect, commander))
-
+        system.actorOf(Props(classOf[SocketIOClient], connect, self), name = "client2")
         awaitAssert {
-          within(10.second) {
-            expectMsg(msg)
-          }
+          expectMsg(OnOpen)
+          enterBarrier("client2-started")
+          expectMsg(msg)
         }
       }
 
       runOn(client1) {
-        waitForSeconds(5)(system)
         val connect = Http.Connect(host, port1)
-        val testing = self
-        val commander = system.actorOf(Props(new Actor {
-          def receive = {
-            case SocketIOClient.OnOpen =>
-              waitForSeconds(5)(system) // wait for client2 connected
-              sender() ! SocketIOClient.SendBroadcast(msg)
-            case `msg` => testing ! msg
-          }
-        }))
-        val client = system.actorOf(Props(classOf[SocketIOClient], connect, commander))
+        val client = system.actorOf(Props(classOf[SocketIOClient], connect, self), name = "client1")
 
         awaitAssert {
-          within(10.second) {
-            expectMsg(msg)
-          }
+          expectMsg(OnOpen)
+          enterBarrier("client2-started")
+          client ! SocketIOClient.SendBroadcast(msg)
+          expectMsg(msg)
         }
+      }
+
+      runOn(controller, transport1, transport2, connectionActive1, connectionActive2, business1) {
+        enterBarrier("client2-started")
       }
 
       enterBarrier("broadcast")

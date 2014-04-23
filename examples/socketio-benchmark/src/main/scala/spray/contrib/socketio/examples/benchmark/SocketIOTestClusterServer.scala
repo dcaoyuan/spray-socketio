@@ -22,7 +22,7 @@ import spray.json.JsString
 
 object SocketIOTestClusterServer extends App {
   val usage = """
-    Usage: SimpleClusterServer [transport|connectionActive|business] -Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@host1:port -Dakka.remote.netty.tcp.hostname=host1 -Dakka.remote.netty.tcp.port=port
+    Usage: SocketIOTestClusterServer [transport|connectionActive|business] -Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@host1:port -Dakka.remote.netty.tcp.hostname=host1 -Dakka.remote.netty.tcp.port=port
               """
 
   def exitWithUsage = {

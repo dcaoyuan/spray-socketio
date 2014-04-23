@@ -38,8 +38,8 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
     val shardingName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
-    println("list:" + config.getList("seed-nodes"))
     val SeedNodes: Seq[String] = immutableSeq(config.getStringList("seed-nodes"))
+    val namespaceGroup = config.getString("server.namespace-group-name")
   }
 
   import Settings._
@@ -55,7 +55,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   }
 
   val mediator = if (isCluster) {
-    system.actorOf(DistributedBalancingPubSubProxy.props(s"/user/${SocketIOExtension.mediatorName}", system.name, client))
+    system.actorOf(DistributedBalancingPubSubProxy.props(s"/user/${SocketIOExtension.mediatorName}", namespaceGroup, client))
   } else {
     SocketIOExtension(system).localMediator
   }

@@ -42,6 +42,8 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
   val connectionActive1 = role("connectionActive1")
   val connectionActive2 = role("connectionActive2")
   val business1 = role("business1")
+  val business2 = role("business2")
+  val business3 = role("business3")
 
   val client1 = role("client1")
   val client2 = role("client2")
@@ -80,12 +82,25 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """)
   }
 
-  nodeConfig(business1) {
+  nodeConfig(business1, business2) {
     ConfigFactory.parseString(
       """
         akka.cluster.roles = ["business"]
         spray.socketio {
             seed-nodes = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
+            server.namespace-group-name = "group1"
+        }
+      """)
+
+  }
+
+  nodeConfig(business3) {
+    ConfigFactory.parseString(
+      """
+        akka.cluster.roles = ["business"]
+        spray.socketio {
+            seed-nodes = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
+            server.namespace-group-name = "group2"
         }
       """)
 
@@ -100,6 +115,8 @@ class SocketIOClusterSpecMultiJvmNode5 extends SocketIOClusterSpec
 class SocketIOClusterSpecMultiJvmNode6 extends SocketIOClusterSpec
 class SocketIOClusterSpecMultiJvmNode7 extends SocketIOClusterSpec
 class SocketIOClusterSpecMultiJvmNode8 extends SocketIOClusterSpec
+class SocketIOClusterSpecMultiJvmNode9 extends SocketIOClusterSpec
+class SocketIOClusterSpecMultiJvmNode10 extends SocketIOClusterSpec
 
 object SocketIOClusterSpec {
   object SocketIOServer {
@@ -264,13 +281,13 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     }
 
     "startup business" in within(25.seconds) {
-      runOn(business1) {
+      runOn(business1, business2, business3) {
         val resolver = NamespaceExtension(system).resolver
 
         val observer = new Observer[OnData] {
           override def onNext(value: OnData) {
             value match {
-              case x @ OnEvent("chat", args, context) =>
+              case OnEvent("chat", args, context) =>
                 value.replyEvent("chat", args)(resolver)
               case OnEvent("broadcast", args, context) =>
                 val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
@@ -327,19 +344,35 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "chat with client1 and server1" in within(25.seconds) {
       runOn(client1) {
         val connect = Http.Connect(host, port1)
-        val testing = self
-        val commander = system.actorOf(Props(new Actor {
-          def receive = {
-            case SocketIOClient.OnOpen        => sender() ! SocketIOClient.SendHello
-            case x @ SocketIOClient.SendHello => testing ! x
-          }
-        }))
-        val client = system.actorOf(Props(classOf[SocketIOClient], connect, commander))
+        val client = system.actorOf(Props(classOf[SocketIOClient], connect, self))
         awaitAssert {
+          expectMsg(SocketIOClient.OnOpen)
+          client ! SocketIOClient.SendHello
+          // we have two business groups, so got two messages back
           expectMsg(SocketIOClient.SendHello)
+          expectMsg(SocketIOClient.SendHello)
+          expectNoMsg(2 seconds)
+          enterBarrier("two-groups-tested")
+          enterBarrier("one-group")
+          client ! SocketIOClient.SendHello
+          expectMsg(SocketIOClient.SendHello)
+          expectNoMsg(2 seconds) // because business nodes are in the same group, here only receive one Hello
         }
       }
 
+      runOn(business3) {
+        enterBarrier("two-groups-tested")
+        NamespaceExtension(system).namespace("") ! Namespace.Unsubscribe(None)
+        awaitAssert {
+          expectMsgType[Namespace.UnsubscribeAck]
+        }
+        enterBarrier("one-group")
+      }
+
+      runOn(controller, transport1, transport2, connectionActive1, connectionActive2, business1, business2, client2) {
+        enterBarrier("two-groups-tested")
+        enterBarrier("one-group")
+      }
       enterBarrier("chat")
     }
 
@@ -367,7 +400,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         }
       }
 
-      runOn(controller, transport1, transport2, connectionActive1, connectionActive2, business1) {
+      runOn(controller, transport1, transport2, connectionActive1, connectionActive2, business1, business2, business3) {
         enterBarrier("client2-started")
       }
 

@@ -74,7 +74,7 @@ object Namespace {
 
   final case class Subscribe(channel: Subject[OnData])
   final case class SubscribeAck(subcribe: Subscribe)
-  final case class Unsubscribe(channel: Subject[OnData])
+  final case class Unsubscribe(channel: Option[Subject[OnData]])
   final case class UnsubscribeAck(subcribe: Unsubscribe)
 
   // --- Observable data
@@ -146,6 +146,24 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
     }
   }
 
+  def unsubscribeMediatorForNamespace(action: () => Unit) = {
+    if (isMediatorSubscribed && channels.isEmpty) {
+      import context.dispatcher
+      implicit val timeout = Timeout(socketio.namespaceSubscribeTimeout)
+      val f1 = mediator.ask(DistributedPubSubMediator.Unsubscribe(socketio.topicForDisconnect, self)).mapTo[DistributedPubSubMediator.UnsubscribeAck]
+      val f2 = mediator.ask(DistributedPubSubMediator.Unsubscribe(socketio.topicForNamespace(endpoint), self)).mapTo[DistributedPubSubMediator.UnsubscribeAck]
+      Future.sequence(List(f1, f2)).onComplete {
+        case Success(ack) =>
+          isMediatorSubscribed = false
+          action()
+        case Failure(ex) =>
+          log.warning("Failed to unsubscribe to mediator on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
+      }
+    } else {
+      action()
+    }
+  }
+
   import ConnectionActive.OnPacket
   def receive: Receive = {
     case x @ Subscribe(channel) =>
@@ -156,8 +174,15 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
           commander ! SubscribeAck(x)
       }
     case x @ Unsubscribe(channel) =>
-      channels -= channel
-      sender() ! UnsubscribeAck(x)
+      val commander = sender()
+      channel match {
+        case Some(c) => channels -= c
+        case None    => channels = channels.empty
+      }
+      unsubscribeMediatorForNamespace {
+        () =>
+          commander ! UnsubscribeAck(x)
+      }
 
     case OnPacket(packet: ConnectPacket, connContext)    => channels foreach (_.onNext(OnConnect(packet.args, connContext)(packet)))
     case OnPacket(packet: DisconnectPacket, connContext) => channels foreach (_.onNext(OnDisconnect(connContext)(packet)))

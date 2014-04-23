@@ -14,7 +14,7 @@ usage() {
 }
 
 dir_conf=../conf
-benchserver_class_pgm=spray.contrib.socketio.examples.SimpleClusterServer
+benchserver_class_pgm=spray.contrib.socketio.examples.benchmark.SocketIOTestClusterServer
 benchserver_id_pgm=bench${cluster_module}
 benchserver_lock_file=.lock_bench${cluster_module}
 benchserver_conf=../conf/benchmark.conf

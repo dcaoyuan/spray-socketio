@@ -40,6 +40,7 @@ package object socketio {
   }
 
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds
+  val namespaceSubscribeTimeout = config.getInt("server.namespace-subscribe-timeout").seconds
 
   /**
    * Topic for broadcast messages. Cannot contain '.' or '/'

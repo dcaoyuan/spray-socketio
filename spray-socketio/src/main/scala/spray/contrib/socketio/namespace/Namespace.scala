@@ -20,6 +20,7 @@ import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.packet.Packet
 import scala.util.{ Failure, Success }
 import akka.util.Timeout
+import scala.concurrent.Future
 
 /**
  *
@@ -72,7 +73,9 @@ object Namespace {
   def props(endpoint: String, mediator: ActorRef) = Props(classOf[Namespace], endpoint, mediator)
 
   final case class Subscribe(channel: Subject[OnData])
+  final case class SubscribeAck(subcribe: Subscribe)
   final case class Unsubscribe(channel: Subject[OnData])
+  final case class UnsubscribeAck(subcribe: Unsubscribe)
 
   // --- Observable data
   sealed trait OnData {
@@ -128,16 +131,15 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
   def subscribeMediatorForNamespace(action: () => Unit) = {
     if (!isMediatorSubscribed) {
       import context.dispatcher
-      implicit val timeout = Timeout(socketio.actorResolveTimeout)
-      mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForDisconnect, self)).mapTo[DistributedPubSubMediator.SubscribeAck] onComplete {
+      implicit val timeout = Timeout(socketio.namespaceSubscribeTimeout)
+      val f1 = mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForDisconnect, self)).mapTo[DistributedPubSubMediator.SubscribeAck]
+      val f2 = mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForNamespace(endpoint), self)).mapTo[DistributedPubSubMediator.SubscribeAck]
+      Future.sequence(List(f1, f2)).onComplete {
         case Success(ack) =>
-          mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForNamespace(endpoint), self)).mapTo[DistributedPubSubMediator.SubscribeAck] onComplete {
-            case Success(ack) =>
-              isMediatorSubscribed = true
-              action()
-            case Failure(ex) =>
-              log.warning("Failed to subscribe to mediator on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
-          }
+          isMediatorSubscribed = true
+          action()
+        case Failure(ex) =>
+          log.warning("Failed to subscribe to mediator on topic {}: {}", socketio.topicForNamespace(endpoint), ex.getMessage)
       }
     } else {
       action()
@@ -146,8 +148,16 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
 
   import ConnectionActive.OnPacket
   def receive: Receive = {
-    case Subscribe(channel)                              => subscribeMediatorForNamespace { () => channels += channel }
-    case Unsubscribe(channel)                            => channels -= channel
+    case x @ Subscribe(channel) =>
+      val commander = sender()
+      subscribeMediatorForNamespace {
+        () =>
+          channels += channel
+          commander ! SubscribeAck(x)
+      }
+    case x @ Unsubscribe(channel) =>
+      channels -= channel
+      sender() ! UnsubscribeAck(x)
 
     case OnPacket(packet: ConnectPacket, connContext)    => channels foreach (_.onNext(OnConnect(packet.args, connContext)(packet)))
     case OnPacket(packet: DisconnectPacket, connContext) => channels foreach (_.onNext(OnDisconnect(connContext)(packet)))

@@ -78,7 +78,6 @@ trait SocketIOClientConnection extends Actor with ActorLogging {
       // this is the proper actor that could receive frame sent to it directly
       // @see WebSocketFrontend#receiverRef
       _connection = sender()
-      connection ! TextFrame(ConnectPacket().render)
 
     case TextFrame(payload) =>
       PacketParser(payload) match {

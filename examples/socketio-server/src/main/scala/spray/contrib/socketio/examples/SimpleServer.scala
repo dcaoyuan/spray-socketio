@@ -86,8 +86,8 @@ object SimpleServer extends App with MySslConfiguration {
   val namespaceExt = NamespaceExtension(system)
   implicit val resolver = namespaceExt.resolver
 
-  val observer = new Observer[OnData] {
-    override def onNext(value: OnData) {
+  val observer = new Observer[OnEvent] {
+    override def onNext(value: OnEvent) {
       value match {
         case event @ OnEvent("Hi!", args, context) =>
           println("observed: " + "Hi!" + ", " + args)
@@ -111,10 +111,8 @@ object SimpleServer extends App with MySslConfiguration {
   val channel = Subject[OnData]()
   // there is no channel.ofType method for RxScala, why?
   channel.flatMap {
-    case x: OnEvent      => Observable.items(x)
-    case x: OnConnect    => Observable.items(x)
-    case x: OnDisconnect => Observable.items(x)
-    case _               => Observable.empty
+    case x: OnEvent => Observable.items(x)
+    case _          => Observable.empty
   }.subscribe(observer)
 
   namespaceExt.startNamespace("testendpoint")

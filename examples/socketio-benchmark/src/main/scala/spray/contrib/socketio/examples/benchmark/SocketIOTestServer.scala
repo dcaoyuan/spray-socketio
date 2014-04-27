@@ -3,7 +3,6 @@ package spray.contrib.socketio.examples.benchmark
 import akka.io.IO
 import akka.actor.{ Terminated, ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import com.typesafe.config.ConfigFactory
-import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
 import scala.concurrent.duration._
@@ -13,7 +12,7 @@ import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.{ OnDisconnect, OnConnect, OnData, OnEvent }
+import spray.contrib.socketio.namespace.Namespace.{ OnData, OnEvent }
 import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.EventPacket
 
@@ -88,12 +87,7 @@ object SocketIOTestServer extends App {
 
   val channel = Subject[OnData]()
   // there is no channel.ofType method for RxScala, why?
-  channel.flatMap {
-    case x: OnEvent      => Observable.items(x)
-    case x: OnConnect    => Observable.items(x)
-    case x: OnDisconnect => Observable.items(x)
-    case _               => Observable.empty
-  }.subscribe(observer)
+  channel.subscribe(observer)
 
   NamespaceExtension(system).startNamespace("")
   NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)

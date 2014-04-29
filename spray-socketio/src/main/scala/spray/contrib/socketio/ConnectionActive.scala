@@ -5,7 +5,7 @@ import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, Subs
 import akka.pattern.ask
 import akka.event.LoggingAdapter
 import akka.util.ByteString
-import org.parboiled2.ParseError
+import org.parboiled.errors.ParsingException
 import scala.collection.immutable
 import scala.concurrent.Future
 import scala.util.Failure
@@ -193,9 +193,9 @@ trait ConnectionActive { _: Actor =>
 
   private def onPayload(payload: ByteString) {
     PacketParser(payload) match {
-      case Success(packets)        => packets foreach onPacket
-      case Failure(ex: ParseError) => log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
-      case Failure(ex)             => log.warning("Exception during parse socket.io packet: {} ..., due to: {}", payload.take(50).utf8String, ex)
+      case Success(packets)              => packets foreach onPacket
+      case Failure(ex: ParsingException) => log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
+      case Failure(ex)                   => log.warning("Exception during parse socket.io packet: {} ..., due to: {}", payload.take(50).utf8String, ex)
     }
   }
 

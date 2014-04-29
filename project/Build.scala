@@ -142,6 +142,7 @@ object Dependencies {
 
   val spray_websocket = "com.wandoulabs.akka" %% "spray-websocket" % "0.1.1-SNAPSHOT"
   val spray_can = "io.spray" % "spray-can" % SPRAY_VERSION
+  val spray_json = "io.spray" % "spray-json_2.10" % "1.2.6" 
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
   val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
   val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.5"
@@ -153,5 +154,5 @@ object Dependencies {
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
   val caliper = "com.google.caliper" % "caliper" % "0.5-rc1" % "test"
 
-  val all = Seq(spray_websocket, spray_can, akka_actor, akka_contrib, parboiled2, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math, caliper)
+  val all = Seq(spray_websocket, spray_can, spray_json, akka_actor, akka_contrib, parboiled, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math, caliper)
 }

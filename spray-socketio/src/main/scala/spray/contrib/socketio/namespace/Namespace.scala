@@ -7,7 +7,6 @@ import akka.actor.Props
 import akka.contrib.pattern.DistributedPubSubMediator
 import akka.pattern.ask
 import rx.lang.scala.Subject
-import scala.reflect.runtime.universe._
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionActive
 import spray.contrib.socketio.ConnectionContext

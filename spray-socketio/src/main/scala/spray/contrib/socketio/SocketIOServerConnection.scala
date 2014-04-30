@@ -52,7 +52,7 @@ import spray.http.HttpRequest
  * jcmd <pid> GC.run
  * ================================================================
  */
-trait SocketIOServerConnection extends Actor with ActorLogging {
+trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   import context.dispatcher
 
   def serverConnection: ActorRef

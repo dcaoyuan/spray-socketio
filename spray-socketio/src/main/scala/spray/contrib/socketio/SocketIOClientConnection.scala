@@ -30,7 +30,7 @@ object SocketIOClientConnection {
   final case class SendPacket(packet: Packet)
   final case class SendPacketWithAck(packet: DataPacket, ackAction: AckPostAction = _ => ())
 }
-trait SocketIOClientConnection extends Actor with ActorLogging {
+trait SocketIOClientConnection extends ActorLogging { _: Actor =>
   import SocketIOClientConnection._
 
   private var _connection: ActorRef = _

@@ -1,5 +1,6 @@
 package spray.contrib.socketio.examples.benchmark
 
+import akka.actor.Actor
 import akka.actor.ActorRef
 import akka.io.IO
 import spray.can.Http
@@ -31,7 +32,7 @@ object SocketIOTestClient {
   case class SendBroadcast(msg: String)
 }
 
-class SocketIOTestClient(connect: Http.Connect, commander: ActorRef) extends socketio.SocketIOClientConnection {
+class SocketIOTestClient(connect: Http.Connect, commander: ActorRef) extends Actor with socketio.SocketIOClientConnection {
   import SocketIOTestClient._
 
   val Id = nextId.toString

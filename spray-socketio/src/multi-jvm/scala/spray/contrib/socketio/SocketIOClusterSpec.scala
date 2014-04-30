@@ -136,7 +136,7 @@ object SocketIOClusterSpec {
 
   }
 
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case x: Frame =>
@@ -152,7 +152,7 @@ object SocketIOClusterSpec {
     case class SendBroadcast(msg: String)
   }
 
-  class SocketIOClient(connect: Http.Connect, commander: ActorRef) extends SocketIOClientConnection {
+  class SocketIOClient(connect: Http.Connect, commander: ActorRef) extends Actor with SocketIOClientConnection {
     import SocketIOClient._
 
     import context.system

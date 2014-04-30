@@ -58,7 +58,7 @@ object SocketIOTestServer extends App {
   object SocketIOWorker {
     def props(serverConnection: ActorRef, resolver: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, resolver)
   }
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerConnection {
 
     def genericLogic: Receive = {
       case x: Frame =>

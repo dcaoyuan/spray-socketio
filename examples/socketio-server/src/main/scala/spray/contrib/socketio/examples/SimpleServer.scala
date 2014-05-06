@@ -12,7 +12,7 @@ import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerConnection
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.{ OnConnect, OnDisconnect, OnData, OnEvent }
+import spray.contrib.socketio.namespace.Namespace.{ OnData, OnEvent }
 import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest

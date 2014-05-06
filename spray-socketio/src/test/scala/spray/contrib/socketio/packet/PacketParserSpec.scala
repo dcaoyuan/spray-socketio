@@ -35,7 +35,9 @@ class PacketParserSpec extends WordSpecLike with Matchers with BeforeAndAfterAll
     "parse HeartbeatPacket" should {
       "handle simple packet" in {
         assertResult(Success(Seq(HeartbeatPacket)))(PacketParser("2"))
+        assertResult(Success(Seq(HeartbeatPacket)))(PacketParser("2:"))
         assertResult(Success(Seq(HeartbeatPacket)))(PacketParser("2::"))
+        assertResult(Success(Seq(HeartbeatPacket)))(PacketParser("2:::"))
       }
     }
 

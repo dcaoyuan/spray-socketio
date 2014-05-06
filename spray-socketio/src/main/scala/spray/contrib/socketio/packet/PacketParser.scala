@@ -41,7 +41,7 @@ object PacketParser extends Parser {
   def Connect =
     rule { "1::" ~ { optional("/" ~ Endpoint) ~~> (_.getOrElse("")) } ~ { optional("?" ~ zeroOrMore(Query, "&")) ~~> (_.getOrElse(Nil)) } ~~> ConnectPacket }
   def Heartbeat =
-    rule { "2" ~ optional("::") ~ push(HeartbeatPacket) }
+    rule { "2" ~ zeroOrMore(":") ~ push(HeartbeatPacket) }
   def Message =
     rule { "3:" ~ GenericMessagePre ~ ":" ~ StrData ~~> MessagePacket }
   def JsonMessage =

@@ -52,6 +52,10 @@ class PacketParserSpec extends WordSpecLike with Matchers with BeforeAndAfterAll
         assertResult(Success(Seq(EventPacket(1, true, "", "tobi", "[]"))))(PacketParser("""5:1+::{"name":"tobi"}"""))
       }
 
+      "handle packet with sequence args" in {
+        assertResult(Success(Seq(EventPacket(-1, false, "", "edwald", Seq("""{"a": "b"}""", "2", "3")))))(PacketParser("""5:::{"name":"edwald","args":[{"a": "b"},2,3]}"""))
+      }
+
       "handle packet with args" in {
         assertResult(Success(Seq(EventPacket(-1, false, "", "edwald", """[{"a": "b"},2,"3"]"""))))(PacketParser("""5:::{"name":"edwald","args":[{"a": "b"},2,"3"]}"""))
       }

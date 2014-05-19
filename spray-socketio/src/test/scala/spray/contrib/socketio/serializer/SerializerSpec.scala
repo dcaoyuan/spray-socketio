@@ -127,6 +127,9 @@ akka {
 
         val obj2 = SendEvent(sessionId, "chat", "list", Right(List[String]("hello", "world")))
         test(obj2)
+
+        val obj3 = SendEvent(sessionId, "chat", "list", Right(List[String]("hello")))
+        test(obj3)
       }
 
       "SendPackets" in {

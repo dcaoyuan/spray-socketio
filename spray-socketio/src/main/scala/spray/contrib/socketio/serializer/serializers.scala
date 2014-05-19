@@ -410,8 +410,12 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     StringSerializer.appendToBuilder(builder, cmd.name)
 
     cmd.args match {
-      case Left(s)   => StringSerializer.appendToBuilder(builder, s)
-      case Right(ss) => ss.foreach(StringSerializer.appendToBuilder(builder, _))
+      case Left(s) =>
+        StringSerializer.appendToBuilder(builder, "l")
+        StringSerializer.appendToBuilder(builder, s)
+      case Right(ss) =>
+        StringSerializer.appendToBuilder(builder, "r")
+        ss.foreach(StringSerializer.appendToBuilder(builder, _))
     }
 
     builder.result.toArray
@@ -423,14 +427,16 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val sessionId = StringSerializer.fromByteIterator(data)
     val endpoint = StringSerializer.fromByteIterator(data)
     val name = StringSerializer.fromByteIterator(data)
+    val lr = StringSerializer.fromByteIterator(data)
 
     val ss = ListBuffer[String]()
     while (data.nonEmpty) {
       ss.append(StringSerializer.fromByteIterator(data))
     }
-    val args: Either[String, Seq[String]] = ss.toList match {
-      case (s: String) :: Nil => Left[String, Seq[String]](s)
-      case l                  => Right[String, Seq[String]](l.toSeq)
+    val args: Either[String, Seq[String]] = lr match {
+      case "l" if ss.nonEmpty => Left[String, Seq[String]](ss(0))
+      case "r"                => Right[String, Seq[String]](ss.toSeq)
+      case _                  => Left[String, Seq[String]]("[]")
     }
     SendEvent(sessionId, endpoint, name, args)
   }

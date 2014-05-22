@@ -59,6 +59,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   def resolver: ActorRef
   def sessionIdGenerator: HttpRequest => Future[String] = { req => Future(UUID.randomUUID.toString) } // default one
 
+  var connectionActiveClosed = false
   var closeTimeout: Option[Cancellable] = None
 
   // It seems socket.io client may fire heartbeat only when it received heartbeat
@@ -74,17 +75,23 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   def receive = handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate
 
-  override def postStop(): Unit = {
-    disableHeartbeat
-    disableHeartbeatTimeout
-    disableCloseTimeout
-    if (soConnContext.sessionId != null) {
+  def closeConnectionActive(): Unit = {
+    if (soConnContext.sessionId != null && !connectionActiveClosed) {
+      connectionActiveClosed = true
       resolver ! ConnectionActive.Closing(soConnContext.sessionId)
     }
   }
 
+  override def postStop(): Unit = {
+    disableHeartbeat
+    disableHeartbeatTimeout
+    disableCloseTimeout
+    closeConnectionActive
+  }
+
   def handleTerminate: Receive = {
     case x: Http.ConnectionClosed =>
+      closeConnectionActive
       context.stop(self)
       log.debug("{}: http connection stopped due to {}.", serverConnection.path, x)
   }
@@ -169,13 +176,14 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   // --- close timeout
 
   def enableCloseTimeout() {
-    log.debug("{}: close timeout, will close in {} seconds", self.path, socketio.Settings.CloseTimeout)
+    log.warning("{}: close timeout, will close in {} seconds", self.path, socketio.Settings.CloseTimeout)
     closeTimeout foreach (_.cancel)
     if (context != null) {
       closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
         log.warning("{}: stoped due to close timeout", self.path)
         disableHeartbeat()
-        self ! PoisonPill
+        closeConnectionActive
+        context.stop(self)
       })
     }
   }

@@ -92,7 +92,7 @@ akka {
       }
 
       "Closing" in {
-        val obj = Closing(sessionId)
+        val obj = Closing(sessionId, self)
         test(obj)
       }
 

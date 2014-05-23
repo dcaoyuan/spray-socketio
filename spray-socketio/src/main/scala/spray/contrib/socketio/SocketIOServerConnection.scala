@@ -78,7 +78,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   def closeConnectionActive(): Unit = {
     if (soConnContext.sessionId != null && !connectionActiveClosed) {
       connectionActiveClosed = true
-      resolver ! ConnectionActive.Closing(soConnContext.sessionId)
+      resolver ! ConnectionActive.Closing(soConnContext.sessionId, soConnContext.serverConnection)
     }
   }
 

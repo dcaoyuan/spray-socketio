@@ -310,9 +310,23 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     Connecting(sessionId, query, origins, ref, transport)
   }
 
-  final def fromClosing(cmd: Closing) = cmd.sessionId.getBytes
+  final def fromClosing(cmd: Closing) = {
+    val builder = ByteString.newBuilder
 
-  final def toClosing(bytes: Array[Byte]) = Closing(new String(bytes))
+    StringSerializer.appendToBuilder(builder, cmd.sessionId)
+    StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(cmd.transportConnection))
+
+    builder.result.toArray
+  }
+
+  final def toClosing(bytes: Array[Byte]) = {
+    val data = ByteString(bytes).iterator
+
+    val sessionId = StringSerializer.fromByteIterator(data)
+    val ref = system.actorFor(StringSerializer.fromByteIterator(data))
+
+    Closing(sessionId, ref)
+  }
 
   final def fromOnGet(cmd: OnGet) = {
     val builder = ByteString.newBuilder

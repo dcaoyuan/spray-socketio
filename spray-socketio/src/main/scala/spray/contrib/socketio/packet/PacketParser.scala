@@ -37,7 +37,7 @@ object PacketParser extends Parser {
   }
 
   def Disconnect =
-    rule { "0" ~ { optional("::/" ~ Endpoint) ~~> (_.getOrElse("")) } ~~> DisconnectPacket }
+    rule { "0" ~ { optional("::" ~ optional("/" ~ Endpoint) ~~> (_.getOrElse(""))) ~~> (_.getOrElse("")) } ~~> DisconnectPacket }
   def Connect =
     rule { "1::" ~ { optional("/" ~ Endpoint) ~~> (_.getOrElse("")) } ~ { optional("?" ~ zeroOrMore(Query, "&")) ~~> (_.getOrElse(Nil)) } ~~> ConnectPacket }
   def Heartbeat =

@@ -13,6 +13,10 @@ class PacketParserSpec extends WordSpecLike with Matchers with BeforeAndAfterAll
         assertResult(Success(Seq(DisconnectPacket())))(PacketParser("0"))
       }
 
+      "handle packet with commons" in {
+        assertResult(Success(Seq(DisconnectPacket())))(PacketParser("0::"))
+      }
+
       "handle packet with endpoint" in {
         assertResult(Success(Seq(DisconnectPacket("endpoint"))))(PacketParser("0::/endpoint"))
       }

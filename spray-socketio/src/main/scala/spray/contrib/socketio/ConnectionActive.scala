@@ -42,7 +42,7 @@ object ConnectionActive {
 
   final case class CreateSession(sessionId: String) extends Command
   final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command
-  final case class Closing(sessionId: String) extends Command
+  final case class Closing(sessionId: String, transportConnection: ActorRef) extends Command
 
   // called by connection
   final case class OnGet(sessionId: String, transportConnection: ActorRef) extends Command
@@ -158,12 +158,14 @@ trait ConnectionActive { _: Actor =>
           processConnectingEvent(ConnectingEvent(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
-    case Closing(_) =>
-      if (!disconnected) { //make sure only send disconnect packet one time
-        disconnected = true
-        onPacket(disconnectPacket)
+    case Closing(_, transportConn) =>
+      if (transportConnection == transportConn) {
+        if (!disconnected) { //make sure only send disconnect packet one time
+          disconnected = true
+          onPacket(disconnectPacket)
+        }
+        close
       }
-      close
 
     case OnFrame(sessionId, payload)                     => onFrame(payload)
     case OnGet(sessionId, transportConnection)           => onGet(transportConnection)

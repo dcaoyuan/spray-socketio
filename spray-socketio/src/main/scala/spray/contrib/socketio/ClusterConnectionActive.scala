@@ -6,7 +6,7 @@ import akka.persistence.PersistenceFailure
 import akka.contrib.pattern.ShardRegion.Passivate
 
 object ClusterConnectionActive {
-  def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef) = Props(classOf[ClusterConnectionActive], namespaceMediator, broadcastMediator)
+  def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef, enableConnPersistence: Boolean) = Props(classOf[ClusterConnectionActive], namespaceMediator, broadcastMediator, enableConnPersistence)
 }
 
 /**
@@ -15,7 +15,7 @@ object ClusterConnectionActive {
  * @param namespaceMediator mediator for namespace nodes out of the cluster
  * @param broadcastMediator mediator for broadcast msg in the endpoint/room
  */
-class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
+class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef, val enableConnPersistence: Boolean) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
 
   def receiveRecover: Receive = {
@@ -27,15 +27,27 @@ class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMedi
   }
 
   override def processConnectingEvent(conn: ConnectingEvent) {
-    persist(conn)(super.processConnectingEvent(_))
+    if (enableConnPersistence) {
+      persist(conn)(super.processConnectingEvent(_))
+    } else {
+      super.processConnectingEvent(conn)
+    }
   }
 
   override def processSubscribeBroadcastEvent(evt: SubscribeBroadcastEvent) {
-    persist(evt)(super.processSubscribeBroadcastEvent(_))
+    if (enableConnPersistence) {
+      persist(evt)(super.processSubscribeBroadcastEvent(_))
+    } else {
+      super.processSubscribeBroadcastEvent(evt)
+    }
   }
 
   override def processUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcastEvent) {
-    persist(evt)(super.processUnsubscribeBroadcastEvent(_))
+    if (enableConnPersistence) {
+      persist(evt)(super.processUnsubscribeBroadcastEvent(_))
+    } else {
+      super.processUnsubscribeBroadcastEvent(evt)
+    }
   }
 
   override def close() {

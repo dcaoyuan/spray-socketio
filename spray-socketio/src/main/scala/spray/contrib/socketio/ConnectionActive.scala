@@ -147,7 +147,7 @@ trait ConnectionActive { _: Actor =>
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
     case conn @ Connecting(sessionId, query, origins, transportConn, transport) =>
-      log.debug("Connecting request: {}", sessionId)
+      log.info("Connecting request: {}, {}", sessionId, connectionContext)
 
       connectionContext match {
         case Some(existed) =>

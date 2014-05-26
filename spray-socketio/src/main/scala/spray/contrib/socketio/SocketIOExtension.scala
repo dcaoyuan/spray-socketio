@@ -35,6 +35,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
     val ConnRole: String = "connectionActive"
+    val enableConnPersistence: Boolean = config.getBoolean("server.enable-connectionactive-persistence")
   }
 
   import Settings._
@@ -73,7 +74,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     ClusterReceptionistExtension(system)
     ClusterSharding(system).start(
       typeName = SocketIOExtension.shardName,
-      entryProps = Some(ClusterConnectionActive.props(namespaceMediator, broadcastMediator)),
+      entryProps = Some(ClusterConnectionActive.props(namespaceMediator, broadcastMediator, enableConnPersistence)),
       idExtractor = SocketIOExtension.idExtractor,
       shardResolver = SocketIOExtension.shardResolver)
     ClusterReceptionistExtension(system).registerService(

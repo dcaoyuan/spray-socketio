@@ -152,6 +152,11 @@ akka {
         test(obj)
       }
 
+      "GetStatus" in {
+        val obj = GetStatus(sessionId)
+        test(obj)
+      }
+
       "Broadcast" in {
         val obj = Broadcast(sessionId, "room1", packet)
         test(obj)

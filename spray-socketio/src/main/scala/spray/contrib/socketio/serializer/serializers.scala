@@ -243,6 +243,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     classOf[SendAck] -> (bytes => toSendAck(bytes)),
     classOf[SubscribeBroadcast] -> (bytes => toSubscribeBroadcast(bytes)),
     classOf[UnsubscribeBroadcast] -> (bytes => toUnsubscribeBroadcast(bytes)),
+    classOf[GetStatus] -> (bytes => toGetStatus(bytes)),
     classOf[Broadcast] -> (bytes => toBroadcast(bytes)))
 
   final def toBinary(o: AnyRef): Array[Byte] = {
@@ -260,6 +261,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
       case cmd: SendAck              => fromSendAck(cmd)
       case cmd: SubscribeBroadcast   => fromSubscribeBroadcast(cmd)
       case cmd: UnsubscribeBroadcast => fromUnsubscribeBroadcast(cmd)
+      case cmd: GetStatus            => fromGetStatus(cmd)
       case cmd: Broadcast            => fromBroadcast(cmd)
     }
   }
@@ -526,6 +528,18 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
 
     UnsubscribeBroadcast(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
 
+  }
+
+  final def fromGetStatus(cmd: GetStatus) = {
+    val builder = ByteString.newBuilder
+    StringSerializer.appendToBuilder(builder, cmd.sessionId)
+    builder.result.toArray
+  }
+
+  final def toGetStatus(bytes: Array[Byte]) = {
+    val data = ByteString(bytes).iterator
+    val sessionId = StringSerializer.fromByteIterator(data)
+    GetStatus(sessionId)
   }
 
   final def fromBroadcast(cmd: Broadcast) = {

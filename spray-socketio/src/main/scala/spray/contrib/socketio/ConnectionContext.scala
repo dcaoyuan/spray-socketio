@@ -34,4 +34,6 @@ class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins
       case _ => false
     }
   }
+
+  override def toString(): String = sessionId + " " + query + " " + origins
 }

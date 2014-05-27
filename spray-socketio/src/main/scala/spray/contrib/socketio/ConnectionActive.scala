@@ -65,6 +65,10 @@ object ConnectionActive {
    */
   final case class Broadcast(sessionId: String, room: String, packet: Packet) extends Command
 
+  final case class GetStatus(sessionId: String) extends Command
+
+  final case class Status(connectionTime: Long, transportConnection: ActorRef, connectionContext: Option[ConnectionContext]) extends Serializable
+
   /**
    * Broadcast event to be published or recevived
    */
@@ -147,7 +151,7 @@ trait ConnectionActive { _: Actor =>
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
     case conn @ Connecting(sessionId, query, origins, transportConn, transport) =>
-      log.info("Connecting request: {}, {}", sessionId, connectionContext)
+      log.info("Connecting: {}, {}", sessionId, connectionContext)
 
       connectionContext match {
         case Some(existed) =>
@@ -158,7 +162,8 @@ trait ConnectionActive { _: Actor =>
           processConnectingEvent(ConnectingEvent(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
-    case Closing(_, transportConn) =>
+    case Closing(sessionId, transportConn) =>
+      log.info("Closing: {}, {}", sessionId, connectionContext)
       if (transportConnection == transportConn) {
         if (!disconnected) { //make sure only send disconnect packet one time
           disconnected = true
@@ -189,6 +194,9 @@ trait ConnectionActive { _: Actor =>
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
+
+    case GetStatus(sessionId) =>
+      sender() ! Status(System.currentTimeMillis - startTime, transportConnection, connectionContext)
   }
 
   // --- reacts

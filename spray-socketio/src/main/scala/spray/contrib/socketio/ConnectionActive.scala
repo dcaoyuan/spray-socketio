@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef }
+import akka.actor.{ PoisonPill, Actor, ActorRef, Terminated }
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
 import akka.pattern.ask
 import akka.event.LoggingAdapter
@@ -166,7 +166,15 @@ trait ConnectionActive { _: Actor =>
       log.info("Closing: {}, {}", sessionId, connectionContext)
       if (transportConnection == transportConn) {
         if (!disconnected) { //make sure only send disconnect packet one time
-          disconnected = true
+          onPacket(disconnectPacket)
+        }
+        close
+      }
+
+    case Terminated(ref) =>
+      log.info("Terminated: {}, {}", connectionContext, ref)
+      if (transportConnection == ref) {
+        if (!disconnected) {
           onPacket(disconnectPacket)
         }
         close
@@ -215,6 +223,10 @@ trait ConnectionActive { _: Actor =>
 
       case ConnectPacket(endpoint, args) =>
         connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        if (connectionContext.exists(_.transport == transport.WebSocket)) {
+          context watch transportConnection
+        }
+        disconnected = false
         val topic = socketio.topicForBroadcast(endpoint, "")
         topics += topic
         subscribeBroadcast(topic).onComplete {
@@ -230,6 +242,9 @@ trait ConnectionActive { _: Actor =>
         topics -= topic
         if (endpoint == "") {
           connectionContext foreach { ctx => publishDisconnect(ctx) }
+          if (transportConnection != null) {
+            context unwatch transportConnection
+          }
           disconnected = true
           topics foreach unsubscribeBroadcast
           topics = Set()

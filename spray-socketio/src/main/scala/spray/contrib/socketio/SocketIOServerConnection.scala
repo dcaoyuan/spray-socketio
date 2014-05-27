@@ -71,7 +71,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   val heartbeatFrameCommand = FrameCommand(TextFrame(HeartbeatPacket.render))
 
-  implicit val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, resolver, log, context.dispatcher)
+  implicit lazy val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, resolver, log, context.dispatcher)
 
   def receive = handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate
 

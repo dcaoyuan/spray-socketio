@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef }
+import akka.actor.{ PoisonPill, Actor, ActorRef, Terminated }
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
 import akka.pattern.ask
 import akka.event.LoggingAdapter
@@ -64,6 +64,10 @@ object ConnectionActive {
    * ask me to publish an OnBroadcast data
    */
   final case class Broadcast(sessionId: String, room: String, packet: Packet) extends Command
+
+  final case class GetStatus(sessionId: String) extends Command
+
+  final case class Status(connectionTime: Long, transportConnection: ActorRef, connectionContext: Option[ConnectionContext]) extends Serializable
 
   /**
    * Broadcast event to be published or recevived
@@ -147,7 +151,7 @@ trait ConnectionActive { _: Actor =>
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
     case conn @ Connecting(sessionId, query, origins, transportConn, transport) =>
-      log.info("Connecting request: {}, {}", sessionId, connectionContext)
+      log.info("Connecting: {}, {}", sessionId, connectionContext)
 
       connectionContext match {
         case Some(existed) =>
@@ -158,10 +162,19 @@ trait ConnectionActive { _: Actor =>
           processConnectingEvent(ConnectingEvent(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
       }
 
-    case Closing(_, transportConn) =>
+    case Closing(sessionId, transportConn) =>
+      log.info("Closing: {}, {}", sessionId, connectionContext)
       if (transportConnection == transportConn) {
         if (!disconnected) { //make sure only send disconnect packet one time
-          disconnected = true
+          onPacket(disconnectPacket)
+        }
+        close
+      }
+
+    case Terminated(ref) =>
+      log.info("Terminated: {}, {}", connectionContext, ref)
+      if (transportConnection == ref) {
+        if (!disconnected) {
           onPacket(disconnectPacket)
         }
         close
@@ -189,6 +202,9 @@ trait ConnectionActive { _: Actor =>
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
+
+    case GetStatus(sessionId) =>
+      sender() ! Status(System.currentTimeMillis - startTime, transportConnection, connectionContext)
   }
 
   // --- reacts
@@ -207,6 +223,10 @@ trait ConnectionActive { _: Actor =>
 
       case ConnectPacket(endpoint, args) =>
         connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        if (connectionContext.exists(_.transport == transport.WebSocket)) {
+          context watch transportConnection
+        }
+        disconnected = false
         val topic = socketio.topicForBroadcast(endpoint, "")
         topics += topic
         subscribeBroadcast(topic).onComplete {
@@ -222,6 +242,9 @@ trait ConnectionActive { _: Actor =>
         topics -= topic
         if (endpoint == "") {
           connectionContext foreach { ctx => publishDisconnect(ctx) }
+          if (transportConnection != null) {
+            context unwatch transportConnection
+          }
           disconnected = true
           topics foreach unsubscribeBroadcast
           topics = Set()

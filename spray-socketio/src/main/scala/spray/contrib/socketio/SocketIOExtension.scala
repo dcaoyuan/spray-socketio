@@ -42,8 +42,6 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
 
-  lazy val localResolver = system.actorOf(LocalConnectionActiveResolver.props(localMediator), name = SocketIOExtension.shardName)
-
   /**
    * Need to start immediately to accept broadcast etc.
    */
@@ -70,11 +68,17 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     }
   } else localMediator
 
+  lazy val connectionActiveProps: Props = if (enableConnPersistence) {
+    PersistentConnectionActive.props(namespaceMediator, broadcastMediator)
+  } else {
+    TransientConnectionActive.props(namespaceMediator, broadcastMediator)
+  }
+
   if (isCluster) {
     ClusterReceptionistExtension(system)
     ClusterSharding(system).start(
       typeName = SocketIOExtension.shardName,
-      entryProps = Some(ClusterConnectionActive.props(namespaceMediator, broadcastMediator, enableConnPersistence)),
+      entryProps = Some(connectionActiveProps),
       idExtractor = SocketIOExtension.idExtractor,
       shardResolver = SocketIOExtension.shardResolver)
     ClusterReceptionistExtension(system).registerService(
@@ -83,6 +87,8 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   lazy val resolver = if (isCluster) {
     ClusterSharding(system).shardRegion(SocketIOExtension.shardName)
-  } else localResolver
+  } else {
+    system.actorOf(LocalConnectionActiveResolver.props(localMediator, connectionActiveProps), name = SocketIOExtension.shardName)
+  }
 
 }

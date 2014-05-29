@@ -1,8 +1,7 @@
 package spray.contrib.socketio
 
 import akka.actor._
-import akka.persistence.EventsourcedProcessor
-import akka.persistence.PersistenceFailure
+import akka.persistence.{Recover, EventsourcedProcessor, PersistenceFailure}
 import akka.contrib.pattern.ShardRegion.Passivate
 
 object ClusterConnectionActive {
@@ -17,6 +16,12 @@ object ClusterConnectionActive {
  */
 class ClusterConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef, val enableConnPersistence: Boolean) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
   import ConnectionActive._
+
+  override def preStart(): Unit = {
+    if (enableConnPersistence) {
+      self ! Recover()
+    }
+  }
 
   def receiveRecover: Receive = {
     case event: Event => update(event)

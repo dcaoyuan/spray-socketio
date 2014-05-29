@@ -63,7 +63,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   lazy val resolver = if (isCluster) {
     system.actorOf(ClusterConnectionActiveResolverProxy.props(s"/user/${shardingName}/${SocketIOExtension.shardName}", client))
   } else {
-    SocketIOExtension(system).localResolver
+    SocketIOExtension(system).resolver
   }
 
   def startNamespace(endpoint: String) {

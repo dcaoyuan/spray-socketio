@@ -179,5 +179,10 @@ akka {
         test(obj)
       }
     }
+
+    "handle Status" in {
+      val obj = Status(sessionId, 10000L, self.path.toSerializationFormat)
+      test(obj)
+    }
   }
 }

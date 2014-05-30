@@ -659,3 +659,35 @@ class EventSerializer(val system: ExtendedActorSystem) extends Serializer {
 
   }
 }
+
+class StatusSerializer extends Serializer {
+  implicit val byteOrder = ByteOrder.BIG_ENDIAN
+
+  final def includeManifest: Boolean = false
+
+  final def identifier: Int = 2006
+
+  final def toBinary(o: AnyRef): Array[Byte] = {
+    o match {
+      case Status(sessionId, connectionTime, location) =>
+        val builder = ByteString.newBuilder
+
+        StringSerializer.appendToBuilder(builder, sessionId)
+        builder.putLong(connectionTime)
+        StringSerializer.appendToBuilder(builder, location)
+
+        builder.result.toArray
+      case _ => Array[Byte]()
+    }
+  }
+
+  final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
+    val data = ByteString(bytes).iterator
+
+    val sessionId = StringSerializer.fromByteIterator(data)
+    val connectionTime = data.getLong
+    val location = StringSerializer.fromByteIterator(data)
+
+    Status(sessionId, connectionTime, location)
+  }
+}

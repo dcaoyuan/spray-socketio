@@ -33,6 +33,7 @@ akka {
       connctx = "spray.contrib.socketio.serializer.ConnectionContextSerializer"
       onpacket = "spray.contrib.socketio.serializer.OnPacketSerializer"
       onbroadcast = "spray.contrib.socketio.serializer.OnBroadcastSerializer"
+      status = "spray.contrib.socketio.serializer.StatusSerializer"
     }
     serialization-bindings {
       "spray.can.websocket.frame.Frame" = frame
@@ -42,6 +43,7 @@ akka {
       "spray.contrib.socketio.ConnectionContext" = connctx
       "spray.contrib.socketio.ConnectionActive$OnPacket" = onpacket
       "spray.contrib.socketio.ConnectionActive$OnBroadcast" = onbroadcast
+      "spray.contrib.socketio.ConnectionActive$Status" = status
     }
   }
 }
@@ -176,6 +178,17 @@ akka {
 
       "UnsubscribeBroadcastEvent" in {
         val obj = UnsubscribeBroadcastEvent(sessionId, "chat", "room1")
+        test(obj)
+      }
+    }
+
+    "handle Status" when {
+      "has sessionId" in {
+        val obj = Status(sessionId, 10000L, self.path.toSerializationFormat)
+        test(obj)
+      }
+      "null sessionId" in {
+        val obj = Status(null, 10000L, null)
         test(obj)
       }
     }

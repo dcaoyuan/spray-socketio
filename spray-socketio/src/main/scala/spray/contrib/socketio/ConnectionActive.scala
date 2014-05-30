@@ -67,7 +67,7 @@ object ConnectionActive {
 
   final case class GetStatus(sessionId: String) extends Command
 
-  final case class Status(connectionTime: Long, transportConnection: ActorRef, connectionContext: Option[ConnectionContext]) extends Serializable
+  final case class Status(sessionId: String, connectionTime: Long, location: String) extends Serializable
 
   /**
    * Broadcast event to be published or recevived
@@ -204,7 +204,9 @@ trait ConnectionActive { _: Actor =>
       sender() ! System.currentTimeMillis - startTime
 
     case GetStatus(sessionId) =>
-      sender() ! Status(System.currentTimeMillis - startTime, transportConnection, connectionContext)
+      val sessionId = if (connectionContext.nonEmpty) connectionContext.get.sessionId else null
+      val location = if (transportConnection != null && transportConnection.path != null) transportConnection.path.toSerializationFormat else null
+      sender() ! Status(sessionId, System.currentTimeMillis - startTime, location)
   }
 
   // --- reacts

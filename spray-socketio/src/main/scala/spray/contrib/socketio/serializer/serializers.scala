@@ -23,15 +23,24 @@ object StringSerializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN
 
   def appendToBuilder(builder: ByteStringBuilder, str: String) {
-    val bytes = str.getBytes
-    builder.putInt(bytes.length)
-    builder.putBytes(bytes)
+    if (str != null) {
+      val bytes = str.getBytes
+      builder.putInt(bytes.length)
+      builder.putBytes(bytes)
+    } else {
+      builder.putInt(-1)
+    }
   }
 
-  def fromByteIterator(data: ByteIterator) = {
-    val str = Array.ofDim[Byte](data.getInt)
-    data.getBytes(str)
-    new String(str)
+  def fromByteIterator(data: ByteIterator): String = {
+    val len = data.getInt
+    if (len >= 0) {
+      val str = Array.ofDim[Byte](len)
+      data.getBytes(str)
+      new String(str)
+    } else {
+      null
+    }
   }
 }
 
@@ -657,5 +666,37 @@ class EventSerializer(val system: ExtendedActorSystem) extends Serializer {
 
     UnsubscribeBroadcastEvent(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
 
+  }
+}
+
+class StatusSerializer extends Serializer {
+  implicit val byteOrder = ByteOrder.BIG_ENDIAN
+
+  final def includeManifest: Boolean = false
+
+  final def identifier: Int = 2006
+
+  final def toBinary(o: AnyRef): Array[Byte] = {
+    o match {
+      case Status(sessionId, connectionTime, location) =>
+        val builder = ByteString.newBuilder
+
+        StringSerializer.appendToBuilder(builder, sessionId)
+        builder.putLong(connectionTime)
+        StringSerializer.appendToBuilder(builder, location)
+
+        builder.result.toArray
+      case _ => Array[Byte]()
+    }
+  }
+
+  final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
+    val data = ByteString(bytes).iterator
+
+    val sessionId = StringSerializer.fromByteIterator(data)
+    val connectionTime = data.getLong
+    val location = StringSerializer.fromByteIterator(data)
+
+    Status(sessionId, connectionTime, location)
   }
 }

@@ -67,9 +67,9 @@ object SocketIOTestServer extends App {
 
   implicit val system = ActorSystem()
   SocketIOExtension(system)
-  implicit val resolver = NamespaceExtension(system).resolver
 
   val observer = new Observer[OnData] with Serializable {
+    implicit val resolverForNamescape = NamespaceExtension(system).resolver
     override def onNext(value: OnData) {
       value match {
         case OnEvent("chat", args, context) =>
@@ -92,7 +92,8 @@ object SocketIOTestServer extends App {
   NamespaceExtension(system).startNamespace("")
   NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
 
-  val server = system.actorOf(SocketIOServer.props(resolver), name = "socketio-server")
+  val resolverForTransport = SocketIOExtension(system).resolver
+  val server = system.actorOf(SocketIOServer.props(resolverForTransport), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val host = config.getString("server.host")

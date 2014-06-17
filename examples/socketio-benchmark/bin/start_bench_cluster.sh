@@ -25,7 +25,7 @@ cluster_hostname=127.0.0.1
 case $arg in
     tran*)   cluster_module="transport"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
     conn*)   cluster_module="connectionActive"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
-    busi*)   cluster_module="business"; akka_args="-Dspray.socketio.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}/user/receptionist";;
+    busi*)   cluster_module="business"; akka_args="-Dspray.socketio.cluster.client-initial-contacts.0=akka.tcp://ClusterSystem@${cluster_seed}/user/receptionist";;
     *) usage
 esac
 

@@ -88,7 +88,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """
         akka.cluster.roles = ["business"]
         spray.socketio {
-            seed-nodes = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
+            cluster.client-initial-contacts = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
             server.namespace-group-name = "group1"
         }
       """)
@@ -100,7 +100,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """
         akka.cluster.roles = ["business"]
         spray.socketio {
-            seed-nodes = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
+            cluster.client-initial-contacts = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
             server.namespace-group-name = "group2"
         }
       """)

@@ -118,9 +118,11 @@ object ConnectionActive {
      * @Note only one will be created no matter how many ActorSystems, actually
      * one ActorSystem per application usaully.
      */
-    def clusterClient(initialContacts: Set[ActorSelection]): ActorRef = {
+    def clusterClient: ActorRef = {
       if (_clusterClient eq null) {
-        _clusterClient = system.actorOf(ClusterClient.props(initialContacts), "socketio-cluster-connactive-client")
+        import scala.collection.JavaConversions._
+        val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
+        _clusterClient = system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-connactive-client")
       }
       _clusterClient
     }
@@ -404,9 +406,9 @@ object ConnectionActiveClusterClient {
   /**
    * Proxied cluster client
    */
-  def apply(system: ActorSystem, initialContacts: Set[ActorSelection]) = {
+  def apply(system: ActorSystem) = {
     if (_client eq null) {
-      val originalClient = ConnectionActive(system).clusterClient(initialContacts)
+      val originalClient = ConnectionActive(system).clusterClient
       val shardingName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
       _client = system.actorOf(props(s"/user/${shardingName}/${ConnectionActive.shardName}", originalClient))
     }

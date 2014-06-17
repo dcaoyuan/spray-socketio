@@ -15,7 +15,6 @@ import akka.pattern.ask
 import akka.contrib.pattern.DistributedPubSubMediator.Publish
 import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
 import akka.contrib.pattern.DistributedPubSubMediator.Unsubscribe
-import akka.japi.Util.immutableSeq
 import scala.collection.concurrent.TrieMap
 import scala.collection.immutable
 import scala.concurrent.Await
@@ -36,10 +35,8 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
    * INTERNAL API
    */
   private[socketio] object Settings {
-    val shardingName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
-    val seedNodes: Set[String] = immutableSeq(config.getStringList("seed-nodes")).toSet
     val namespaceGroup = config.getString("server.namespace-group-name")
   }
 
@@ -50,7 +47,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   private lazy val guardian = system.actorOf(NamesapceGuardian.props, "socketio-guardian")
 
   private lazy val client = if (isCluster) {
-    ConnectionActive(system).clusterClient(seedNodes map (system.actorSelection))
+    ConnectionActive(system).clusterClient
   } else {
     ActorRef.noSender
   }
@@ -62,7 +59,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   }
 
   lazy val resolver = if (isCluster) {
-    socketio.ConnectionActiveClusterClient(system, seedNodes map (system.actorSelection))
+    socketio.ConnectionActiveClusterClient(system)
   } else {
     SocketIOExtension(system).resolver
   }

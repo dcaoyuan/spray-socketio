@@ -1,9 +1,12 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef, Terminated }
+import akka.actor.{ PoisonPill, Actor, ActorRef, Terminated, ActorSystem, Props }
+import akka.contrib.pattern.ClusterSharding
+import akka.contrib.pattern.ShardRegion
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
-import akka.pattern.ask
 import akka.event.LoggingAdapter
+import akka.pattern.ask
+import akka.routing.ConsistentHashingRouter.ConsistentHashable
 import akka.util.ByteString
 import org.parboiled.errors.ParsingException
 import scala.collection.immutable
@@ -24,7 +27,6 @@ import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
-import akka.routing.ConsistentHashingRouter.ConsistentHashable
 
 object ConnectionActive {
 
@@ -79,6 +81,24 @@ object ConnectionActive {
    */
   final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext) extends ConsistentHashable {
     override def consistentHashKey: Any = connContext.sessionId
+  }
+
+  val shardName: String = "ConnectionActives"
+
+  val idExtractor: ShardRegion.IdExtractor = {
+    case cmd: Command => (cmd.sessionId, cmd)
+  }
+
+  val shardResolver: ShardRegion.ShardResolver = {
+    case cmd: Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
+  }
+
+  def startShard(system: ActorSystem, connectionActiveProps: Props) {
+    ClusterSharding(system).start(
+      typeName = ConnectionActive.shardName,
+      entryProps = Some(connectionActiveProps),
+      idExtractor = ConnectionActive.idExtractor,
+      shardResolver = ConnectionActive.shardResolver)
   }
 }
 

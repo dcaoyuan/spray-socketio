@@ -13,18 +13,9 @@ object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionId
 
   override def createExtension(system: ExtendedActorSystem): SocketIOExtension = new SocketIOExtension(system)
 
-  val shardName: String = "connectionActives"
-
   val mediatorName: String = "socketioMediator"
   val mediatorSingleton: String = "active"
 
-  lazy val idExtractor: ShardRegion.IdExtractor = {
-    case cmd: ConnectionActive.Command => (cmd.sessionId, cmd)
-  }
-
-  lazy val shardResolver: ShardRegion.ShardResolver = {
-    case cmd: ConnectionActive.Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
-  }
 }
 
 class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
@@ -76,19 +67,15 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   if (isCluster) {
     ClusterReceptionistExtension(system)
-    ClusterSharding(system).start(
-      typeName = SocketIOExtension.shardName,
-      entryProps = Some(connectionActiveProps),
-      idExtractor = SocketIOExtension.idExtractor,
-      shardResolver = SocketIOExtension.shardResolver)
+    ConnectionActive.startShard(system, connectionActiveProps)
     ClusterReceptionistExtension(system).registerService(
-      ClusterSharding(system).shardRegion(SocketIOExtension.shardName))
+      ClusterSharding(system).shardRegion(ConnectionActive.shardName))
   }
 
   lazy val resolver = if (isCluster) {
-    ClusterSharding(system).shardRegion(SocketIOExtension.shardName)
+    ClusterSharding(system).shardRegion(ConnectionActive.shardName)
   } else {
-    system.actorOf(LocalConnectionActiveResolver.props(localMediator, connectionActiveProps), name = SocketIOExtension.shardName)
+    system.actorOf(LocalConnectionActiveResolver.props(localMediator, connectionActiveProps), name = ConnectionActive.shardName)
   }
 
 }

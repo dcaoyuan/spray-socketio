@@ -66,10 +66,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   }
 
   if (isCluster) {
-    ClusterReceptionistExtension(system)
     ConnectionActive.startShard(system, connectionActiveProps)
-    ClusterReceptionistExtension(system).registerService(
-      ClusterSharding(system).shardRegion(ConnectionActive.shardName))
   }
 
   lazy val resolver = if (isCluster) {

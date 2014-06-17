@@ -17,15 +17,15 @@ dir_conf=../conf
 benchserver_class_pgm=spray.contrib.socketio.examples.benchmark.SocketIOTestClusterServer
 benchserver_id_pgm=bench${cluster_module}
 benchserver_lock_file=.lock_bench${cluster_module}
-benchserver_conf=../conf/benchmark.conf
+benchserver_conf=../conf/benchmark_cluster.conf
 logback_conf=../conf/logback.xml
 cluster_seed=127.0.0.1:2551
 cluster_hostname=127.0.0.1
 
 case $arg in
     tran*)   cluster_module="transport"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
-    conn*) cluster_module="connectionActive"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
-    busi*)    cluster_module="business"; akka_args="-Dspray.socketio.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}/user/receptionist";;
+    conn*)   cluster_module="connectionActive"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
+    busi*)   cluster_module="business"; akka_args="-Dspray.socketio.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}/user/receptionist";;
     *) usage
 esac
 

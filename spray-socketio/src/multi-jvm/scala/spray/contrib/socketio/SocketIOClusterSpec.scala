@@ -56,6 +56,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
   commonConfig(ConfigFactory.parseString("""
     akka.loglevel = INFO
     akka.actor.provider = "akka.cluster.ClusterActorRefProvider"
+    akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
     akka.persistence.journal.plugin = "akka.persistence.journal.leveldb-shared"
     akka.persistence.journal.leveldb-shared.store {
       native = off

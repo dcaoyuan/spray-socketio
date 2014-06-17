@@ -1,6 +1,7 @@
 package spray.contrib.socketio
 
 import akka.actor.{ PoisonPill, Actor, ActorRef, Terminated, ActorSystem, Props }
+import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
 import akka.contrib.pattern.ShardRegion
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
@@ -93,12 +94,19 @@ object ConnectionActive {
     case cmd: Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
   }
 
+  /**
+   * It is recommended to load the ClusterReceptionistExtension when the actor
+   * system is started by defining it in the akka.extensions configuration property:
+   *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
+   */
   def startShard(system: ActorSystem, connectionActiveProps: Props) {
     ClusterSharding(system).start(
       typeName = ConnectionActive.shardName,
       entryProps = Some(connectionActiveProps),
       idExtractor = ConnectionActive.idExtractor,
       shardResolver = ConnectionActive.shardResolver)
+    ClusterReceptionistExtension(system).registerService(
+      ClusterSharding(system).shardRegion(ConnectionActive.shardName))
   }
 }
 

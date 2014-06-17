@@ -39,7 +39,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
     val shardingName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
-    val SeedNodes: Seq[String] = immutableSeq(config.getStringList("seed-nodes"))
+    val seedNodes: Set[String] = immutableSeq(config.getStringList("seed-nodes")).toSet
     val namespaceGroup = config.getString("server.namespace-group-name")
   }
 
@@ -50,7 +50,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   private lazy val guardian = system.actorOf(NamesapceGuardian.props, "socketio-guardian")
 
   private lazy val client = if (isCluster) {
-    system.actorOf(ClusterClient.props(SeedNodes map (system.actorSelection) toSet), "socketio-cluster-client")
+    ConnectionActive(system).clusterClient(seedNodes map (system.actorSelection))
   } else {
     ActorRef.noSender
   }
@@ -62,7 +62,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   }
 
   lazy val resolver = if (isCluster) {
-    system.actorOf(ClusterConnectionActiveResolverProxy.props(s"/user/${shardingName}/${ConnectionActive.shardName}", client))
+    socketio.ConnectionActiveClusterClient(system, seedNodes map (system.actorSelection))
   } else {
     SocketIOExtension(system).resolver
   }
@@ -125,21 +125,5 @@ class DistributedBalancingPubSubProxy(path: String, group: String, client: Actor
       client forward ClusterClient.Send(path, socketio.DistributedBalancingPubSubMediator.UnsubscribeGroup(topic, group, ref), false)
     case x: Publish =>
       client forward ClusterClient.Send(path, x, false)
-  }
-}
-
-object ClusterConnectionActiveResolverProxy {
-  def props(path: String, client: ActorRef) = Props(classOf[ClusterConnectionActiveResolverProxy], path, client)
-}
-
-/**
- * The proxy actor is running on the namespace nodes to forward msg to ConnectionActive
- *
- * @param path ConnectionActive sharding service's path
- * @param client [[ClusterClient]] to access SocketIO Cluster
- */
-class ClusterConnectionActiveResolverProxy(path: String, client: ActorRef) extends Actor with ActorLogging {
-  def receive: Actor.Receive = {
-    case cmd: socketio.ConnectionActive.Command => client forward ClusterClient.Send(path, cmd, false)
   }
 }

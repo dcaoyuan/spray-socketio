@@ -1,6 +1,7 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef, Terminated, ActorSystem, Props }
+import akka.actor.{ PoisonPill, Actor, ActorRef, Terminated, ActorSystem, Props, ActorLogging, ActorSelection }
+import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
 import akka.contrib.pattern.ShardRegion
@@ -107,6 +108,30 @@ object ConnectionActive {
       shardResolver = ConnectionActive.shardResolver)
     ClusterReceptionistExtension(system).registerService(
       ClusterSharding(system).shardRegion(ConnectionActive.shardName))
+  }
+
+  final class SystemSingletons(system: ActorSystem) {
+    private var _clusterClient: ActorRef = _
+    /**
+     * Get the clusterClient, create it if none existed.
+     *
+     * @Note only one will be created no matter how many ActorSystems, actually
+     * one ActorSystem per application usaully.
+     */
+    def clusterClient(initialContacts: Set[ActorSelection]): ActorRef = {
+      if (_clusterClient eq null) {
+        _clusterClient = system.actorOf(ClusterClient.props(initialContacts), "socketio-cluster-connactive-client")
+      }
+      _clusterClient
+    }
+  }
+
+  private var _singletons: SystemSingletons = _
+  def apply(system: ActorSystem): SystemSingletons = {
+    if (_singletons eq null) {
+      _singletons = new SystemSingletons(system)
+    }
+    _singletons
   }
 }
 
@@ -369,3 +394,34 @@ trait ConnectionActive { _: Actor =>
 
 }
 
+object ConnectionActiveClusterClient {
+  def props(path: String, clusterClient: ActorRef) = Props(classOf[ConnectionActiveClusterClient], path, clusterClient)
+
+  def getClient(system: ActorSystem, initialContacts: Set[ActorSelection]) = {
+  }
+
+  private var _client: ActorRef = _
+  /**
+   * Proxied cluster client
+   */
+  def apply(system: ActorSystem, initialContacts: Set[ActorSelection]) = {
+    if (_client eq null) {
+      val originalClient = ConnectionActive(system).clusterClient(initialContacts)
+      val shardingName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
+      _client = system.actorOf(props(s"/user/${shardingName}/${ConnectionActive.shardName}", originalClient))
+    }
+    _client
+  }
+}
+
+/**
+ * A proxy actor that runs on the namespace nodes to make forwarding msg to ConnectionActive easy.
+ *
+ * @param path ConnectionActive sharding service's path
+ * @param client [[ClusterClient]] to access SocketIO Cluster
+ */
+class ConnectionActiveClusterClient(path: String, clusterClient: ActorRef) extends Actor with ActorLogging {
+  def receive: Actor.Receive = {
+    case cmd: ConnectionActive.Command => clusterClient forward ClusterClient.Send(path, cmd, false)
+  }
+}

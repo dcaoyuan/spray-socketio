@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Cancellable, Actor, ActorLogging, ActorRef }
+import akka.actor.{ Cancellable, Actor, ActorLogging, ActorRef }
 import java.util.UUID
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -78,7 +78,25 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   var socketioHandshaked = false
 
-  def receive = handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate
+  def preReceive(msg: Any): Unit = {}
+
+  def postReceive(msg: Any): Unit = {}
+
+  def ready: Receive = {
+    case msg =>
+      preReceive(msg)
+      (handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate).apply(msg)
+      postReceive(msg)
+  }
+
+  def upgraded: Receive = {
+    case msg =>
+      preReceive(msg)
+      (handleHeartbeat orElse handleWebsocket orElse handleTerminate).apply(msg)
+      postReceive(msg)
+  }
+
+  def receive: Receive = ready
 
   def closeConnectionActive(): Unit = {
     if (soConnContext.sessionId != null && !connectionActiveClosed) {
@@ -133,7 +151,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
       disableCloseTimeout
       enableHeartbeat
       resetHeartbeatTimeout
-      context.become(handleHeartbeat orElse handleWebsocket orElse handleTerminate)
+      context.become(upgraded)
   }
 
   def handleWebsocket: Receive = {

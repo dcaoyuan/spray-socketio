@@ -12,6 +12,7 @@ import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
 import spray.contrib.socketio.packet.HeartbeatPacket
 import spray.http.HttpRequest
+import spray.contrib.socketio.transport.{ WebSocket, XhrPolling, Transport }
 
 /**
  *
@@ -73,6 +74,10 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   implicit lazy val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, resolver, log, context.dispatcher)
 
+  var socketioTransport: Option[Transport] = None
+
+  var socketioHandshaked = false
+
   def receive = handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate
 
   def closeConnectionActive(): Unit = {
@@ -107,6 +112,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   def handleSocketioHandshake: Receive = {
     case socketio.HandshakeRequest(ok) =>
+      socketioHandshaked = true
       log.debug("{}: socketio handshaked.", serverConnection.path)
   }
 
@@ -117,6 +123,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
         case wsContext: websocket.HandshakeContext =>
           sender() ! UHttp.UpgradeServer(websocket.pipelineStage(self, wsContext), wsContext.response)
           socketio.wsConnecting(wsContext.request) foreach { _ =>
+            socketioTransport = Some(WebSocket)
             log.debug("{}: socketio on websocket connected.", serverConnection.path)
           }
       }
@@ -137,10 +144,12 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   def handleXrhpollingConnecting: Receive = {
     case req @ socketio.HttpGet(ok) =>
       disableCloseTimeout
+      socketioTransport = Some(XhrPolling)
       log.debug("{}: socketio GET {}", serverConnection.path, req.entity)
 
     case req @ socketio.HttpPost(ok) =>
       disableCloseTimeout
+      socketioTransport = Some(XhrPolling)
       log.debug("{}: socketio POST {}", serverConnection.path, req.entity)
   }
 

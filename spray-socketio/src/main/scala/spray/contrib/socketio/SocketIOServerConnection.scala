@@ -87,16 +87,16 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   def postReceive(msg: Any): Unit = {}
 
   def ready: Receive = {
-    case msg if readyBehavior.isDefinedAt(msg) =>
+    case msg =>
       preReceive(msg)
-      readyBehavior.apply(msg)
+      readyBehavior.applyOrElse(msg, unhandled)
       postReceive(msg)
   }
 
   def upgraded: Receive = {
-    case msg if upgradedBehavior.isDefinedAt(msg) =>
+    case msg =>
       preReceive(msg)
-      upgradedBehavior.apply(msg)
+      upgradedBehavior.applyOrElse(msg, unhandled)
       postReceive(msg)
   }
 

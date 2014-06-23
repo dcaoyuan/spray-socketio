@@ -78,21 +78,25 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   var socketioHandshaked = false
 
+  val readyBehavior = handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate
+
+  val upgradedBehavior = handleHeartbeat orElse handleWebsocket orElse handleTerminate
+
   def preReceive(msg: Any): Unit = {}
 
   def postReceive(msg: Any): Unit = {}
 
   def ready: Receive = {
-    case msg =>
+    case msg if readyBehavior.isDefinedAt(msg) =>
       preReceive(msg)
-      (handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpollingConnecting orElse handleHeartbeat orElse genericLogic orElse handleTerminate).apply(msg)
+      readyBehavior.apply(msg)
       postReceive(msg)
   }
 
   def upgraded: Receive = {
-    case msg =>
+    case msg if upgradedBehavior.isDefinedAt(msg) =>
       preReceive(msg)
-      (handleHeartbeat orElse handleWebsocket orElse handleTerminate).apply(msg)
+      upgradedBehavior.apply(msg)
       postReceive(msg)
   }
 

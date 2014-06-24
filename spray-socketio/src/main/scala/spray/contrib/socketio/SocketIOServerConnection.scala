@@ -120,7 +120,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
     case x: Http.ConnectionClosed =>
       closeConnectionActive
       context.stop(self)
-      log.debug("{}: http connection stopped due to {}.", serverConnection.path, x)
+      log.debug("http connection of {} stopped due to {}.", serverConnection.path, x)
   }
 
   def handleHeartbeat: Receive = {
@@ -135,7 +135,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   def handleSocketioHandshake: Receive = {
     case socketio.HandshakeRequest(ok) =>
       socketioHandshaked = true
-      log.debug("{}: socketio handshaked.", serverConnection.path)
+      log.debug("socketio connection of {} handshaked.", serverConnection.path)
   }
 
   def handleWebsocketConnecting: Receive = {
@@ -146,12 +146,12 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
           sender() ! UHttp.UpgradeServer(websocket.pipelineStage(self, wsContext), wsContext.response)
           socketio.wsConnecting(wsContext.request) foreach { _ =>
             socketioTransport = Some(WebSocket)
-            log.debug("{}: socketio on websocket connected.", serverConnection.path)
+            log.debug("socketio connection of {} connected on websocket.", serverConnection.path)
           }
       }
 
     case UHttp.Upgraded =>
-      log.debug("{}: upgraded.", serverConnection.path)
+      log.debug("http connection of {} upgraded.", serverConnection.path)
       disableCloseTimeout
       enableHeartbeat
       resetHeartbeatTimeout
@@ -167,12 +167,12 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
     case req @ socketio.HttpGet(ok) =>
       disableCloseTimeout
       socketioTransport = Some(XhrPolling)
-      log.debug("{}: socketio GET {}", serverConnection.path, req.entity)
+      log.debug("socketio connection of {} GET {}", serverConnection.path, req.entity)
 
     case req @ socketio.HttpPost(ok) =>
       disableCloseTimeout
       socketioTransport = Some(XhrPolling)
-      log.debug("{}: socketio POST {}", serverConnection.path, req.entity)
+      log.debug("socketio connection of {} POST {}", serverConnection.path, req.entity)
   }
 
   def genericLogic: Receive
@@ -207,11 +207,11 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   // --- close timeout
 
   def enableCloseTimeout() {
-    log.warning("{}: close timeout, will close in {} seconds", self.path, socketio.Settings.CloseTimeout)
+    log.debug("begin close-timeout, will close in {} seconds", socketio.Settings.CloseTimeout)
     closeTimeout foreach (_.cancel)
     if (context != null) {
       closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-        log.warning("{}: stoped due to close timeout", self.path)
+        log.info("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)
         disableHeartbeat()
         closeConnectionActive
         context.stop(self)

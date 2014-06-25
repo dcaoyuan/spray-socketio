@@ -140,7 +140,7 @@ object Dependencies {
   val SPRAY_VERSION = "1.3.2-20140428"
   val AKKA_VERSION = "2.3.2"
 
-  val spray_websocket = "com.wandoulabs.akka" %% "spray-websocket" % "0.1.1-RC1"
+  val spray_websocket = "com.wandoulabs.akka" %% "spray-websocket" % "0.1.2-RC1"
   val spray_can = "io.spray" % "spray-can" % SPRAY_VERSION
   val spray_json = "io.spray" % "spray-json_2.10" % "1.2.6" 
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION

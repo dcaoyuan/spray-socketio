@@ -111,29 +111,30 @@ object ConnectionActive {
   }
 
   final class SystemSingletons(system: ActorSystem) {
-    private var _clusterClient: ActorRef = _
-    /**
-     * Get the clusterClient, create it if none existed.
-     *
-     * @Note only one will be created no matter how many ActorSystems, actually
-     * one ActorSystem per application usaully.
-     */
-    def clusterClient: ActorRef = {
-      if (_clusterClient eq null) {
-        import scala.collection.JavaConversions._
-        val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
-        _clusterClient = system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-connactive-client")
-      }
-      _clusterClient
-    }
+    lazy val clusterClient: ActorRef = {
+      import scala.collection.JavaConversions._
+      val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
+      system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-connactive-client")
+    }    
   }
 
-  private var _singletons: SystemSingletons = _
+  private var singletons: SystemSingletons = _
+  private val singletonsMutex = new AnyRef
+  /**
+   * Get the SystemSingletons, create it if none existed.
+   *
+   * @Note only one will be created no matter how many ActorSystems, actually
+   * one ActorSystem per application usaully.
+   */
   def apply(system: ActorSystem): SystemSingletons = {
-    if (_singletons eq null) {
-      _singletons = new SystemSingletons(system)
+    if (singletons eq null) {
+      singletonsMutex synchronized {
+        if (singletons eq null) {
+          singletons = new SystemSingletons(system)
+        }
+      }
     }
-    _singletons
+    singletons
   }
 }
 

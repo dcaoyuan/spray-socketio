@@ -70,6 +70,8 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   val heartbeatInterval = socketio.Settings.HeartbeatTimeout * 0.618
 
+  lazy val heartbeatDelay = util.Random.nextInt((math.min(socketio.Settings.HeartbeatTimeout, socketio.Settings.CloseTimeout) * 0.618).round.toInt)
+
   val heartbeatFrameCommand = FrameCommand(TextFrame(HeartbeatPacket.render))
 
   implicit lazy val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, resolver, log, context.dispatcher)
@@ -186,7 +188,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   def enableHeartbeat() {
     if (heartbeatHandler.isEmpty || heartbeatHandler.nonEmpty && heartbeatHandler.get.isCancelled) {
-      heartbeatHandler = Some(context.system.scheduler.schedule(heartbeatInterval.seconds, heartbeatInterval.seconds, self, HeartbeatPacket))
+      heartbeatHandler = Some(context.system.scheduler.schedule(heartbeatDelay.seconds, heartbeatInterval.seconds, self, HeartbeatPacket))
     }
   }
 

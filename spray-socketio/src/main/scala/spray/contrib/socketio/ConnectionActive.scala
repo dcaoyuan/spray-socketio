@@ -115,7 +115,7 @@ object ConnectionActive {
       import scala.collection.JavaConversions._
       val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
       system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-connactive-client")
-    }    
+    }
   }
 
   private var singletons: SystemSingletons = _

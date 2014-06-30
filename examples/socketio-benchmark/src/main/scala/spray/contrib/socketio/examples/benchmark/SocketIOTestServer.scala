@@ -5,6 +5,7 @@ import akka.actor.{ Terminated, ActorSystem, Actor, Props, ActorLogging, ActorRe
 import com.typesafe.config.ConfigFactory
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
@@ -15,6 +16,7 @@ import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.{ OnData, OnEvent }
 import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.EventPacket
+import spray.http.HttpRequest
 
 object SocketIOTestServer extends App {
 
@@ -57,8 +59,19 @@ object SocketIOTestServer extends App {
 
   object SocketIOWorker {
     def props(serverConnection: ActorRef, resolver: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, resolver)
+
+    private var _sessionId = 0
+    private val sessionIdMutex = new AnyRef
+    def nextSessionId() = sessionIdMutex synchronized {
+      _sessionId += 1
+      _sessionId
+    }
   }
   class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerConnection {
+
+    override def sessionIdGenerator: HttpRequest => Future[String] = { req =>
+      Future.successful(SocketIOWorker.nextSessionId().toString)
+    }
 
     def genericLogic: Receive = {
       case x: Frame =>

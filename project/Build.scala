@@ -30,6 +30,7 @@ object Build extends sbt.Build {
 
   lazy val sprayBenchmark = Project("spray-socketio-examples-benchmark", file("examples/socketio-benchmark"))
     .settings(exampleSettings: _*)
+    .settings(libraryDependencies += Dependencies.akka_persistence_cassandra)
     .settings(formatSettings: _*)
     .settings(XitrumPackage.copy("bin", "conf", "logs"): _*)
     .dependsOn(socketio)
@@ -50,7 +51,8 @@ object Build extends sbt.Build {
         "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
         "Typesafe repo" at "http://repo.typesafe.com/typesafe/releases/",
         "spray" at "http://repo.spray.io",
-        "spray nightly" at "http://nightlies.spray.io/")
+        "spray nightly" at "http://nightlies.spray.io/",
+        "krasserm at bintray" at "http://dl.bintray.com/krasserm/maven")
       )
 
   lazy val exampleSettings = basicSettings ++ noPublishing
@@ -153,6 +155,7 @@ object Dependencies {
   val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.17.1"
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
   val caliper = "com.google.caliper" % "caliper" % "0.5-rc1" % "test"
+  val akka_persistence_cassandra =  "com.github.krasserm" %% "akka-persistence-cassandra" % "0.3.1"
 
   val all = Seq(spray_websocket, spray_can, spray_json, akka_actor, akka_contrib, parboiled, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math, caliper)
 }

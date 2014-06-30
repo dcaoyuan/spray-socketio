@@ -43,20 +43,7 @@ object SocketIOTestClusterServer extends App {
 
   import ConfigFactory._
 
-  val commonSettings = parseString(
-    """
-      |akka.actor.provider = "akka.cluster.ClusterActorRefProvider"
-      |akka.persistence.journal.plugin = "akka.persistence.journal.leveldb-shared"
-      |akka.persistence.journal.leveldb-shared.store {
-      |  native = off
-      |  dir = "target/test-shared-journal"
-      |}
-      |akka.persistence.snapshot-store.local.dir = "target/test-snapshots"
-      |akka.contrib.cluster.sharding.role = "connectionActive"
-      |transport.hostname = "0.0.0.0"
-      |transport.port = 8080
-      |spray.socketio.mode = "cluster"
-    """.stripMargin).withFallback(load())
+  val commonSettings = load()
 
   implicit var system: ActorSystem = _
 

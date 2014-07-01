@@ -136,6 +136,9 @@ object ConnectionActive {
     }
     singletons
   }
+
+  final case class State(connectionContext: Option[ConnectionContext], transportConnection: ActorRef, topics: immutable.Set[String], disconnected: Boolean)
+
 }
 
 /**
@@ -152,18 +155,14 @@ trait ConnectionActive { _: Actor =>
 
   def broadcastMediator: ActorRef
 
-  var connectionContext: Option[ConnectionContext] = None
-  var transportConnection: ActorRef = _
-
   var pendingPackets = immutable.Queue[Packet]()
-  var topics = immutable.Set[String]()
+
+  var state: State = State(None, null, immutable.Set[String](), false)
 
   val startTime = System.currentTimeMillis
 
   val connectPacket = ConnectPacket()
   val disconnectPacket = DisconnectPacket()
-
-  var disconnected = false
 
   def connected() {
     onPacket(connectPacket)
@@ -172,22 +171,23 @@ trait ConnectionActive { _: Actor =>
   def update(event: Event) = {
     event match {
       case ConnectingEvent(sessionId, query, origins, ref, transport) =>
-        connectionContext = Some(new ConnectionContext(sessionId, query, origins))
-        transportConnection = ref
-        connectionContext.foreach(_.bindTransport(transport))
+        state = state.copy(
+          connectionContext = Some(new ConnectionContext(sessionId, query, origins)),
+          transportConnection = ref)
+        state.connectionContext.foreach(_.bindTransport(transport))
       case SubscribeBroadcastEvent(_, endpoint, room) =>
         val topic = socketio.topicForBroadcast(endpoint, room)
-        topics += topic
+        state = state.copy(topics = state.topics + topic)
         subscribeBroadcast(topic)
       case UnsubscribeBroadcastEvent(_, endpoint, room) =>
         val topic = socketio.topicForBroadcast(endpoint, room)
-        topics -= topic
+        state = state.copy(topics = state.topics - topic)
         unsubscribeBroadcast(topic)
     }
   }
 
-  def processConnectingEvent(conn: ConnectingEvent) {
-    update(conn)
+  def processConnectingEvent(evt: ConnectingEvent) {
+    update(evt)
     connected()
   }
 
@@ -207,11 +207,11 @@ trait ConnectionActive { _: Actor =>
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
     case conn @ Connecting(sessionId, query, origins, transportConn, transport) =>
-      log.info("Connecting: {}, {}", sessionId, connectionContext)
+      log.info("Connecting: {}, {}", sessionId, state.connectionContext)
 
-      connectionContext match {
+      state.connectionContext match {
         case Some(existed) =>
-          transportConnection = transportConn
+          state = state.copy(transportConnection = transportConn)
           existed.bindTransport(transport)
           connected()
         case None =>
@@ -219,18 +219,18 @@ trait ConnectionActive { _: Actor =>
       }
 
     case Closing(sessionId, transportConn) =>
-      log.info("Closing: {}, {}", sessionId, connectionContext)
-      if (transportConnection == transportConn) {
-        if (!disconnected) { //make sure only send disconnect packet one time
+      log.info("Closing: {}, {}", sessionId, state.connectionContext)
+      if (state.transportConnection == transportConn) {
+        if (!state.disconnected) { // make sure only send disconnect packet one time
           onPacket(disconnectPacket)
         }
         close
       }
 
     case Terminated(ref) =>
-      log.info("Terminated: {}, {}", connectionContext, ref)
-      if (transportConnection == ref) {
-        if (!disconnected) {
+      log.info("Terminated: {}, {}", state.connectionContext, ref)
+      if (state.transportConnection == ref) {
+        if (!state.disconnected) {
           onPacket(disconnectPacket)
         }
         close
@@ -260,8 +260,8 @@ trait ConnectionActive { _: Actor =>
       sender() ! System.currentTimeMillis - startTime
 
     case GetStatus(sessionId) =>
-      val sessionId = if (connectionContext.nonEmpty) connectionContext.get.sessionId else null
-      val location = if (transportConnection != null && transportConnection.path != null) transportConnection.path.toSerializationFormat else null
+      val sessionId = state.connectionContext.map(_.sessionId).getOrElse(null)
+      val location = if (state.transportConnection != null && state.transportConnection.path != null) state.transportConnection.path.toSerializationFormat else null
       sender() ! Status(sessionId, System.currentTimeMillis - startTime, location)
   }
 
@@ -280,13 +280,12 @@ trait ConnectionActive { _: Actor =>
       case HeartbeatPacket =>
 
       case ConnectPacket(endpoint, args) =>
-        connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
-        if (connectionContext.exists(_.transport == transport.WebSocket)) {
-          context watch transportConnection
+        state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        if (state.connectionContext.exists(_.transport == transport.WebSocket)) {
+          context watch state.transportConnection
         }
-        disconnected = false
         val topic = socketio.topicForBroadcast(endpoint, "")
-        topics += topic
+        state = state.copy(topics = state.topics + topic, disconnected = false)
         subscribeBroadcast(topic).onComplete {
           case Success(ack) =>
             // bounce connect packet back to client
@@ -297,18 +296,17 @@ trait ConnectionActive { _: Actor =>
 
       case DisconnectPacket(endpoint) =>
         val topic = socketio.topicForBroadcast(endpoint, "")
-        topics -= topic
+        state = state.copy(topics = state.topics - topic)
         if (endpoint == "") {
-          connectionContext foreach { ctx => publishDisconnect(ctx) }
-          if (transportConnection != null) {
-            context unwatch transportConnection
+          state.connectionContext foreach { ctx => publishDisconnect(ctx) }
+          if (state.transportConnection != null) {
+            context unwatch state.transportConnection
           }
-          disconnected = true
-          topics foreach unsubscribeBroadcast
-          topics = Set()
+          state.topics foreach unsubscribeBroadcast
+          state = state.copy(topics = Set(), disconnected = true)
           // do not stop self, waiting for Closing message
         } else {
-          connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+          state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
           unsubscribeBroadcast(topic)
         }
 
@@ -318,7 +316,7 @@ trait ConnectionActive { _: Actor =>
           case x: DataPacket if x.isAckRequested && !x.hasAckData => sendAck(x, "[]")
           case _ =>
         }
-        connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
     }
   }
 
@@ -327,13 +325,13 @@ trait ConnectionActive { _: Actor =>
   }
 
   def onGet(transportConnection: ActorRef) {
-    connectionContext foreach { ctx =>
+    state.connectionContext foreach { ctx =>
       pendingPackets = ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
     }
   }
 
   def onPost(transportConnection: ActorRef, payload: ByteString) {
-    connectionContext foreach { ctx =>
+    state.connectionContext foreach { ctx =>
       // response an empty entity to release POST before message processing
       ctx.transport.write(ctx, transportConnection, "")
     }
@@ -365,8 +363,8 @@ trait ConnectionActive { _: Actor =>
     var updatePendingPackets = pendingPackets
     packets foreach { packet => updatePendingPackets = updatePendingPackets.enqueue(packet) }
     log.debug("Enqueued {}, pendingPackets: {}", packets, pendingPackets)
-    connectionContext foreach { ctx =>
-      updatePendingPackets = ctx.transport.flushOrWait(ctx, transportConnection, updatePendingPackets)
+    state.connectionContext foreach { ctx =>
+      updatePendingPackets = ctx.transport.flushOrWait(ctx, state.transportConnection, updatePendingPackets)
     }
     pendingPackets = updatePendingPackets
   }

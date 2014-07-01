@@ -33,6 +33,7 @@ package object socketio {
   val Settings = new Settings(config)
   class Settings(config: Config) {
     val SupportedTransports = config.getString("server.supported-transports")
+    val heartbeatInterval = config.getInt("server.heartbeat-interval")
     val HeartbeatTimeout = config.getInt("server.heartbeat-timeout")
     val CloseTimeout = config.getInt("server.close-timeout")
     val NamespacesDispatcher = config.getString("namespaces-dispatcher")
@@ -197,6 +198,7 @@ package object socketio {
   }
 
   case object GotHeartbeat
+  case object SendHeartbeat
 
   def isHeartbeatPacket(data: ByteString) = {
     (data.length == 3) && data(0) == '2' && data(1) == ':' && data(2) == ':' ||

@@ -198,7 +198,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
     closeTimeout foreach (_.cancel) // it better to confirm previous closeTimeout was cancled
     if (context != null) {
       closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-        log.info("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)
+        log.debug("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)
         clearHeartbeat()
         closeConnectionActive
         context.stop(self)

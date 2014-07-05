@@ -13,7 +13,10 @@ class PersistentConnectionActive(val namespaceMediator: ActorRef, val broadcastM
   import ConnectionActive._
 
   def receiveRecover: Receive = {
-    case event: Event => //update(event)
+    case event: Event =>
+      isReplaying = true
+      working(event)
+      isReplaying = false
     case SnapshotOffer(_, offeredSnapshot: State) =>
       log.debug("Got snapshotoffer: {}", offeredSnapshot)
       state = offeredSnapshot
@@ -26,18 +29,8 @@ class PersistentConnectionActive(val namespaceMediator: ActorRef, val broadcastM
     case PersistenceFailure(_, _, reason) => log.error("Failed to persistence: {}", reason)
   }
 
-  override def processConnectingEvent(evt: Connecting) {
-    super.processConnectingEvent(evt)
-    saveSnapshot(state)
-  }
-
-  override def processSubscribeBroadcastEvent(evt: SubscribeBroadcast) {
-    super.processSubscribeBroadcastEvent(_)
-    saveSnapshot(state)
-  }
-
-  override def processUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcast) {
-    super.processUnsubscribeBroadcastEvent(evt)
+  override def updateState(evt: Any, state: State) {
+    super.updateState(evt, state)
     saveSnapshot(state)
   }
 

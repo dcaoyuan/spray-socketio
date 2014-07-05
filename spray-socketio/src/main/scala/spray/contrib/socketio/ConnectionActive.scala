@@ -155,44 +155,15 @@ trait ConnectionActive { _: Actor =>
 
   var state: State = State(None, null, immutable.Set[String](), false)
 
+  var isReplaying = false
+
   val startTime = System.currentTimeMillis
 
-  val connectPacket = ConnectPacket()
-  val disconnectPacket = DisconnectPacket()
+  val GlobalConnectPacket = ConnectPacket()
+  val GlobalDisconnectPacket = DisconnectPacket()
 
-  def connected() {
-    onPacket(connectPacket)
-  }
-
-  def update(event: Event) = {
-    event match {
-      case Connecting(sessionId, query, origins, ref, transport) =>
-        state = state.copy(
-          connectionContext = Some(new ConnectionContext(sessionId, query, origins)),
-          transportConnection = ref)
-        state.connectionContext.foreach(_.bindTransport(transport))
-      case SubscribeBroadcast(_, endpoint, room) =>
-        val topic = socketio.topicForBroadcast(endpoint, room)
-        state = state.copy(topics = state.topics + topic)
-        subscribeBroadcast(topic)
-      case UnsubscribeBroadcast(_, endpoint, room) =>
-        val topic = socketio.topicForBroadcast(endpoint, room)
-        state = state.copy(topics = state.topics - topic)
-        unsubscribeBroadcast(topic)
-    }
-  }
-
-  def processConnectingEvent(evt: Connecting) {
-    update(evt)
-    connected()
-  }
-
-  def processSubscribeBroadcastEvent(evt: SubscribeBroadcast) {
-    update(evt)
-  }
-
-  def processUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcast) {
-    update(evt)
+  def updateState(evt: Any, newState: State) {
+    state = newState
   }
 
   def close() {
@@ -202,23 +173,31 @@ trait ConnectionActive { _: Actor =>
   def working: Receive = {
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
-    case x @ Connecting(sessionId, query, origins, transportConn, transport) =>
-      log.info("Connecting: {}, {}", sessionId, state.connectionContext)
+    case cmd @ Connecting(sessionId, query, origins, transportConn, transport) =>
+      if (!isReplaying) {
+        log.info("Connecting: {}, {}", sessionId, state.connectionContext)
+      }
 
       state.connectionContext match {
         case Some(existed) =>
-          state = state.copy(transportConnection = transportConn)
-          existed.bindTransport(transport)
-          connected()
+          if (!isReplaying) {
+            state = state.copy(transportConnection = transportConn)
+            existed.bindTransport(transport)
+            onPacket(cmd)(GlobalConnectPacket)
+          }
         case None =>
-          processConnectingEvent(x)
+          state = state.copy(
+            connectionContext = Some(new ConnectionContext(sessionId, query, origins)),
+            transportConnection = transportConn)
+          state.connectionContext.foreach(_.bindTransport(transport))
+          onPacket(cmd)(GlobalConnectPacket)
       }
 
-    case Closing(sessionId, transportConn) =>
+    case cmd @ Closing(sessionId, transportConn) =>
       log.info("Closing: {}, {}", sessionId, state.connectionContext)
       if (state.transportConnection == transportConn) {
         if (!state.disconnected) { // make sure only send disconnect packet one time
-          onPacket(disconnectPacket)
+          onPacket(cmd)(GlobalDisconnectPacket)
         }
         close
       }
@@ -227,30 +206,43 @@ trait ConnectionActive { _: Actor =>
       log.info("Terminated: {}, {}", state.connectionContext, ref)
       if (state.transportConnection == ref) {
         if (!state.disconnected) {
-          onPacket(disconnectPacket)
+          onPacket(null)(GlobalDisconnectPacket)
         }
         close
       }
 
-    case OnFrame(sessionId, payload)                     => onFrame(payload)
-    case OnGet(sessionId, transportConnection)           => onGet(transportConnection)
-    case OnPost(sessionId, transportConnection, payload) => onPost(transportConnection, payload)
+    case cmd @ OnFrame(sessionId, payload) =>
+      onPayload(cmd)(payload)
+    case cmd @ OnPost(sessionId, transportConnection, payload) =>
+      // response an empty entity to release POST before message processing
+      state.connectionContext foreach { ctx =>
+        ctx.transport.write(ctx, transportConnection, "")
+      }
+      onPayload(cmd)(payload)
+    case OnGet(sessionId, transportConnection) =>
+      state.connectionContext foreach { ctx =>
+        pendingPackets = ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
+      }
 
-    case SendMessage(sessionId, endpoint, msg)           => sendMessage(endpoint, msg)
-    case SendJson(sessionId, endpoint, json)             => sendJson(endpoint, json)
-    case SendEvent(sessionId, endpoint, name, args)      => sendEvent(endpoint, name, args)
-    case SendPackets(sessionId, packets)                 => sendPacket(packets: _*)
+    case SendMessage(sessionId, endpoint, msg)      => sendMessage(endpoint, msg)
+    case SendJson(sessionId, endpoint, json)        => sendJson(endpoint, json)
+    case SendEvent(sessionId, endpoint, name, args) => sendEvent(endpoint, name, args)
+    case SendPackets(sessionId, packets)            => sendPacket(packets: _*)
 
-    case SendAck(sessionId, packet, args)                => sendAck(packet, args)
+    case SendAck(sessionId, packet, args)           => sendAck(packet, args)
 
-    case Broadcast(sessionId, room, packet)              => publishToBroadcast(OnBroadcast(sessionId, room, packet))
-    case OnBroadcast(senderSessionId, room, packet)      => sendPacket(packet) // write to client
+    case Broadcast(sessionId, room, packet)         => publishToBroadcast(OnBroadcast(sessionId, room, packet))
+    case OnBroadcast(senderSessionId, room, packet) => sendPacket(packet) // write to client
 
-    case x @ SubscribeBroadcast(sessionId, endpoint, room) =>
-      processSubscribeBroadcastEvent(x)
+    case cmd @ SubscribeBroadcast(sessionId, endpoint, room) =>
+      val topic = socketio.topicForBroadcast(endpoint, room)
+      updateState(cmd, state.copy(topics = state.topics + topic))
+      subscribeBroadcast(topic)
 
-    case x @ UnsubscribeBroadcast(sessionId, endpoint, room) =>
-      processUnsubscribeBroadcastEvent(x)
+    case cmd @ UnsubscribeBroadcast(sessionId, endpoint, room) =>
+      val topic = socketio.topicForBroadcast(endpoint, room)
+      updateState(cmd, state.copy(topics = state.topics - topic))
+      unsubscribeBroadcast(topic)
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
@@ -263,46 +255,55 @@ trait ConnectionActive { _: Actor =>
 
   // --- reacts
 
-  private def onPayload(payload: ByteString) {
+  private def onPayload(cmd: Command)(payload: ByteString) {
     PacketParser(payload) match {
-      case Success(packets)              => packets foreach onPacket
+      case Success(packets)              => packets foreach onPacket(cmd)
       case Failure(ex: ParsingException) => log.warning("Invalid socket.io packet: {} ...", payload.take(50).utf8String)
       case Failure(ex)                   => log.warning("Exception during parse socket.io packet: {} ..., due to: {}", payload.take(50).utf8String, ex)
     }
   }
 
-  private def onPacket(packet: Packet) {
+  private def onPacket(cmd: Command)(packet: Packet) {
     packet match {
       case HeartbeatPacket =>
 
       case ConnectPacket(endpoint, args) =>
-        state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        if (!isReplaying) {
+          state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        }
+
         if (state.connectionContext.exists(_.transport == transport.WebSocket)) {
           context watch state.transportConnection
         }
         val topic = socketio.topicForBroadcast(endpoint, "")
-        state = state.copy(topics = state.topics + topic, disconnected = false)
+        updateState(cmd, state.copy(topics = state.topics + topic, disconnected = false))
         subscribeBroadcast(topic).onComplete {
           case Success(ack) =>
             // bounce connect packet back to client
-            sendPacket(packet)
+            if (!isReplaying) {
+              sendPacket(packet)
+            }
           case Failure(ex) =>
             log.warning("Failed to subscribe to medietor on topic {}: {}", topic, ex.getMessage)
         }
 
       case DisconnectPacket(endpoint) =>
-        val topic = socketio.topicForBroadcast(endpoint, "")
-        state = state.copy(topics = state.topics - topic)
         if (endpoint == "") {
-          state.connectionContext foreach { ctx => publishDisconnect(ctx) }
+          if (!isReplaying) {
+            state.connectionContext foreach { ctx => publishDisconnect(ctx) }
+          }
           if (state.transportConnection != null) {
             context unwatch state.transportConnection
           }
+          updateState(cmd, state.copy(topics = Set(), disconnected = true))
           state.topics foreach unsubscribeBroadcast
-          state = state.copy(topics = Set(), disconnected = true)
           // do not stop self, waiting for Closing message
         } else {
-          state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+          if (!isReplaying) {
+            state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+          }
+          val topic = socketio.topicForBroadcast(endpoint, "")
+          updateState(cmd, state.copy(topics = state.topics - topic))
           unsubscribeBroadcast(topic)
         }
 
@@ -314,24 +315,6 @@ trait ConnectionActive { _: Actor =>
         }
         state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
     }
-  }
-
-  def onFrame(payload: ByteString) {
-    onPayload(payload)
-  }
-
-  def onGet(transportConnection: ActorRef) {
-    state.connectionContext foreach { ctx =>
-      pendingPackets = ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
-    }
-  }
-
-  def onPost(transportConnection: ActorRef, payload: ByteString) {
-    state.connectionContext foreach { ctx =>
-      // response an empty entity to release POST before message processing
-      ctx.transport.write(ctx, transportConnection, "")
-    }
-    onPayload(payload)
   }
 
   def sendMessage(endpoint: String, msg: String) {
@@ -370,7 +353,7 @@ trait ConnectionActive { _: Actor =>
   }
 
   def publishDisconnect(ctx: ConnectionContext) {
-    namespaceMediator ! Publish(socketio.topicForDisconnect, OnPacket(disconnectPacket, ctx))
+    namespaceMediator ! Publish(socketio.topicForDisconnect, OnPacket(GlobalDisconnectPacket, ctx))
   }
 
   def publishToNamespace[T <: Packet](msg: OnPacket[T]) {

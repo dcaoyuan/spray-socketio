@@ -7,7 +7,7 @@ import java.nio.ByteOrder
 import scala.collection.mutable.ListBuffer
 import scala.util.Failure
 import scala.util.Success
-import spray.can.websocket.frame.{ FrameParser, FrameRender, TextFrame, Frame }
+import spray.can.websocket.frame.{ FrameParser, FrameRender, Frame }
 import spray.contrib.socketio.ConnectionActive._
 import spray.contrib.socketio.ConnectionContext
 import spray.contrib.socketio.ConnectionActive.OnPacket
@@ -571,102 +571,6 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     Broadcast(sessionId, room, packet)
   }
 
-}
-
-class EventSerializer(val system: ExtendedActorSystem) extends Serializer {
-  implicit val byteOrder = ByteOrder.BIG_ENDIAN
-
-  final def includeManifest: Boolean = true
-
-  final def identifier: Int = 2005
-
-  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Event], Array[Byte] => AnyRef](
-    classOf[ConnectingEvent] -> (bytes => toConnectingEvent(bytes)),
-    classOf[SubscribeBroadcastEvent] -> (bytes => toSubscribeBroadcastEvent(bytes)),
-    classOf[UnsubscribeBroadcastEvent] -> (bytes => toUnsubscribeBroadcastEvent(bytes)))
-
-  final def toBinary(o: AnyRef): Array[Byte] = {
-    o match {
-      case evt: ConnectingEvent           => fromConnectingEvent(evt)
-      case evt: SubscribeBroadcastEvent   => fromSubscribeBroadcastEvent(evt)
-      case evt: UnsubscribeBroadcastEvent => fromUnsubscribeBroadcastEvent(evt)
-    }
-  }
-
-  final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
-    manifest match {
-      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[Event]]) match {
-        case Some(f) => f(bytes)
-        case None    => throw new IllegalArgumentException(s"Unimplemented deserialization of message class $clazz in CommandSerializer")
-      }
-      case _ => throw new IllegalArgumentException("Need a command message class to be able to deserialize bytes in CommandSerializer")
-    }
-  }
-
-  final def fromConnectingEvent(evt: ConnectingEvent) = {
-    val builder = ByteString.newBuilder
-
-    StringSerializer.appendToBuilder(builder, evt.sessionId)
-    StringSerializer.appendToBuilder(builder, evt.query.render(new StringRendering).get)
-    if (evt.transport != null) {
-      StringSerializer.appendToBuilder(builder, evt.transport.ID)
-    } else {
-      StringSerializer.appendToBuilder(builder, "")
-    }
-    StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(evt.transportConnection))
-    evt.origins.foreach { origin =>
-      StringSerializer.appendToBuilder(builder, origin.render(new StringRendering).get)
-    }
-
-    builder.result.toArray
-  }
-
-  final def toConnectingEvent(bytes: Array[Byte]) = {
-    val data = ByteString(bytes).iterator
-
-    val sessionId = StringSerializer.fromByteIterator(data)
-    val query = Query.apply(StringSerializer.fromByteIterator(data))
-    val transport = Transport.transportIds.getOrElse(StringSerializer.fromByteIterator(data), null)
-    val ref = system.actorFor(StringSerializer.fromByteIterator(data))
-    val origins = ListBuffer[HttpOrigin]()
-    while (data.nonEmpty) {
-      origins.append(HttpOrigin(StringSerializer.fromByteIterator(data)))
-    }
-    ConnectingEvent(sessionId, query, origins, ref, transport)
-  }
-
-  final def fromSubscribeBroadcastEvent(evt: SubscribeBroadcastEvent) = {
-    val builder = ByteString.newBuilder
-
-    StringSerializer.appendToBuilder(builder, evt.sessionId)
-    StringSerializer.appendToBuilder(builder, evt.endpoint)
-    StringSerializer.appendToBuilder(builder, evt.room)
-
-    builder.result.toArray
-  }
-
-  final def toSubscribeBroadcastEvent(bytes: Array[Byte]) = {
-    val data = ByteString(bytes).iterator
-
-    SubscribeBroadcastEvent(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
-  }
-
-  final def fromUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcastEvent) = {
-    val builder = ByteString.newBuilder
-
-    StringSerializer.appendToBuilder(builder, evt.sessionId)
-    StringSerializer.appendToBuilder(builder, evt.endpoint)
-    StringSerializer.appendToBuilder(builder, evt.room)
-
-    builder.result.toArray
-  }
-
-  final def toUnsubscribeBroadcastEvent(bytes: Array[Byte]) = {
-    val data = ByteString(bytes).iterator
-
-    UnsubscribeBroadcastEvent(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
-
-  }
 }
 
 class StatusSerializer extends Serializer {

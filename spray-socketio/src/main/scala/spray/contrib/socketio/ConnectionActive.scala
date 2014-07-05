@@ -36,17 +36,16 @@ object ConnectionActive {
 
   sealed trait Event extends Serializable
 
-  final case class ConnectingEvent(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Event
-  final case class SubscribeBroadcastEvent(sessionId: String, endpoint: String, room: String) extends Event
-  final case class UnsubscribeBroadcastEvent(sessionId: String, endpoint: String, room: String) extends Event
-
   sealed trait Command extends Serializable {
     def sessionId: String
   }
 
   final case class CreateSession(sessionId: String) extends Command
-  final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command
-  final case class Closing(sessionId: String, transportConnection: ActorRef) extends Command
+
+  final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command with Event
+  final case class Closing(sessionId: String, transportConnection: ActorRef) extends Command with Event
+  final case class SubscribeBroadcast(sessionId: String, endpoint: String, room: String) extends Command with Event
+  final case class UnsubscribeBroadcast(sessionId: String, endpoint: String, room: String) extends Command with Event
 
   // called by connection
   final case class OnGet(sessionId: String, transportConnection: ActorRef) extends Command
@@ -60,9 +59,6 @@ object ConnectionActive {
   final case class SendPackets(sessionId: String, packets: Seq[Packet]) extends Command
 
   final case class SendAck(sessionId: String, originalPacket: DataPacket, args: String) extends Command
-
-  final case class SubscribeBroadcast(sessionId: String, endpoint: String, room: String) extends Command
-  final case class UnsubscribeBroadcast(sessionId: String, endpoint: String, room: String) extends Command
 
   /**
    * ask me to publish an OnBroadcast data
@@ -170,32 +166,32 @@ trait ConnectionActive { _: Actor =>
 
   def update(event: Event) = {
     event match {
-      case ConnectingEvent(sessionId, query, origins, ref, transport) =>
+      case Connecting(sessionId, query, origins, ref, transport) =>
         state = state.copy(
           connectionContext = Some(new ConnectionContext(sessionId, query, origins)),
           transportConnection = ref)
         state.connectionContext.foreach(_.bindTransport(transport))
-      case SubscribeBroadcastEvent(_, endpoint, room) =>
+      case SubscribeBroadcast(_, endpoint, room) =>
         val topic = socketio.topicForBroadcast(endpoint, room)
         state = state.copy(topics = state.topics + topic)
         subscribeBroadcast(topic)
-      case UnsubscribeBroadcastEvent(_, endpoint, room) =>
+      case UnsubscribeBroadcast(_, endpoint, room) =>
         val topic = socketio.topicForBroadcast(endpoint, room)
         state = state.copy(topics = state.topics - topic)
         unsubscribeBroadcast(topic)
     }
   }
 
-  def processConnectingEvent(evt: ConnectingEvent) {
+  def processConnectingEvent(evt: Connecting) {
     update(evt)
     connected()
   }
 
-  def processSubscribeBroadcastEvent(evt: SubscribeBroadcastEvent) {
+  def processSubscribeBroadcastEvent(evt: SubscribeBroadcast) {
     update(evt)
   }
 
-  def processUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcastEvent) {
+  def processUnsubscribeBroadcastEvent(evt: UnsubscribeBroadcast) {
     update(evt)
   }
 
@@ -206,7 +202,7 @@ trait ConnectionActive { _: Actor =>
   def working: Receive = {
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
-    case conn @ Connecting(sessionId, query, origins, transportConn, transport) =>
+    case x @ Connecting(sessionId, query, origins, transportConn, transport) =>
       log.info("Connecting: {}, {}", sessionId, state.connectionContext)
 
       state.connectionContext match {
@@ -215,7 +211,7 @@ trait ConnectionActive { _: Actor =>
           existed.bindTransport(transport)
           connected()
         case None =>
-          processConnectingEvent(ConnectingEvent(conn.sessionId, conn.query, conn.origins, conn.transportConnection, conn.transport))
+          processConnectingEvent(x)
       }
 
     case Closing(sessionId, transportConn) =>
@@ -250,11 +246,11 @@ trait ConnectionActive { _: Actor =>
     case Broadcast(sessionId, room, packet)              => publishToBroadcast(OnBroadcast(sessionId, room, packet))
     case OnBroadcast(senderSessionId, room, packet)      => sendPacket(packet) // write to client
 
-    case SubscribeBroadcast(sessionId, endpoint, room) =>
-      processSubscribeBroadcastEvent(SubscribeBroadcastEvent(sessionId, endpoint, room))
+    case x @ SubscribeBroadcast(sessionId, endpoint, room) =>
+      processSubscribeBroadcastEvent(x)
 
-    case UnsubscribeBroadcast(sessionId, endpoint, room) =>
-      processUnsubscribeBroadcastEvent(UnsubscribeBroadcastEvent(sessionId, endpoint, room))
+    case x @ UnsubscribeBroadcast(sessionId, endpoint, room) =>
+      processUnsubscribeBroadcastEvent(x)
 
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime

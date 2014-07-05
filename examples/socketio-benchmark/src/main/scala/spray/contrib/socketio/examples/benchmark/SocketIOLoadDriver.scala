@@ -23,7 +23,7 @@ import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnClose
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnOpen
 import scala.util.Random
 
-object SocketIOLoadTester {
+object SocketIOLoadDriver {
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val clientConfig = config.getConfig("client")
 
@@ -83,12 +83,12 @@ object SocketIOLoadTester {
     while (i < concurrencyLevels.length) {
       val concurrentConnections = concurrencyLevels(i)
 
-      val socketIOLordTester = system.actorOf(Props(new SocketIOLoadTester), "socketioclients")
+      val driver = system.actorOf(Props(new SocketIOLoadDriver), "socketioclients")
 
-      val f = socketIOLordTester.ask(RoundBegin(concurrentConnections))(100.minutes).mapTo[StatsSummary]
+      val f = driver.ask(RoundBegin(concurrentConnections))(100.minutes).mapTo[StatsSummary]
       val summaryStats = Await.result(f, Duration.Inf).stats
 
-      system.stop(socketIOLordTester)
+      system.stop(driver)
 
       for ((messageRate, stats) <- summaryStats) {
         try {
@@ -114,8 +114,8 @@ object SocketIOLoadTester {
 
 }
 
-class SocketIOLoadTester extends Actor with ActorLogging {
-  import SocketIOLoadTester._
+class SocketIOLoadDriver extends Actor with ActorLogging {
+  import SocketIOLoadDriver._
 
   final case class RoundContext(receivingTimeoutHandler: Option[Cancellable], statistics: mutable.Map[Double, StatisticalSummary], overallEffectiveRate: Double)
 
@@ -193,15 +193,18 @@ class SocketIOLoadTester extends Actor with ActorLogging {
       }
 
     case ReceivingTimeout =>
-      if (isMessagesSent && roundtripTimes.size >= nMessagesExpected) {
+      if (isMessagesSent /* && roundtripTimes.size >= nMessagesExpected */ ) {
         roundContext match {
           case null =>
           case RoundContext(receivingTimeoutHandler, statistics, overallEffectiveRate) =>
             goon(statistics, overallEffectiveRate)
         }
-      } else {
-        println("Failed - not all messages received in " + postTestReceptionTimeout + "s")
-        println("Expected: " + nMessagesExpected + ", got: " + roundtripTimes.size)
+        if (roundtripTimes.size >= nMessagesExpected) {
+          // everything seems ok
+        } else {
+          println("Failed - not all messages received in " + postTestReceptionTimeout + "s")
+          println("Expected: " + nMessagesExpected + ", got: " + roundtripTimes.size)
+        }
       }
 
     case CreatingTimeout =>

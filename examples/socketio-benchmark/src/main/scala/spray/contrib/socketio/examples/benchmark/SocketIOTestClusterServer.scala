@@ -4,7 +4,7 @@ import com.typesafe.config.{ Config, ConfigFactory }
 import akka.actor.{ Props, ActorSystem }
 import akka.io.IO
 import akka.persistence.Persistence
-import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
+//import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import rx.lang.scala.Observer
 import spray.can.server.UHttp
 import rx.lang.scala.Subject
@@ -62,8 +62,8 @@ object SocketIOTestClusterServer extends App {
       val config = parseString("akka.cluster.roles =[\"connectionActive\"]").withFallback(commonSettings)
       system = startCluster(config)
       Persistence(system)
-      val sharedStore = system.actorOf(Props[SharedLeveldbStore], "store")
-      SharedLeveldbJournal.setStore(sharedStore, system)
+    //val sharedStore = system.actorOf(Props[SharedLeveldbStore], "store")
+    //SharedLeveldbJournal.setStore(sharedStore, system)
 
     case "business" :: tail =>
       val config = parseString("akka.cluster.roles =[\"business\"]").withFallback(commonSettings)

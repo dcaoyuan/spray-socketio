@@ -8,6 +8,7 @@ import scala.collection.mutable.ListBuffer
 import scala.util.Failure
 import scala.util.Success
 import spray.can.websocket.frame.{ FrameParser, FrameRender, Frame }
+import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionActive._
 import spray.contrib.socketio.ConnectionContext
 import spray.contrib.socketio.ConnectionActive.OnPacket
@@ -313,7 +314,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val sessionId = StringSerializer.fromByteIterator(data)
     val query = Query.apply(StringSerializer.fromByteIterator(data))
     val transport = Transport.transportIds.getOrElse(StringSerializer.fromByteIterator(data), null)
-    val ref = system.actorFor(StringSerializer.fromByteIterator(data))
+    val ref = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
     val origins = ListBuffer[HttpOrigin]()
     while (data.nonEmpty) {
       origins.append(HttpOrigin(StringSerializer.fromByteIterator(data)))
@@ -334,7 +335,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val data = ByteString(bytes).iterator
 
     val sessionId = StringSerializer.fromByteIterator(data)
-    val ref = system.actorFor(StringSerializer.fromByteIterator(data))
+    val ref = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
 
     Closing(sessionId, ref)
   }
@@ -352,7 +353,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val data = ByteString(bytes).iterator
 
     val sessionId = StringSerializer.fromByteIterator(data)
-    val ref = system.actorFor(StringSerializer.fromByteIterator(data))
+    val ref = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
 
     OnGet(sessionId, ref)
   }
@@ -371,7 +372,8 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val data = ByteString(bytes).iterator
 
     val sessionId = StringSerializer.fromByteIterator(data)
-    val ref = system.actorFor(StringSerializer.fromByteIterator(data))
+    val ref = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
+
     val payload = data.toByteString
 
     OnPost(sessionId, ref, payload)

@@ -8,10 +8,7 @@ import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket
-import spray.can.websocket.FrameCommand
-import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio
-import spray.contrib.socketio.packet.HeartbeatPacket
 import spray.http.HttpRequest
 import spray.contrib.socketio.transport.{ WebSocket, XhrPolling, Transport }
 
@@ -66,11 +63,9 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   // It seems socket.io client may fire heartbeat only when it received heartbeat
   // from server, or, just bounce heartheat instead of firing heartbeat standalone.
-  var heartbeatHandler: Option[Cancellable] = None
+  var heartbeatTask: Option[Cancellable] = None
 
   def heartbeatDelay = util.Random.nextInt((math.min(socketio.Settings.HeartbeatTimeout, socketio.Settings.CloseTimeout) * 0.618).round.toInt)
-
-  val HeartbeatFrameCommand = FrameCommand(TextFrame(HeartbeatPacket.render))
 
   implicit lazy val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, resolver, log, context.dispatcher)
 
@@ -78,9 +73,9 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   var socketioHandshaked = false
 
-  val readyBehavior = handleHeartbeat orElse handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpolling orElse genericLogic orElse handleTerminate
+  val readyBehavior = handleHeartbeat orElse handleSocketioHandshake orElse handleWebsocketConnecting orElse handleXrhpolling orElse genericLogic orElse handleTerminated
 
-  val upgradedBehavior = handleHeartbeat orElse handleWebsocket orElse handleTerminate
+  val upgradedBehavior = handleHeartbeat orElse handleWebsocket orElse handleTerminated
 
   def preReceive(msg: Any) {}
 
@@ -104,27 +99,32 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
   def handleHeartbeat: Receive = {
     case socketio.SendHeartbeat => // scheduled sending heartbeat
-      serverConnection ! HeartbeatFrameCommand
+      serverConnection ! socketio.HeartbeatFrameCommand
       log.debug("sent heartbeat")
 
     case socketio.GotHeartbeat =>
       log.debug("got heartbeat")
-      resetCloseTimeout() // will be cleared when got next heartbeat
+      resetCloseTimeout()
+      resetHeartbeat()
+
+    case socketio.CloseTimeout =>
+      log.debug("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)
+      clearAll()
+      context.stop(self)
   }
 
   def handleSocketioHandshake: Receive = {
     case socketio.HandshakeRequest(ok) =>
       socketioHandshaked = true
-      resetCloseTimeout()
       log.debug("socketio connection of {} handshaked.", serverConnection.path)
   }
 
   def handleWebsocketConnecting: Receive = {
     case req @ websocket.HandshakeRequest(state) =>
       state match {
-        case wsFailure: websocket.HandshakeFailure => sender() ! wsFailure.response
+        case wsFailure: websocket.HandshakeFailure =>
+          sender() ! wsFailure.response
         case wsContext: websocket.HandshakeContext =>
-          clearCloseTimeout()
           sender() ! UHttp.UpgradeServer(websocket.pipelineStage(self, wsContext), wsContext.response)
           socketio.wsConnecting(wsContext.request) foreach { _ =>
             socketioTransport = Some(WebSocket)
@@ -133,8 +133,9 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
       }
 
     case UHttp.Upgraded =>
-      enableHeartbeat()
       context.become(upgraded)
+      resetHeartbeat()
+      resetCloseTimeout()
       log.debug("http connection of {} upgraded.", serverConnection.path)
   }
 
@@ -143,6 +144,10 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
       log.debug("Got {}", frame)
   }
 
+  /**
+   * TODO how about heartbeat/closetimeout for freq changed xhtpolling connection?
+   * which, may be closed before a heartbeat sent.
+   */
   def handleXrhpolling: Receive = {
     case req @ socketio.HttpGet(ok) =>
       resetCloseTimeout()
@@ -155,7 +160,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
       log.debug("socketio connection of {} POST {}", serverConnection.path, req.entity)
   }
 
-  def handleTerminate: Receive = {
+  def handleTerminated: Receive = {
     case x: Http.ConnectionClosed =>
       clearAll()
       context.stop(self)
@@ -187,29 +192,23 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
     }
   }
 
-  def clearHeartbeat() {
-    heartbeatHandler foreach (_.cancel)
-    heartbeatHandler = None
-  }
-
-  def enableHeartbeat() {
-    if (heartbeatHandler.isEmpty || heartbeatHandler.nonEmpty && heartbeatHandler.get.isCancelled) {
-      heartbeatHandler = Some(context.system.scheduler.schedule(heartbeatDelay.seconds, socketio.Settings.heartbeatInterval.seconds, self, socketio.SendHeartbeat))
-      resetCloseTimeout()
-    }
+  def resetHeartbeat() {
+    heartbeatTask foreach (_.cancel)
+    heartbeatTask = Some(context.system.scheduler.scheduleOnce(socketio.Settings.heartbeatInterval.seconds, self, socketio.SendHeartbeat))
   }
 
   def resetCloseTimeout() {
     log.debug("started close-timeout, will close in {} seconds", socketio.Settings.CloseTimeout)
     closeTimeout foreach (_.cancel) // it better to confirm previous closeTimeout was cancled
     if (context != null) {
-      closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds) {
-        log.debug("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)
-        clearHeartbeat()
-        closeConnectionActive
-        context.stop(self)
-      })
+      closeTimeout = Some(context.system.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds, self, socketio.CloseTimeout))
     }
+  }
+
+  def clearHeartbeat() {
+    log.debug("cleared heartbeat")
+    heartbeatTask foreach (_.cancel)
+    heartbeatTask = None
   }
 
   def clearCloseTimeout() {

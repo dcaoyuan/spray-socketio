@@ -135,6 +135,8 @@ object ConnectionActive {
 
   final case class State(connectionContext: Option[ConnectionContext], transportConnection: ActorRef, topics: immutable.Set[String], disconnected: Boolean)
 
+  val GlobalConnectPacket = ConnectPacket()
+  val GlobalDisconnectPacket = DisconnectPacket()
 }
 
 /**
@@ -158,9 +160,6 @@ trait ConnectionActive { _: Actor =>
   var isReplaying = false
 
   val startTime = System.currentTimeMillis
-
-  val GlobalConnectPacket = ConnectPacket()
-  val GlobalDisconnectPacket = DisconnectPacket()
 
   def updateState(evt: Any, newState: State) {
     state = newState

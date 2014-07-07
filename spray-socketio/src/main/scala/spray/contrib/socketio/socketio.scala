@@ -12,7 +12,9 @@ import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
 import spray.can.Http
+import spray.can.websocket.FrameCommand
 import spray.can.websocket.frame.TextFrame
+import spray.contrib.socketio.packet.HeartbeatPacket
 import spray.contrib.socketio.transport
 import spray.http.HttpHeaders
 import spray.http.HttpHeaders._
@@ -197,8 +199,11 @@ package object socketio {
     }
   }
 
+  case object CloseTimeout
   case object GotHeartbeat
   case object SendHeartbeat
+
+  val HeartbeatFrameCommand = FrameCommand(TextFrame(HeartbeatPacket.render))
 
   def isHeartbeatPacket(data: ByteString) = {
     (data.length == 3) && data(0) == '2' && data(1) == ':' && data(2) == ':' ||

@@ -48,7 +48,7 @@ import spray.contrib.socketio.transport.{ WebSocket, XhrPolling, Transport }
  *
  * Check histogram of java object heap; if the "live" suboption is
  * specified, only count live objects (will also force GC):
- * # jmap -histo[:live] <pid>
+ * # jmap -histo:live <pid>
  *
  * Force GC (JDK 7+):
  * jcmd <pid> GC.run
@@ -155,30 +155,34 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
       log.debug("socketio connection of {} POST {}", serverConnection.path, req.entity)
   }
 
-  def genericLogic: Receive
-
-  private def closeConnectionActive() {
-    if (soConnContext.sessionId != null && !connectionActiveClosed) {
-      connectionActiveClosed = true
-      resolver ! ConnectionActive.Closing(soConnContext.sessionId, soConnContext.serverConnection)
-    }
+  def handleTerminate: Receive = {
+    case x: Http.ConnectionClosed =>
+      clearAll()
+      context.stop(self)
+      log.debug("http connection of {} stopped due to {}.", serverConnection.path, x)
+    case Tcp.Closed => // may be triggered by the first socketio handshake http connection, which will always be droped.
+      clearAll()
+      context.stop(self)
+      log.debug("http connection of {} stopped due to Tcp.Closed}.", serverConnection.path)
   }
 
+  def genericLogic: Receive
+
   override def postStop() {
+    clearAll()
+  }
+
+  def clearAll() {
     clearHeartbeat()
     clearCloseTimeout()
     closeConnectionActive()
   }
 
-  def handleTerminate: Receive = {
-    case x: Http.ConnectionClosed =>
-      closeConnectionActive()
-      context.stop(self)
-      log.debug("http connection of {} stopped due to {}.", serverConnection.path, x)
-    case Tcp.Closed => // may be triggered by the first socketio handshake http connection, which will always be droped.
-      closeConnectionActive()
-      context.stop(self)
-      log.debug("http connection of {} stopped due to Tcp.Closed}.", serverConnection.path)
+  def closeConnectionActive() {
+    if (soConnContext.sessionId != null && !connectionActiveClosed) {
+      connectionActiveClosed = true
+      resolver ! ConnectionActive.Closing(soConnContext.sessionId, soConnContext.serverConnection)
+    }
   }
 
   def clearHeartbeat() {

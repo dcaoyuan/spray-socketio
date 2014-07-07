@@ -169,10 +169,12 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   def genericLogic: Receive
 
   override def postStop() {
+    log.debug("postStop")
     clearAll()
   }
 
   def clearAll() {
+    log.debug("clearAll")
     clearHeartbeat()
     clearCloseTimeout()
     closeConnectionActive()

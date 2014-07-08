@@ -109,6 +109,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
 
     case socketio.CloseTimeout =>
       log.debug("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)
+      serverConnection ! Tcp.Close
       clearAll()
       context.stop(self)
   }
@@ -161,6 +162,10 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
   }
 
   def handleTerminated: Receive = {
+    case Disconnect =>
+      serverConnection ! Tcp.Close
+      clearAll()
+      context.stop(self)
     case x: Http.ConnectionClosed =>
       clearAll()
       context.stop(self)

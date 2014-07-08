@@ -29,6 +29,7 @@ import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
+import spray.can.Http
 
 object ConnectionActive {
 
@@ -292,6 +293,7 @@ trait ConnectionActive { _: Actor =>
             state.connectionContext foreach { ctx => publishDisconnect(ctx) }
           }
           if (state.transportConnection != null) {
+            state.transportConnection ! Http.Close
             context unwatch state.transportConnection
           }
           updateState(cmd, state.copy(topics = Set(), disconnected = true))

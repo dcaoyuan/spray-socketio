@@ -199,6 +199,7 @@ package object socketio {
     }
   }
 
+  case object Disconnect
   case object CloseTimeout
   case object GotHeartbeat
   case object SendHeartbeat

@@ -292,7 +292,9 @@ trait ConnectionActive { _: Actor =>
             state.connectionContext foreach { ctx => publishDisconnect(ctx) }
           }
           if (state.transportConnection != null) {
-            state.transportConnection ! Disconnect
+            if (cmd == null || !cmd.isInstanceOf[Closing]) { // exclude Closing which is sent from the Transport
+              state.transportConnection ! Disconnect
+            }
             context unwatch state.transportConnection
           }
           updateState(cmd, state.copy(topics = Set(), disconnected = true))

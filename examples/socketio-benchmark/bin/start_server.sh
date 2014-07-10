@@ -22,7 +22,7 @@ dir_conf=../conf
 benchserver_class_pgm=spray.contrib.socketio.examples.benchmark.SocketIOTestServer
 benchserver_id_pgm=benchserver
 benchserver_lock_file=.lock_benchserver
-benchserver_conf=../conf/benchmark.conf
+benchserver_conf=../conf/server.conf
 logback_conf=../conf/logback.xml
 
 $JAVA $FLAGS $HEAP $GC -Dconfig.file=${benchserver_conf} -Dlogback.configurationFile=${logback_conf} -cp ${cp} ${benchserver_class_pgm} > ../logs/benchserver_rt.log &

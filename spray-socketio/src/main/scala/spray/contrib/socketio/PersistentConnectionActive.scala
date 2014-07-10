@@ -1,8 +1,7 @@
 package spray.contrib.socketio
 
-import akka.actor.{ Props, PoisonPill, ActorLogging, ActorRef }
+import akka.actor.{ Props, ActorLogging, ActorRef }
 import akka.persistence.{ PersistenceFailure, EventsourcedProcessor, SaveSnapshotSuccess, SaveSnapshotFailure, SnapshotOffer }
-import akka.contrib.pattern.ShardRegion.Passivate
 
 object PersistentConnectionActive {
   def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef): Props = Props(classOf[PersistentConnectionActive], namespaceMediator, broadcastMediator)
@@ -31,10 +30,9 @@ class PersistentConnectionActive(val namespaceMediator: ActorRef, val broadcastM
 
   override def updateState(evt: Any, state: State) {
     super.updateState(evt, state)
-    saveSnapshot(state)
+    if (!isReplaying) {
+      saveSnapshot(state)
+    }
   }
 
-  override def close() {
-    context.parent ! Passivate(stopMessage = PoisonPill)
-  }
 }

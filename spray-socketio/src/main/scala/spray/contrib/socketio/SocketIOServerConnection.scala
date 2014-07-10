@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ Cancellable, Actor, ActorLogging, ActorRef }
+import akka.actor.{ Cancellable, Actor, ActorLogging, ActorRef, PoisonPill }
 import akka.io.Tcp
 import java.util.UUID
 import scala.concurrent.Future
@@ -111,7 +111,7 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
       log.debug("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)
       serverConnection ! Tcp.Close
       clearAll()
-      context.stop(self)
+      self ! PoisonPill
   }
 
   def handleSocketioHandshake: Receive = {
@@ -165,14 +165,14 @@ trait SocketIOServerConnection extends ActorLogging { _: Actor =>
     case Disconnect =>
       serverConnection ! Tcp.Close
       clearAll()
-      context.stop(self)
+      self ! PoisonPill
     case x: Http.ConnectionClosed =>
       clearAll()
-      context.stop(self)
+      self ! PoisonPill
       log.debug("http connection of {} stopped due to {}.", serverConnection.path, x)
     case Tcp.Closed => // may be triggered by the first socketio handshake http connection, which will always be droped.
       clearAll()
-      context.stop(self)
+      self ! PoisonPill
       log.debug("http connection of {} stopped due to Tcp.Closed}.", serverConnection.path)
   }
 

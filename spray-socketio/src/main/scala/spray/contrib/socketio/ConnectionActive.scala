@@ -5,6 +5,7 @@ import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
 import akka.contrib.pattern.ShardRegion
+import akka.contrib.pattern.ShardRegion.Passivate
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
 import akka.event.LoggingAdapter
 import akka.pattern.ask
@@ -166,7 +167,11 @@ trait ConnectionActive { _: Actor =>
   }
 
   def close() {
-    self ! PoisonPill
+    if (SocketIOExtension(context.system).Settings.isCluster) {
+      context.parent ! Passivate(stopMessage = PoisonPill)
+    } else {
+      self ! PoisonPill
+    }
   }
 
   def working: Receive = {
@@ -185,9 +190,7 @@ trait ConnectionActive { _: Actor =>
             onPacket(cmd)(GlobalConnectPacket)
           }
         case None =>
-          state = state.copy(
-            connectionContext = Some(new ConnectionContext(sessionId, query, origins)),
-            transportConnection = transportConn)
+          state = state.copy(connectionContext = Some(new ConnectionContext(sessionId, query, origins)), transportConnection = transportConn)
           state.connectionContext.foreach(_.bindTransport(transport))
           onPacket(cmd)(GlobalConnectPacket)
       }
@@ -198,7 +201,7 @@ trait ConnectionActive { _: Actor =>
         if (!state.disconnected) { // make sure only send disconnect packet one time
           onPacket(cmd)(GlobalDisconnectPacket)
         }
-        close
+        close()
       }
 
     case Terminated(ref) =>
@@ -207,7 +210,7 @@ trait ConnectionActive { _: Actor =>
         if (!state.disconnected) {
           onPacket(null)(GlobalDisconnectPacket)
         }
-        close
+        close()
       }
 
     case cmd @ OnFrame(sessionId, payload) =>
@@ -247,7 +250,7 @@ trait ConnectionActive { _: Actor =>
       sender() ! System.currentTimeMillis - startTime
 
     case GetStatus(sessionId) =>
-      val sessionId = state.connectionContext.map(_.sessionId).getOrElse(null)
+      val sessionId = if (state.disconnected) null else state.connectionContext.map(_.sessionId).getOrElse(null)
       val location = if (state.transportConnection != null && state.transportConnection.path != null) state.transportConnection.path.toSerializationFormat else null
       sender() ! Status(sessionId, System.currentTimeMillis - startTime, location)
   }
@@ -297,7 +300,7 @@ trait ConnectionActive { _: Actor =>
             }
             context unwatch state.transportConnection
           }
-          updateState(cmd, state.copy(topics = Set(), disconnected = true))
+          updateState(cmd, state.copy(topics = Set(), transportConnection = null, disconnected = true))
           state.topics foreach unsubscribeBroadcast
           // do not stop self, waiting for Closing message
         } else {

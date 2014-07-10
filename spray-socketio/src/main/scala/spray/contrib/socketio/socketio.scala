@@ -34,12 +34,12 @@ package object socketio {
   val config = ConfigFactory.load().getConfig("spray.socketio")
   val Settings = new Settings(config)
   class Settings(config: Config) {
-    val SupportedTransports = config.getString("server.supported-transports")
+    val supportedTransports = config.getString("server.supported-transports")
     val heartbeatInterval = config.getInt("server.heartbeat-interval")
     val HeartbeatTimeout = config.getInt("server.heartbeat-timeout")
     val CloseTimeout = config.getInt("server.close-timeout")
-    val NamespacesDispatcher = config.getString("namespaces-dispatcher")
-    val NamespaceDispatcher = config.getString("namespace-dispatcher")
+    val namespacesDispatcher = config.getString("namespaces-dispatcher")
+    val namespaceDispatcher = config.getString("namespace-dispatcher")
   }
 
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds
@@ -86,7 +86,7 @@ package object socketio {
                   HttpHeaders.`Access-Control-Allow-Credentials`(true))
 
                 val respHeaders = List(HttpHeaders.Connection("keep-alive")) ::: originsHeaders
-                val respEntity = List(sessionId, Settings.HeartbeatTimeout, Settings.CloseTimeout, Settings.SupportedTransports).mkString(":")
+                val respEntity = List(sessionId, Settings.HeartbeatTimeout, Settings.CloseTimeout, Settings.supportedTransports).mkString(":")
                 val resp = HttpResponse(
                   status = StatusCodes.OK,
                   entity = respEntity,

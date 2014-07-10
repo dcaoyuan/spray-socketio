@@ -2,9 +2,9 @@ package spray.contrib.socketio
 
 import akka.actor._
 import akka.contrib.pattern._
-import scala.Some
 import akka.cluster.Cluster
 import akka.routing.{ BroadcastRoutingLogic, ConsistentHashingRoutingLogic, RoundRobinRoutingLogic, RandomRoutingLogic }
+import spray.contrib.socketio
 
 object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionIdProvider {
   override def get(system: ActorSystem): SocketIOExtension = super.get(system)
@@ -36,12 +36,12 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   /**
    * Need to start immediately to accept broadcast etc.
    */
-  val broadcastMediator = if (isCluster) DistributedPubSubExtension(system).mediator else localMediator
+  val broadcastMediator = if (Settings.isCluster) DistributedPubSubExtension(system).mediator else localMediator
 
   /**
    * Need to start immediately to accept subscriptions msg etc.
    */
-  val namespaceMediator = if (isCluster) {
+  val namespaceMediator = if (Settings.isCluster) {
     val cluster = Cluster(system)
     if (cluster.getSelfRoles.contains(ConnRole)) {
       val routingLogic = Settings.config.getString("routing-logic") match {
@@ -65,11 +65,11 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     TransientConnectionActive.props(namespaceMediator, broadcastMediator)
   }
 
-  if (isCluster) {
+  if (Settings.isCluster) {
     ConnectionActive.startShard(system, connectionActiveProps)
   }
 
-  lazy val resolver = if (isCluster) {
+  lazy val resolver = if (Settings.isCluster) {
     ClusterSharding(system).shardRegion(ConnectionActive.shardName)
   } else {
     system.actorOf(LocalConnectionActiveResolver.props(localMediator, connectionActiveProps), name = ConnectionActive.shardName)

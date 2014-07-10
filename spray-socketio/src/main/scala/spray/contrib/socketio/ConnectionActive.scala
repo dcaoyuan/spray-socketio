@@ -300,7 +300,7 @@ trait ConnectionActive { _: Actor =>
             }
             context unwatch state.transportConnection
           }
-          updateState(cmd, state.copy(topics = Set(), transportConnection = null, disconnected = true))
+          updateState(cmd, state.copy(topics = Set(), disconnected = true))
           state.topics foreach unsubscribeBroadcast
           // do not stop self, waiting for Closing message
         } else {

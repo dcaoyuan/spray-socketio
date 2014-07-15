@@ -159,7 +159,7 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
         subscriber ! UnsubscribeAck(Unsubscribe(topic, subscription))
       }
 
-    case Publish(topic: String, msg: Any) =>
+    case Publish(topic: String, msg: Any, _) =>
       topicToSubscriptions.get(topic) foreach (_.values foreach {
         refs => router.withRoutees(refs toVector).route(msg, sender())
       })

@@ -116,9 +116,9 @@ object DistributedBalancingPubSubProxy {
  */
 class DistributedBalancingPubSubProxy(path: String, group: String, client: ActorRef) extends Actor with ActorLogging {
   override def receive: Actor.Receive = {
-    case Subscribe(topic, ref) =>
+    case Subscribe(topic, None, ref) =>
       client forward ClusterClient.Send(path, socketio.DistributedBalancingPubSubMediator.SubscribeGroup(topic, group, ref), false)
-    case Unsubscribe(topic, ref) =>
+    case Unsubscribe(topic, None, ref) =>
       client forward ClusterClient.Send(path, socketio.DistributedBalancingPubSubMediator.UnsubscribeGroup(topic, group, ref), false)
     case x: Publish =>
       client forward ClusterClient.Send(path, x, false)

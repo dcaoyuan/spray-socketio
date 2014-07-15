@@ -47,13 +47,13 @@ class LocalMediator extends Actor with ActorLogging {
   }
 
   def receive: Receive = {
-    case x @ Subscribe(topic, subscriptions) =>
+    case x @ Subscribe(topic, _, subscriptions) =>
       val subs = subscriptionsFor(topic)
       topicToSubscriptions(topic) = subs + subscriptions
       context.watch(subscriptions)
       sender() ! SubscribeAck(x)
 
-    case Unsubscribe(topic, subscriptions) =>
+    case Unsubscribe(topic, _, subscriptions) =>
       topicToSubscriptions.get(topic) match {
         case Some(xs) =>
           val subs = xs - subscriptions
@@ -78,7 +78,7 @@ class LocalMediator extends Actor with ActorLogging {
       }
       topicToSubscriptions --= topicsToRemove
 
-    case Publish(topic: String, msg: Any) =>
+    case Publish(topic: String, _, msg: Any) =>
       topicToSubscriptions.get(topic) foreach { subs => subs foreach (_ ! msg) }
   }
 }

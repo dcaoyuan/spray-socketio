@@ -208,15 +208,15 @@ trait ConnectionActive { _: Actor =>
     // ---- on data
     case cmd @ OnFrame(sessionId, payload) =>
       onPayload(cmd)(payload)
-    case cmd @ OnPost(sessionId, serverConnection, payload) =>
+    case cmd @ OnPost(sessionId, transportConnection, payload) =>
       // response an empty entity to release POST before message processing
       state.connectionContext foreach { ctx =>
-        ctx.transport.write(ctx, serverConnection, "")
+        ctx.transport.write(ctx, transportConnection, "")
       }
       onPayload(cmd)(payload)
-    case OnGet(sessionId, serverConnection) =>
+    case OnGet(sessionId, transportConnection) =>
       state.connectionContext foreach { ctx =>
-        pendingPackets = ctx.transport.writeSingle(ctx, serverConnection, isSendingNoopWhenEmpty = true, pendingPackets)
+        pendingPackets = ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
       }
 
     // ---- sending
@@ -243,18 +243,18 @@ trait ConnectionActive { _: Actor =>
     // -- connecting / closing  
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
-    case cmd @ Connecting(sessionId, query, origins, serverConnection, transport) =>
+    case cmd @ Connecting(sessionId, query, origins, transportConnection, transport) =>
       enableHeartbeat()
 
       state.connectionContext match {
         case Some(existed) =>
           if (!isReplaying) {
-            updateState(cmd, state.copy(transportConnection = serverConnection))
+            updateState(cmd, state.copy(transportConnection = transportConnection))
             existed.bindTransport(transport)
             onPacket(cmd)(GlobalConnectPacket)
           }
         case None =>
-          updateState(cmd, state.copy(connectionContext = Some(new ConnectionContext(sessionId, query, origins)), transportConnection = serverConnection))
+          updateState(cmd, state.copy(connectionContext = Some(new ConnectionContext(sessionId, query, origins)), transportConnection = transportConnection))
           state.connectionContext foreach { _.bindTransport(transport) }
           onPacket(cmd)(GlobalConnectPacket)
       }
@@ -263,15 +263,15 @@ trait ConnectionActive { _: Actor =>
         log.info("Connecting: {}, state: {}", sessionId, state)
       }
 
-    case cmd @ Closing(sessionId, serverConnection) => // transport fired closing command
+    case cmd @ Closing(sessionId, transportConnection) => // transport fired closing command
       log.info("Closing: {}, state: {}", sessionId, state)
-      if (state.transportConnection == serverConnection) {
+      if (state.transportConnection == transportConnection) {
         if (!state.disconnected) { // make sure only send disconnect packet one time
           onPacket(cmd)(GlobalDisconnectPacket)
         }
       }
 
-    // TODO we do not monitor state.serverConnection any more, but we can try to monitor the Node where serverConnection is resided.
+    // TODO we do not monitor state.transportConnection any more, but we can try to monitor the Node where transportConnection is resided.
     case Terminated(ref) =>
       log.info("Terminated: {}, {}", state.connectionContext, ref)
       if (state.transportConnection == ref) {

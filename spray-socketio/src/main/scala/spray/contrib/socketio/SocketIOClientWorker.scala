@@ -25,13 +25,13 @@ import spray.http.HttpRequest
 import spray.http.HttpResponse
 import spray.http.Uri
 
-object SocketIOClientConnection {
+object SocketIOClientWorker {
   type AckPostAction = Any => Unit
   final case class SendPacket(packet: Packet)
   final case class SendPacketWithAck(packet: DataPacket, ackAction: AckPostAction = _ => ())
 }
-trait SocketIOClientConnection extends ActorLogging { _: Actor =>
-  import SocketIOClientConnection._
+trait SocketIOClientWorker extends ActorLogging { _: Actor =>
+  import SocketIOClientWorker._
 
   private var _connection: ActorRef = _
   /**

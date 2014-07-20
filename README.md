@@ -37,7 +37,7 @@ import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.SocketIOExtension
-import spray.contrib.socketio.SocketIOServerConnection
+import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.{ OnConnect, OnDisconnect, OnData, OnEvent }
@@ -54,7 +54,7 @@ object SimpleServer extends App with MySslConfiguration {
   }
   class SocketIOServer(resolver: ActorRef) extends Actor with ActorLogging {
     def receive = {
-      // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
+      // when a new connection comes in we register a SocketIOWorker actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
         val conn = context.actorOf(SocketIOWorker.props(serverConnection, resolver))
@@ -67,7 +67,7 @@ object SimpleServer extends App with MySslConfiguration {
   object SocketIOWorker {
     def props(serverConnection: ActorRef, resolver: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, resolver)
   }
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerWorker {
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>

@@ -32,7 +32,7 @@ object SocketIOTestClient {
   case class SendBroadcast(msg: String)
 }
 
-class SocketIOTestClient(connect: Http.Connect, commander: ActorRef) extends Actor with socketio.SocketIOClientConnection {
+class SocketIOTestClient(connect: Http.Connect, commander: ActorRef) extends Actor with socketio.SocketIOClientWorker {
   import SocketIOTestClient._
 
   val Id = nextId.toString

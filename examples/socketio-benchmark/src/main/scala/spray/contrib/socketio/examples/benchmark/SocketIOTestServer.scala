@@ -11,7 +11,7 @@ import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.SocketIOExtension
-import spray.contrib.socketio.SocketIOServerConnection
+import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.{ OnData, OnEvent }
 import spray.contrib.socketio.namespace.NamespaceExtension
@@ -67,7 +67,7 @@ object SocketIOTestServer extends App {
       _sessionId
     }
   }
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerConnection {
+  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerWorker {
 
     override def sessionIdGenerator: HttpRequest => Future[String] = { req =>
       Future.successful(SocketIOWorker.nextSessionId().toString)

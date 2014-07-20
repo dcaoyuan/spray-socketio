@@ -51,7 +51,7 @@ import spray.contrib.socketio.transport.{ WebSocket, XhrPolling, Transport }
  * jcmd <pid> GC.run
  * ================================================================
  */
-trait SocketIOServerConnection extends ActorLogging { _: Actor =>
+trait SocketIOServerWorker extends ActorLogging { _: Actor =>
   import context.dispatcher
 
   def serverConnection: ActorRef

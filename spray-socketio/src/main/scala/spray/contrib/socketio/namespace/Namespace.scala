@@ -167,10 +167,9 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
   def receive: Receive = {
     case x @ Subscribe(channel) =>
       val commander = sender()
-      subscribeMediatorForNamespace {
-        () =>
-          channels += channel
-          commander ! SubscribeAck(x)
+      subscribeMediatorForNamespace { () =>
+        channels += channel
+        commander ! SubscribeAck(x)
       }
     case x @ Unsubscribe(channel) =>
       val commander = sender()
@@ -178,9 +177,8 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
         case Some(c) => channels -= c
         case None    => channels = channels.empty
       }
-      unsubscribeMediatorForNamespace {
-        () =>
-          commander ! UnsubscribeAck(x)
+      unsubscribeMediatorForNamespace { () =>
+        commander ! UnsubscribeAck(x)
       }
 
     case OnPacket(packet: ConnectPacket, connContext)    => channels foreach (_.onNext(OnConnect(packet.args, connContext)(packet)))

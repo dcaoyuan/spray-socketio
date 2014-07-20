@@ -3,7 +3,6 @@ package spray.contrib
 import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import akka.pattern.ask
-import akka.util.ByteString
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import scala.concurrent.ExecutionContext
@@ -12,9 +11,7 @@ import scala.concurrent.duration._
 import scala.util.Failure
 import scala.util.Success
 import spray.can.Http
-import spray.can.websocket.FrameCommand
 import spray.can.websocket.frame.TextFrame
-import spray.contrib.socketio.packet.HeartbeatPacket
 import spray.contrib.socketio.transport
 import spray.http.HttpHeaders
 import spray.http.HttpHeaders._
@@ -144,13 +141,8 @@ package object socketio {
     def unapply(frame: TextFrame)(implicit ctx: SoConnectingContext): Option[Boolean] = {
       import ctx.ec
       // ctx.sessionId should have been set during wsConnected
-      val payload = frame.payload
-      if (isHeartbeatPacket(payload)) {
-        ctx.socketioConnection ! GotHeartbeat
-      } else {
-        ctx.resolver ! ConnectionActive.OnFrame(ctx.sessionId, payload)
-      }
-
+      ctx.log.debug("Got TextFrame: {}", frame.payload.utf8String)
+      ctx.resolver ! ConnectionActive.OnFrame(ctx.sessionId, frame.payload)
       Some(true)
     }
   }
@@ -186,12 +178,7 @@ package object socketio {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
             val payload = entity.data.toByteString
-            if (isHeartbeatPacket(payload)) {
-              ctx.socketioConnection ! GotHeartbeat
-            } else {
-              ctx.resolver ! ConnectionActive.OnPost(sessionId, ctx.serverConnection, payload)
-            }
-
+            ctx.resolver ! ConnectionActive.OnPost(sessionId, ctx.serverConnection, payload)
             Some(true)
           case _ => None
         }
@@ -199,16 +186,8 @@ package object socketio {
     }
   }
 
-  case object Disconnect
+  case object HeartbeatTick
   case object CloseTimeout
-  case object GotHeartbeat
-  case object SendHeartbeat
 
-  val HeartbeatFrameCommand = FrameCommand(TextFrame(HeartbeatPacket.render))
-
-  def isHeartbeatPacket(data: ByteString) = {
-    (data.length == 3) && data(0) == '2' && data(1) == ':' && data(2) == ':' ||
-      (data.length == 1) && data(0) == '2'
-  }
 }
 

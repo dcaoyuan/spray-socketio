@@ -78,7 +78,7 @@ class LocalMediator extends Actor with ActorLogging {
       }
       topicToSubscriptions --= topicsToRemove
 
-    case Publish(topic: String, _, msg: Any) =>
+    case Publish(topic: String, msg: Any, sendOneMessageToEachGroup) =>
       topicToSubscriptions.get(topic) foreach { subs => subs foreach (_ ! msg) }
   }
 }

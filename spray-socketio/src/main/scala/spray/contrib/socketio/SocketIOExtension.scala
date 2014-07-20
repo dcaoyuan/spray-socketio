@@ -3,8 +3,18 @@ package spray.contrib.socketio
 import akka.actor._
 import akka.contrib.pattern._
 import akka.cluster.Cluster
+import akka.dispatch.MonitorableThreadFactory
+import akka.event.Logging
+import akka.event.LoggingAdapter
 import akka.routing.{ BroadcastRoutingLogic, ConsistentHashingRoutingLogic, RoundRobinRoutingLogic, RandomRoutingLogic }
+import com.typesafe.config.Config
+import com.typesafe.config.ConfigFactory
 import spray.contrib.socketio
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.TimeUnit
+import scala.collection.immutable
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionIdProvider {
   override def get(system: ActorSystem): SocketIOExtension = super.get(system)
@@ -19,6 +29,8 @@ object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionId
 }
 
 class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
+  private val log = Logging(system, "SocketIO")
+
   /**
    * INTERNAL API
    */
@@ -27,6 +39,8 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     val isCluster: Boolean = config.getString("mode") == "cluster"
     val ConnRole: String = "connectionActive"
     val enableConnPersistence: Boolean = config.getBoolean("server.enable-connectionactive-persistence")
+    val schedulerTickDuration: FiniteDuration = Duration(config.getDuration("scheduler.tick-duration", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
+    val schedulerTicksPerWheel: Int = config.getInt("scheduler.ticks-per-wheel")
   }
 
   import Settings._
@@ -75,4 +89,23 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     system.actorOf(LocalConnectionActiveResolver.props(localMediator, connectionActiveProps), name = ConnectionActive.shardName)
   }
 
+  /**
+   * INTERNAL API
+   */
+  lazy val scheduler: Scheduler = {
+    import scala.collection.JavaConverters._
+    log.info("Using a dedicated scheduler for socketio with 'spray.socketio.scheduler.tick-duration' [{} ms].", schedulerTickDuration.toMillis)
+
+    val cfg = ConfigFactory.parseString(
+      s"socketio.scheduler.tick-duration=${schedulerTickDuration.toMillis}ms").withFallback(
+        system.settings.config)
+    val threadFactory = system.threadFactory match {
+      case tf: MonitorableThreadFactory => tf.withName(tf.name + "-socketio-scheduler")
+      case tf                           => tf
+    }
+    system.dynamicAccess.createInstanceFor[Scheduler](system.settings.SchedulerClass, immutable.Seq(
+      classOf[Config] -> cfg,
+      classOf[LoggingAdapter] -> log,
+      classOf[ThreadFactory] -> threadFactory)).get
+  }
 }

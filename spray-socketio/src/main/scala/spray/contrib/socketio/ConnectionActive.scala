@@ -194,9 +194,12 @@ trait ConnectionActive { _: Actor =>
 
     // ---- heartbeat
     case socketio.HeartbeatTick => // scheduled sending heartbeat
-      log.debug("sent heartbeat")
+      log.debug("send heartbeat")
       sendPacket(HeartbeatPacket)
-      enableCloseTimeout()
+      closeTimeoutTask match {
+        case Some(x) if !x.isCancelled => // keep previous close timeout. We may pass by one closetimeout for this heartbeat, but we'll reset one at next time.
+        case _                         => enableCloseTimeout()
+      }
 
     case socketio.CloseTimeout =>
       log.debug("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)

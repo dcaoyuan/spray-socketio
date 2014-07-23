@@ -1,14 +1,16 @@
 package spray.contrib.socketio
 
 import akka.actor.{ Props, ActorLogging, ActorRef }
-import akka.persistence.{ PersistenceFailure, EventsourcedProcessor, SaveSnapshotSuccess, SaveSnapshotFailure, SnapshotOffer }
+import akka.persistence.{ PersistenceFailure, PersistentActor, SaveSnapshotSuccess, SaveSnapshotFailure, SnapshotOffer }
 
 object PersistentConnectionActive {
   def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef): Props = Props(classOf[PersistentConnectionActive], namespaceMediator, broadcastMediator)
 }
 
-class PersistentConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
+class PersistentConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with PersistentActor with ActorLogging {
   import ConnectionActive._
+
+  override def persistenceId = self.path.toStringWithoutAddress
 
   def receiveRecover: Receive = {
     case event: Event =>

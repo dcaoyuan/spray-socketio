@@ -1,0 +1,33 @@
+<configuration scan="true">
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>../logs/frontend.log</file>
+        <encoder>
+            <!--pattern>%date %level %msg%n</pattern-->
+            <!--pattern>%date{ISO8601} %-5level %logger{36} %X{sourceThread} - %msg%n</pattern-->
+            <pattern>%date{ISO8601} %-5level %logger{36} %X{akkaSource} - %msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>../logs/business.log.%d{yyyy-MM-dd}.gz</fileNamePattern>
+            <maxHistory>30</maxHistory> 
+        </rollingPolicy>
+    </appender>
+    <appender name="ACCESS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>../logs/business-access.log</file>
+        <encoder>
+            <pattern>[%date{ISO8601}] %msg%n</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>../logs/business-access.log.%d{yyyy-MM-dd}.gz</fileNamePattern>
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+    </appender>
+    <logger name="spray.can.server" level="ERROR" additivity="false">
+        <appender-ref ref="FILE" />
+    </logger>
+    <logger name="accessLog" level="INFO" additivity="false">
+        <appender-ref ref="ACCESS" />
+    </logger>
+    <root level="INFO">
+        <appender-ref ref="FILE" />
+    </root>
+</configuration>

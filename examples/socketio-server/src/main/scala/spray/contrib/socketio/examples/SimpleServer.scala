@@ -5,6 +5,7 @@ import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import rx.lang.scala.Observable
 import rx.lang.scala.Observer
 import rx.lang.scala.Subject
+import scala.concurrent.Future
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
@@ -40,6 +41,10 @@ object SimpleServer extends App with MySslConfiguration {
     def props(serverConnection: ActorRef, resolver: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, resolver)
   }
   class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerWorker {
+
+    override def sessionIdGenerator: HttpRequest => Future[String] = { req =>
+      Future.successful("123456")
+    }
 
     def genericLogic: Receive = {
       case HttpRequest(HttpMethods.GET, Uri.Path("/socketio.html"), _, _, _) =>

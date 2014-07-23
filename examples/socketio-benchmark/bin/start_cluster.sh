@@ -35,7 +35,7 @@ export JAVA=${JAVA_HOME}/bin/java
 export FLAGS="-server -Dfile.encoding=UTF8 -XX:+UseNUMA -XX:+UseCondCardMark -XX:-UseBiasedLocking"
 export HEAP="-Xms1024M -Xmx10240M -Xss1M"
 export GC="-XX:+UseParallelGC"
-
+export DB="-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=8888"
 
 cp="";
 for f in ../lib/*.jar;

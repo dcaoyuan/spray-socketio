@@ -112,12 +112,11 @@ object SocketIOLoadDriver {
 
   }
 
+  final case class RoundContext(receivingTimeoutHandler: Option[Cancellable], statistics: mutable.Map[Double, StatisticalSummary], overallEffectiveRate: Double)
 }
 
 class SocketIOLoadDriver extends Actor with ActorLogging {
   import SocketIOLoadDriver._
-
-  final case class RoundContext(receivingTimeoutHandler: Option[Cancellable], statistics: mutable.Map[Double, StatisticalSummary], overallEffectiveRate: Double)
 
   private var clients = List[ActorRef]()
 

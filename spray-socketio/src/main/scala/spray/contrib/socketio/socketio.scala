@@ -58,7 +58,7 @@ package object socketio {
     var sessionId: String,
     val sessionIdGenerator: HttpRequest => Future[String],
     val serverConnection: ActorRef,
-    val socketioConnection: ActorRef,
+    val socketioWorker: ActorRef,
     val resolver: ActorRef,
     val log: LoggingAdapter,
     implicit val ec: ExecutionContext)

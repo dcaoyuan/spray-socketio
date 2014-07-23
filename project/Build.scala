@@ -156,6 +156,9 @@ object Dependencies {
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
   val caliper = "com.google.caliper" % "caliper" % "0.5-rc1" % "test"
   val akka_persistence_cassandra =  "com.github.krasserm" %% "akka-persistence-cassandra" % "0.3.1"
+  
+  val logback = "ch.qos.logback" % "logback-classic" % "1.0.13" //% "runtime"
+  val akka_slf4j = "com.typesafe.akka" %% "akka-slf4j" % AKKA_VERSION //% "runtime"
 
-  val all = Seq(spray_websocket, spray_can, spray_json, akka_actor, akka_contrib, parboiled, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math, caliper)
+  val all = Seq(spray_websocket, spray_can, spray_json, akka_actor, akka_contrib, parboiled, rxscala, akka_testkit, akka_multinode_testkit, scalatest, apache_math, caliper, logback, akka_slf4j)
 }

@@ -4,21 +4,19 @@ import akka.actor.ExtendedActorSystem
 import akka.serialization.{ Serialization, Serializer }
 import akka.util.{ ByteIterator, ByteStringBuilder, ByteString }
 import java.nio.ByteOrder
-import scala.collection.mutable.ListBuffer
-import scala.util.Failure
-import scala.util.Success
 import spray.can.websocket.frame.{ FrameParser, FrameRender, Frame }
 import spray.contrib.socketio
-import spray.contrib.socketio.ConnectionActive._
+import spray.contrib.socketio.ConnectionActive
 import spray.contrib.socketio.ConnectionContext
-import spray.contrib.socketio.ConnectionActive.OnPacket
-import spray.contrib.socketio.ConnectionActive.OnFrame
-import spray.contrib.socketio.ConnectionActive.SendJson
-import spray.contrib.socketio.ConnectionActive.SendMessage
 import spray.contrib.socketio.packet.{ DataPacket, Packet, PacketParser }
+import spray.contrib.socketio.transport
 import spray.contrib.socketio.transport.Transport
 import spray.http.{ HttpOrigin, StringRendering }
 import spray.http.Uri.Query
+import scala.collection.mutable
+import scala.collection.immutable
+import scala.util.Failure
+import scala.util.Success
 
 object StringSerializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN
@@ -108,8 +106,56 @@ class PacketSerializer extends Serializer {
   }
 }
 
-// ConnectionContext(val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin])
-object ConnectionContextSerializer extends ConnectionContextSerializer
+class ConnectionActiveStateSerializer(val system: ExtendedActorSystem) extends Serializer {
+  implicit val byteOrder = ByteOrder.BIG_ENDIAN
+
+  final def includeManifest: Boolean = false
+
+  final def identifier: Int = 2001
+
+  final def toBinary(o: AnyRef): Array[Byte] = {
+    o match {
+      case x: ConnectionActive.State =>
+        val builder = ByteString.newBuilder
+
+        ConnectionContextSerializer.appendToBuilder(builder, x.context)
+        StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(x.transportConnection))
+        x.topics foreach { StringSerializer.appendToBuilder(builder, _) }
+
+        builder.result.toArray
+
+      case _ => Array[Byte]()
+    }
+  }
+
+  final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
+    val data = ByteString(bytes).iterator
+
+    val ctx = ConnectionContextSerializer.fromByteIterator(data)
+    val transportConn = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
+
+    var topics = immutable.Set[String]()
+    while (data.nonEmpty) {
+      topics += StringSerializer.fromByteIterator(data)
+    }
+
+    new ConnectionActive.State(ctx, transportConn, topics)
+  }
+}
+
+object ConnectionContextSerializer extends ConnectionContextSerializer {
+  def appendToBuilder(builder: ByteStringBuilder, connctx: ConnectionContext) {
+    val bytes = toBinary(connctx)
+    builder.putInt(bytes.length)(byteOrder)
+    builder.putBytes(bytes)
+  }
+
+  def fromByteIterator(data: ByteIterator) = {
+    val ctxBytes = Array.ofDim[Byte](data.getInt(byteOrder))
+    data.getBytes(ctxBytes)
+    ConnectionContextSerializer.fromBinary(ctxBytes).asInstanceOf[ConnectionContext]
+  }
+}
 class ConnectionContextSerializer extends Serializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN
 
@@ -123,15 +169,12 @@ class ConnectionContextSerializer extends Serializer {
         val builder = ByteString.newBuilder
 
         StringSerializer.appendToBuilder(builder, x.sessionId)
-        if (x.transport != null) {
-          StringSerializer.appendToBuilder(builder, x.transport.ID)
-        } else {
-          StringSerializer.appendToBuilder(builder, "")
-        }
-        if (x.query != null) {
-          StringSerializer.appendToBuilder(builder, x.query.render(new StringRendering).get)
-        }
-        x.origins.foreach { origin =>
+        StringSerializer.appendToBuilder(builder, x.transport.ID)
+        StringSerializer.appendToBuilder(builder, x.query.render(new StringRendering).get)
+
+        builder.putByte(if (x.isConnected) 0x01 else 0x00)
+
+        x.origins foreach { origin =>
           StringSerializer.appendToBuilder(builder, origin.render(new StringRendering).get)
         }
 
@@ -145,29 +188,22 @@ class ConnectionContextSerializer extends Serializer {
 
     val sessionId = StringSerializer.fromByteIterator(data)
     val transId = StringSerializer.fromByteIterator(data)
-    val query = Query.apply(StringSerializer.fromByteIterator(data))
-    val origins = ListBuffer[HttpOrigin]()
+    val query = Query(StringSerializer.fromByteIterator(data))
+
+    val isConnected = data.getByte == 0x01
+
+    val origins = mutable.ListBuffer[HttpOrigin]()
     while (data.nonEmpty) {
       origins.append(HttpOrigin(StringSerializer.fromByteIterator(data)))
     }
 
-    val ctx = new ConnectionContext(sessionId, query, origins)
-    ctx.bindTransport(Transport.transportIds.getOrElse(transId, null))
+    val ctx = new ConnectionContext(sessionId, query, origins.toList)
+    ctx.transport = Transport.transportIds.getOrElse(transId, transport.Empty)
+    ctx.isConnected = isConnected
 
     ctx
   }
 
-  final def appendToBuilder(builder: ByteStringBuilder, connctx: ConnectionContext) {
-    val bytes = toBinary(connctx)
-    builder.putInt(bytes.length)
-    builder.putBytes(bytes)
-  }
-
-  final def fromByteIterator(data: ByteIterator) = {
-    val ctxBytes = Array.ofDim[Byte](data.getInt)
-    data.getBytes(ctxBytes)
-    ConnectionContextSerializer.fromBinary(ctxBytes).asInstanceOf[ConnectionContext]
-  }
 }
 
 class OnPacketSerializer extends Serializer {
@@ -179,7 +215,7 @@ class OnPacketSerializer extends Serializer {
 
   final def toBinary(o: AnyRef): Array[Byte] = {
     o match {
-      case OnPacket(packet: Packet, connContext: ConnectionContext) =>
+      case ConnectionActive.OnPacket(packet: Packet, connContext: ConnectionContext) =>
         val builder = ByteString.newBuilder
 
         PacketSerializer.appendToBuilder(builder, packet)
@@ -196,7 +232,7 @@ class OnPacketSerializer extends Serializer {
     val packet = PacketSerializer.fromByteIterator(data)
     val ctx = ConnectionContextSerializer.fromByteIterator(data)
 
-    OnPacket(packet, ctx)
+    ConnectionActive.OnPacket(packet, ctx)
   }
 }
 
@@ -209,7 +245,7 @@ class OnBroadcastSerializer extends Serializer {
 
   final def toBinary(o: AnyRef): Array[Byte] = {
     o match {
-      case OnBroadcast(sessionId, room, packet) =>
+      case ConnectionActive.OnBroadcast(sessionId, room, packet) =>
         val builder = ByteString.newBuilder
 
         StringSerializer.appendToBuilder(builder, sessionId)
@@ -228,7 +264,7 @@ class OnBroadcastSerializer extends Serializer {
     val room = StringSerializer.fromByteIterator(data)
     val packet = PacketSerializer.fromByteIterator(data)
 
-    OnBroadcast(sessionId, room, packet)
+    ConnectionActive.OnBroadcast(sessionId, room, packet)
   }
 }
 
@@ -239,46 +275,46 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
 
   final def identifier: Int = 2004
 
-  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Command], Array[Byte] => AnyRef](
-    classOf[CreateSession] -> (bytes => toCreateSession(bytes)),
-    classOf[Connecting] -> (bytes => toConnecting(bytes)),
-    classOf[Closing] -> (bytes => toClosing(bytes)),
-    classOf[OnGet] -> (bytes => toOnGet(bytes)),
-    classOf[OnPost] -> (bytes => toOnPost(bytes)),
-    classOf[OnFrame] -> (bytes => toOnFrame(bytes)),
-    classOf[SendMessage] -> (bytes => toSendMessage(bytes)),
-    classOf[SendJson] -> (bytes => toSendJson(bytes)),
-    classOf[SendEvent] -> (bytes => toSendEvent(bytes)),
-    classOf[SendPackets] -> (bytes => toSendPackets(bytes)),
-    classOf[SendAck] -> (bytes => toSendAck(bytes)),
-    classOf[SubscribeBroadcast] -> (bytes => toSubscribeBroadcast(bytes)),
-    classOf[UnsubscribeBroadcast] -> (bytes => toUnsubscribeBroadcast(bytes)),
-    classOf[GetStatus] -> (bytes => toGetStatus(bytes)),
-    classOf[Broadcast] -> (bytes => toBroadcast(bytes)))
+  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: ConnectionActive.Command], Array[Byte] => AnyRef](
+    classOf[ConnectionActive.CreateSession] -> (bytes => toCreateSession(bytes)),
+    classOf[ConnectionActive.Connecting] -> (bytes => toConnecting(bytes)),
+    classOf[ConnectionActive.Closing] -> (bytes => toClosing(bytes)),
+    classOf[ConnectionActive.OnGet] -> (bytes => toOnGet(bytes)),
+    classOf[ConnectionActive.OnPost] -> (bytes => toOnPost(bytes)),
+    classOf[ConnectionActive.OnFrame] -> (bytes => toOnFrame(bytes)),
+    classOf[ConnectionActive.SendMessage] -> (bytes => toSendMessage(bytes)),
+    classOf[ConnectionActive.SendJson] -> (bytes => toSendJson(bytes)),
+    classOf[ConnectionActive.SendEvent] -> (bytes => toSendEvent(bytes)),
+    classOf[ConnectionActive.SendPackets] -> (bytes => toSendPackets(bytes)),
+    classOf[ConnectionActive.SendAck] -> (bytes => toSendAck(bytes)),
+    classOf[ConnectionActive.SubscribeBroadcast] -> (bytes => toSubscribeBroadcast(bytes)),
+    classOf[ConnectionActive.UnsubscribeBroadcast] -> (bytes => toUnsubscribeBroadcast(bytes)),
+    classOf[ConnectionActive.GetStatus] -> (bytes => toGetStatus(bytes)),
+    classOf[ConnectionActive.Broadcast] -> (bytes => toBroadcast(bytes)))
 
   final def toBinary(o: AnyRef): Array[Byte] = {
     o match {
-      case cmd: CreateSession        => fromCreateSession(cmd)
-      case cmd: Connecting           => fromConnecting(cmd)
-      case cmd: Closing              => fromClosing(cmd)
-      case cmd: OnGet                => fromOnGet(cmd)
-      case cmd: OnPost               => fromOnPost(cmd)
-      case cmd: OnFrame              => fromOnFrame(cmd)
-      case cmd: SendMessage          => fromSendMessage(cmd)
-      case cmd: SendJson             => fromSendJson(cmd)
-      case cmd: SendEvent            => fromSendEvent(cmd)
-      case cmd: SendPackets          => fromSendPackets(cmd)
-      case cmd: SendAck              => fromSendAck(cmd)
-      case cmd: SubscribeBroadcast   => fromSubscribeBroadcast(cmd)
-      case cmd: UnsubscribeBroadcast => fromUnsubscribeBroadcast(cmd)
-      case cmd: GetStatus            => fromGetStatus(cmd)
-      case cmd: Broadcast            => fromBroadcast(cmd)
+      case cmd: ConnectionActive.CreateSession        => fromCreateSession(cmd)
+      case cmd: ConnectionActive.Connecting           => fromConnecting(cmd)
+      case cmd: ConnectionActive.Closing              => fromClosing(cmd)
+      case cmd: ConnectionActive.OnGet                => fromOnGet(cmd)
+      case cmd: ConnectionActive.OnPost               => fromOnPost(cmd)
+      case cmd: ConnectionActive.OnFrame              => fromOnFrame(cmd)
+      case cmd: ConnectionActive.SendMessage          => fromSendMessage(cmd)
+      case cmd: ConnectionActive.SendJson             => fromSendJson(cmd)
+      case cmd: ConnectionActive.SendEvent            => fromSendEvent(cmd)
+      case cmd: ConnectionActive.SendPackets          => fromSendPackets(cmd)
+      case cmd: ConnectionActive.SendAck              => fromSendAck(cmd)
+      case cmd: ConnectionActive.SubscribeBroadcast   => fromSubscribeBroadcast(cmd)
+      case cmd: ConnectionActive.UnsubscribeBroadcast => fromUnsubscribeBroadcast(cmd)
+      case cmd: ConnectionActive.GetStatus            => fromGetStatus(cmd)
+      case cmd: ConnectionActive.Broadcast            => fromBroadcast(cmd)
     }
   }
 
   final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
     manifest match {
-      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[Command]]) match {
+      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[ConnectionActive.Command]]) match {
         case Some(f) => f(bytes)
         case None    => throw new IllegalArgumentException(s"Unimplemented deserialization of message class $clazz in CommandSerializer")
       }
@@ -286,11 +322,11 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     }
   }
 
-  final def fromCreateSession(cmd: CreateSession) = cmd.sessionId.getBytes
+  final def fromCreateSession(cmd: ConnectionActive.CreateSession) = cmd.sessionId.getBytes
 
-  final def toCreateSession(bytes: Array[Byte]) = CreateSession(new String(bytes))
+  final def toCreateSession(bytes: Array[Byte]) = ConnectionActive.CreateSession(new String(bytes))
 
-  final def fromConnecting(cmd: Connecting) = {
+  final def fromConnecting(cmd: ConnectionActive.Connecting) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -314,15 +350,15 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val sessionId = StringSerializer.fromByteIterator(data)
     val query = Query.apply(StringSerializer.fromByteIterator(data))
     val transport = Transport.transportIds.getOrElse(StringSerializer.fromByteIterator(data), null)
-    val ref = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
-    val origins = ListBuffer[HttpOrigin]()
+    val tranportConnection = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
+    val origins = mutable.ListBuffer[HttpOrigin]()
     while (data.nonEmpty) {
       origins.append(HttpOrigin(StringSerializer.fromByteIterator(data)))
     }
-    Connecting(sessionId, query, origins, ref, transport)
+    ConnectionActive.Connecting(sessionId, query, origins.toList, tranportConnection, transport)
   }
 
-  final def fromClosing(cmd: Closing) = {
+  final def fromClosing(cmd: ConnectionActive.Closing) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -337,10 +373,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val sessionId = StringSerializer.fromByteIterator(data)
     val ref = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
 
-    Closing(sessionId, ref)
+    ConnectionActive.Closing(sessionId, ref)
   }
 
-  final def fromOnGet(cmd: OnGet) = {
+  final def fromOnGet(cmd: ConnectionActive.OnGet) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -355,10 +391,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val sessionId = StringSerializer.fromByteIterator(data)
     val ref = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
 
-    OnGet(sessionId, ref)
+    ConnectionActive.OnGet(sessionId, ref)
   }
 
-  final def fromOnPost(cmd: OnPost) = {
+  final def fromOnPost(cmd: ConnectionActive.OnPost) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -376,10 +412,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
 
     val payload = data.toByteString
 
-    OnPost(sessionId, ref, payload)
+    ConnectionActive.OnPost(sessionId, ref, payload)
   }
 
-  final def fromOnFrame(cmd: OnFrame) = {
+  final def fromOnFrame(cmd: ConnectionActive.OnFrame) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -394,10 +430,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val sessionId = StringSerializer.fromByteIterator(data)
     val payload = Array.ofDim[Byte](data.len)
     data.getBytes(payload)
-    OnFrame(sessionId, ByteString(payload))
+    ConnectionActive.OnFrame(sessionId, ByteString(payload))
   }
 
-  final def fromSendMessage(cmd: SendMessage) = {
+  final def fromSendMessage(cmd: ConnectionActive.SendMessage) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -410,10 +446,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
   final def toSendMessage(bytes: Array[Byte]) = {
     val data = ByteString(bytes).iterator
 
-    SendMessage(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
+    ConnectionActive.SendMessage(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
   }
 
-  final def fromSendJson(cmd: SendJson) = {
+  final def fromSendJson(cmd: ConnectionActive.SendJson) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -426,10 +462,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
   final def toSendJson(bytes: Array[Byte]) = {
     val data = ByteString(bytes).iterator
 
-    SendJson(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
+    ConnectionActive.SendJson(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
   }
 
-  final def fromSendEvent(cmd: SendEvent) = {
+  final def fromSendEvent(cmd: ConnectionActive.SendEvent) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -456,19 +492,19 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val name = StringSerializer.fromByteIterator(data)
     val lr = StringSerializer.fromByteIterator(data)
 
-    val ss = ListBuffer[String]()
+    val ss = mutable.ListBuffer[String]()
     while (data.nonEmpty) {
       ss.append(StringSerializer.fromByteIterator(data))
     }
     val args: Either[String, Seq[String]] = lr match {
       case "l" if ss.nonEmpty => Left[String, Seq[String]](ss(0))
-      case "r"                => Right[String, Seq[String]](ss.toSeq)
+      case "r"                => Right[String, Seq[String]](ss.toList)
       case _                  => Left[String, Seq[String]]("[]")
     }
-    SendEvent(sessionId, endpoint, name, args)
+    ConnectionActive.SendEvent(sessionId, endpoint, name, args)
   }
 
-  final def fromSendPackets(cmd: SendPackets) = {
+  final def fromSendPackets(cmd: ConnectionActive.SendPackets) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -481,14 +517,14 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val data = ByteString(bytes).iterator
 
     val sessionId = StringSerializer.fromByteIterator(data)
-    val packets = ListBuffer[Packet]()
+    val packets = mutable.ListBuffer[Packet]()
     while (data.nonEmpty) {
       packets.append(PacketSerializer.fromByteIterator(data))
     }
-    SendPackets(sessionId, packets)
+    ConnectionActive.SendPackets(sessionId, packets.toList)
   }
 
-  final def fromSendAck(cmd: SendAck) = {
+  final def fromSendAck(cmd: ConnectionActive.SendAck) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -505,10 +541,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val packet = PacketSerializer.fromByteIterator(data).asInstanceOf[DataPacket]
     val args = StringSerializer.fromByteIterator(data)
 
-    SendAck(sessionId, packet, args)
+    ConnectionActive.SendAck(sessionId, packet, args)
   }
 
-  final def fromSubscribeBroadcast(cmd: SubscribeBroadcast) = {
+  final def fromSubscribeBroadcast(cmd: ConnectionActive.SubscribeBroadcast) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -521,10 +557,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
   final def toSubscribeBroadcast(bytes: Array[Byte]) = {
     val data = ByteString(bytes).iterator
 
-    SubscribeBroadcast(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
+    ConnectionActive.SubscribeBroadcast(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
   }
 
-  final def fromUnsubscribeBroadcast(cmd: UnsubscribeBroadcast) = {
+  final def fromUnsubscribeBroadcast(cmd: ConnectionActive.UnsubscribeBroadcast) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -537,11 +573,11 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
   final def toUnsubscribeBroadcast(bytes: Array[Byte]) = {
     val data = ByteString(bytes).iterator
 
-    UnsubscribeBroadcast(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
+    ConnectionActive.UnsubscribeBroadcast(StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data), StringSerializer.fromByteIterator(data))
 
   }
 
-  final def fromGetStatus(cmd: GetStatus) = {
+  final def fromGetStatus(cmd: ConnectionActive.GetStatus) = {
     val builder = ByteString.newBuilder
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
     builder.result.toArray
@@ -550,10 +586,10 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
   final def toGetStatus(bytes: Array[Byte]) = {
     val data = ByteString(bytes).iterator
     val sessionId = StringSerializer.fromByteIterator(data)
-    GetStatus(sessionId)
+    ConnectionActive.GetStatus(sessionId)
   }
 
-  final def fromBroadcast(cmd: Broadcast) = {
+  final def fromBroadcast(cmd: ConnectionActive.Broadcast) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
@@ -570,7 +606,7 @@ class CommandSerializer(val system: ExtendedActorSystem) extends Serializer {
     val room = StringSerializer.fromByteIterator(data)
     val packet = PacketSerializer.fromByteIterator(data)
 
-    Broadcast(sessionId, room, packet)
+    ConnectionActive.Broadcast(sessionId, room, packet)
   }
 
 }
@@ -584,7 +620,7 @@ class StatusSerializer extends Serializer {
 
   final def toBinary(o: AnyRef): Array[Byte] = {
     o match {
-      case Status(sessionId, connectionTime, location) =>
+      case ConnectionActive.Status(sessionId, connectionTime, location) =>
         val builder = ByteString.newBuilder
 
         StringSerializer.appendToBuilder(builder, sessionId)
@@ -603,6 +639,6 @@ class StatusSerializer extends Serializer {
     val connectionTime = data.getLong
     val location = StringSerializer.fromByteIterator(data)
 
-    Status(sessionId, connectionTime, location)
+    ConnectionActive.Status(sessionId, connectionTime, location)
   }
 }

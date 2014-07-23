@@ -7,5 +7,8 @@ object TransientConnectionActive {
 }
 
 class TransientConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with Actor with ActorLogging {
+  def recoveryFinished: Boolean = true
+  def recoveryRunning: Boolean = false
+
   override def receive: Receive = working
 }

@@ -1,7 +1,7 @@
 package spray.contrib.socketio.examples.benchmark
 
 import com.typesafe.config.{ Config, ConfigFactory }
-import akka.actor.{ Props, ActorSystem }
+import akka.actor.{ ActorSystem }
 import akka.io.IO
 import akka.persistence.Persistence
 //import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
@@ -22,7 +22,7 @@ import spray.json.JsString
 
 object SocketIOTestClusterServer extends App {
   val usage = """
-    Usage: SocketIOTestClusterServer [transport|connectionActive|business] -Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@host1:port -Dakka.remote.netty.tcp.hostname=host1 -Dakka.remote.netty.tcp.port=port
+    Usage: SocketIOTestClusterServer [transport|connectionactive|business] -Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@host1:port -Dakka.remote.netty.tcp.hostname=host1 -Dakka.remote.netty.tcp.port=port
               """
 
   def exitWithUsage = {
@@ -58,7 +58,7 @@ object SocketIOTestClusterServer extends App {
       val port = config.getInt("transport.port")
       IO(UHttp) ! Http.Bind(server, host, port)
 
-    case "connectionActive" :: tail =>
+    case "connectionactive" :: tail =>
       val config = parseString("akka.cluster.roles =[\"connectionActive\"]").withFallback(commonSettings)
       system = startCluster(config)
       Persistence(system)
@@ -77,7 +77,7 @@ object SocketIOTestClusterServer extends App {
           value match {
             case OnEvent("chat", args, context) => // for spec and load test
               spray.json.JsonParser(args) // test spray-json too.
-              println("on chat event")
+              //println("on chat event")
               if (isBroadcast) {
                 value.broadcast("", EventPacket(-1L, false, value.endpoint, "chat", args))
               } else {
@@ -87,7 +87,7 @@ object SocketIOTestClusterServer extends App {
               val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
               value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))
             case _ =>
-              println("observed: " + value)
+            //println("observed: " + value)
           }
         }
       }

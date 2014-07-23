@@ -1,6 +1,10 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef, Terminated, ActorSystem, Props, ActorLogging, ActorSelection, Cancellable }
+import akka.actor.{ PoisonPill, Actor, ActorRef, ActorSystem, Props, ActorLogging, ActorSelection, Cancellable }
+import akka.cluster.ClusterEvent.MemberEvent
+import akka.cluster.ClusterEvent.MemberRemoved
+import akka.cluster.ClusterEvent.MemberUp
+import akka.cluster.ClusterEvent.UnreachableMember
 import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
@@ -10,6 +14,11 @@ import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, Subs
 import akka.event.LoggingAdapter
 import akka.io.Tcp
 import akka.pattern.ask
+import akka.persistence.EventsourcedProcessor
+import akka.persistence.PersistenceFailure
+import akka.persistence.SaveSnapshotFailure
+import akka.persistence.SaveSnapshotSuccess
+import akka.persistence.SnapshotOffer
 import akka.routing.ConsistentHashingRouter.ConsistentHashable
 import akka.util.ByteString
 import org.parboiled.errors.ParsingException
@@ -68,10 +77,6 @@ object ConnectionActive {
    */
   final case class Broadcast(sessionId: String, room: String, packet: Packet) extends Command
 
-  final case class GetStatus(sessionId: String) extends Command
-
-  final case class Status(sessionId: String, connectionTime: Long, location: String) extends Serializable
-
   /**
    * Broadcast event to be published or recevived
    */
@@ -83,6 +88,9 @@ object ConnectionActive {
   final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext) extends ConsistentHashable {
     override def consistentHashKey: Any = connContext.sessionId
   }
+
+  final case class GetStatus(sessionId: String) extends Command
+  final case class Status(sessionId: String, connectionTime: Long, location: String) extends Serializable
 
   val shardName: String = "ConnectionActives"
 
@@ -136,12 +144,27 @@ object ConnectionActive {
     singletons
   }
 
-  final case class State(connectionContext: Option[ConnectionContext], transportConnection: ActorRef, topics: immutable.Set[String], disconnected: Boolean)
+  final class State(val context: ConnectionContext, var transportConnection: ActorRef, var topics: immutable.Set[String]) extends Serializable {
+    override def equals(other: Any) = {
+      other match {
+        case x: State => x.context == this.context && x.transportConnection == this.transportConnection && x.topics == this.topics
+        case _        => false
+      }
+    }
+
+    override def toString = {
+      new StringBuilder().append("State(")
+        .append("context=").append(context)
+        .append(", transConn=").append(transportConnection)
+        .append(", topics=").append(topics).append(")")
+        .toString
+    }
+  }
 
   val GlobalConnectPacket = ConnectPacket()
   val GlobalDisconnectPacket = DisconnectPacket()
 
-  def heartbeatDelay = util.Random.nextInt((math.min(socketio.Settings.HeartbeatTimeout, socketio.Settings.CloseTimeout) * 0.618).round.toInt).seconds
+  private def heartbeatDelay = util.Random.nextInt((math.min(socketio.Settings.HeartbeatTimeout, socketio.Settings.CloseTimeout) * 0.618).round.toInt).seconds
 }
 
 /**
@@ -155,43 +178,54 @@ trait ConnectionActive { _: Actor =>
   def log: LoggingAdapter
 
   def namespaceMediator: ActorRef
-
   def broadcastMediator: ActorRef
 
-  lazy val socketioEx = SocketIOExtension(context.system)
+  def recoveryFinished: Boolean
+  def recoveryRunning: Boolean
 
-  var pendingPackets = immutable.Queue[Packet]()
+  private lazy val scheduler = SocketIOExtension(context.system).scheduler
 
-  var state: State = State(None, null, immutable.Set[String](), false)
-
-  var isReplaying = false
-
-  val startTime = System.currentTimeMillis
-
-  var closeTimeoutTask: Option[Cancellable] = None
+  private val startTime = System.currentTimeMillis
 
   // It seems socket.io client may fire heartbeat only when it received heartbeat
   // from server, or, just bounce heartheat instead of firing heartbeat standalone.
-  var heartbeatTask: Option[Cancellable] = None
+  private var heartbeatTask: Option[Cancellable] = None
+  private var closeTimeoutTask: Option[Cancellable] = None
+
+  protected var pendingPackets = immutable.Queue[Packet]()
+
+  private var _state: State = _ // have to init it lazy
+  def state = {
+    if (_state == null) {
+      _state = new State(new ConnectionContext(), context.system.deadLetters, immutable.Set())
+    }
+    _state
+  }
+  def state_=(state: State) {
+    _state = state
+  }
 
   def updateState(evt: Any, newState: State) {
     state = newState
   }
 
   def close() {
-    log.debug("close")
-    disableHeartbeat()
-    disableCloseTimeout()
+    clear()
 
-    if (socketioEx.Settings.isCluster) {
+    if (SocketIOExtension(context.system).Settings.isCluster) {
       context.parent ! Passivate(stopMessage = PoisonPill)
     } else {
       self ! PoisonPill
     }
   }
 
-  def working: Receive = {
+  def clear() {
+    log.debug("clear")
+    disableHeartbeat()
+    disableCloseTimeout()
+  }
 
+  def working: Receive = {
     // ---- heartbeat
     case socketio.HeartbeatTick => // scheduled sending heartbeat
       log.debug("send heartbeat")
@@ -202,25 +236,21 @@ trait ConnectionActive { _: Actor =>
       }
 
     case socketio.CloseTimeout =>
-      log.debug("stoped due to close-timeout of {} seconds", socketio.Settings.CloseTimeout)
-      if (state.transportConnection != null) {
-        state.transportConnection ! Tcp.Close
+      state.transportConnection ! Tcp.Close
+      log.info("Timeout Closing: {}, state: {}", state.context.sessionId, state)
+      if (state.context.isConnected) { // make sure only send disconnect packet one time
+        onPacket(null)(GlobalDisconnectPacket)
       }
-      close()
 
     // ---- on data
     case cmd @ OnFrame(sessionId, payload) =>
       onPayload(cmd)(payload)
     case cmd @ OnPost(sessionId, transportConnection, payload) =>
       // response an empty entity to release POST before message processing
-      state.connectionContext foreach { ctx =>
-        ctx.transport.write(ctx, transportConnection, "")
-      }
+      state.context.transport.write(state.context, transportConnection, "")
       onPayload(cmd)(payload)
     case OnGet(sessionId, transportConnection) =>
-      state.connectionContext foreach { ctx =>
-        pendingPackets = ctx.transport.writeSingle(ctx, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
-      }
+      pendingPackets = state.context.transport.writeSingle(state.context, transportConnection, isSendingNoopWhenEmpty = true, pendingPackets)
 
     // ---- sending
     case SendMessage(sessionId, endpoint, msg)      => sendMessage(endpoint, msg)
@@ -235,61 +265,78 @@ trait ConnectionActive { _: Actor =>
 
     case cmd @ SubscribeBroadcast(sessionId, endpoint, room) =>
       val topic = socketio.topicForBroadcast(endpoint, room)
-      updateState(cmd, state.copy(topics = state.topics + topic))
+      state.topics = state.topics + topic
+      updateState(cmd, state)
       subscribeBroadcast(topic)
 
     case cmd @ UnsubscribeBroadcast(sessionId, endpoint, room) =>
       val topic = socketio.topicForBroadcast(endpoint, room)
-      updateState(cmd, state.copy(topics = state.topics - topic))
+      state.topics = state.topics - topic
+      updateState(cmd, state)
       unsubscribeBroadcast(topic)
 
     // -- connecting / closing  
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
-    case cmd @ Connecting(sessionId, query, origins, transportConnection, transport) =>
+    case cmd @ Connecting(sessionId, query, origins, transportConnection, transport) => // transport fired connecting command
       enableHeartbeat()
 
-      state.connectionContext match {
-        case Some(existed) =>
-          if (!isReplaying) {
-            updateState(cmd, state.copy(transportConnection = transportConnection))
-            existed.bindTransport(transport)
+      state.context.sessionId match {
+        case null =>
+          state.context.sessionId = sessionId
+          state.context.query = query
+          state.context.origins = origins
+          state.context.transport = transport
+          state.transportConnection = transportConnection
+
+          updateState(cmd, state)
+          onPacket(cmd)(GlobalConnectPacket)
+        case existed =>
+          state.context.transport = transport
+          state.transportConnection = transportConnection
+
+          if (recoveryFinished) {
+            updateState(cmd, state)
             onPacket(cmd)(GlobalConnectPacket)
           }
-        case None =>
-          updateState(cmd, state.copy(connectionContext = Some(new ConnectionContext(sessionId, query, origins)), transportConnection = transportConnection))
-          state.connectionContext foreach { _.bindTransport(transport) }
-          onPacket(cmd)(GlobalConnectPacket)
       }
 
-      if (!isReplaying) {
+      if (recoveryFinished) {
         log.info("Connecting: {}, state: {}", sessionId, state)
       }
 
     case cmd @ Closing(sessionId, transportConnection) => // transport fired closing command
-      log.info("Closing: {}, state: {}", sessionId, state)
+      if (recoveryFinished) {
+        log.info("Closing: {}, state: {}", sessionId, state)
+      }
       if (state.transportConnection == transportConnection) {
-        if (!state.disconnected) { // make sure only send disconnect packet one time
+        if (state.context.isConnected) { // make sure only send disconnect packet one time
           onPacket(cmd)(GlobalDisconnectPacket)
         }
       }
 
     // TODO we do not monitor state.transportConnection any more, but we can try to monitor the Node where transportConnection is resided.
-    case Terminated(ref) =>
-      log.info("Terminated: {}, {}", state.connectionContext, ref)
-      if (state.transportConnection == ref) {
-        if (!state.disconnected) {
-          onPacket(null)(GlobalDisconnectPacket)
-        }
-      }
+    case MemberUp(member) =>
+      log.info("Member is Up: {}", member.address)
+    case UnreachableMember(member) =>
+      log.info("Member detected as unreachable: {}", member)
+    case MemberRemoved(member, previousStatus) =>
+      log.info("Member is Removed: {} after {}", member.address, previousStatus)
+    case _: MemberEvent => // ignore    case MemberEvent(ref) =>
+    //      log.info("Terminated: {}, {}", state, )
+    //      if (state.transportConnection == ref) {
+    //        if (state.context.isConnected) {
+    //          onPacket(null)(GlobalDisconnectPacket)
+    //        }
+    //      }
 
     // --- Stats
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
 
     case GetStatus(sessionId) =>
-      val sessionId = if (state.disconnected) null else state.connectionContext.map(_.sessionId).getOrElse(null)
-      val location = if (state.transportConnection != null && state.transportConnection.path != null) state.transportConnection.path.toSerializationFormat else null
+      val sessionId = if (state.context.isConnected) state.context.sessionId else null
+      val location = if (state.transportConnection.path != null) state.transportConnection.path.toSerializationFormat else null
       sender() ! Status(sessionId, System.currentTimeMillis - startTime, location)
   }
 
@@ -310,16 +357,18 @@ trait ConnectionActive { _: Actor =>
         disableCloseTimeout()
 
       case ConnectPacket(endpoint, args) =>
-        if (!isReplaying) {
-          state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        if (recoveryFinished) {
+          publishToNamespace(OnPacket(packet, state.context))
         }
 
         val topic = socketio.topicForBroadcast(endpoint, "")
-        updateState(cmd, state.copy(topics = state.topics + topic, disconnected = false))
+        state.topics = state.topics + topic
+        state.context.isConnected = true
+        updateState(cmd, state)
         subscribeBroadcast(topic).onComplete {
           case Success(ack) =>
             // bounce connect packet back to client
-            if (!isReplaying) {
+            if (recoveryFinished) {
               sendPacket(packet)
             }
           case Failure(ex) =>
@@ -328,25 +377,26 @@ trait ConnectionActive { _: Actor =>
 
       case DisconnectPacket(endpoint) =>
         if (endpoint == "") {
-          if (!isReplaying) {
-            state.connectionContext foreach { ctx => publishDisconnect(ctx) }
+          if (recoveryFinished) {
+            publishDisconnect(state.context)
           }
-          if (state.transportConnection != null) {
-            cmd match {
-              case _: Closing => // ignore Closing (which is sent from the Transport) to avoid cycle
-              case _          => state.transportConnection ! Tcp.Close
-            }
+          cmd match {
+            case _: Closing => // ignore Closing (which is sent from the Transport) to avoid cycle
+            case _          => state.transportConnection ! Tcp.Close
           }
-          updateState(cmd, state.copy(topics = Set(), disconnected = true))
+          state.topics = Set()
+          state.context.isConnected = false
+          updateState(cmd, state)
           state.topics foreach unsubscribeBroadcast
 
           close()
         } else {
-          if (!isReplaying) {
-            state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+          if (recoveryFinished) {
+            publishToNamespace(OnPacket(packet, state.context))
           }
           val topic = socketio.topicForBroadcast(endpoint, "")
-          updateState(cmd, state.copy(topics = state.topics - topic))
+          state.topics = state.topics - topic
+          updateState(cmd, state)
           unsubscribeBroadcast(topic)
         }
 
@@ -356,7 +406,7 @@ trait ConnectionActive { _: Actor =>
           case x: DataPacket if x.isAckRequested && !x.hasAckData => sendAck(x, "[]")
           case _ =>
         }
-        state.connectionContext foreach { ctx => publishToNamespace(OnPacket(packet, ctx)) }
+        publishToNamespace(OnPacket(packet, state.context))
     }
   }
 
@@ -385,8 +435,8 @@ trait ConnectionActive { _: Actor =>
     var updatePendingPackets = pendingPackets
     packets foreach { packet => updatePendingPackets = updatePendingPackets.enqueue(packet) }
     log.debug("Enqueued {}, pendingPackets: {}", packets, pendingPackets)
-    state.connectionContext foreach { ctx =>
-      updatePendingPackets = ctx.transport.flushOrWait(ctx, state.transportConnection, updatePendingPackets)
+    if (state.context.isConnected) {
+      updatePendingPackets = state.context.transport.flushOrWait(state.context, state.transportConnection, updatePendingPackets)
     }
     pendingPackets = updatePendingPackets
   }
@@ -420,14 +470,14 @@ trait ConnectionActive { _: Actor =>
   def enableHeartbeat() {
     log.debug("enabled heartbeat, will repeatly send heartbeat every {} seconds", socketio.Settings.heartbeatInterval.seconds)
     heartbeatTask foreach { _.cancel } // it better to confirm previous heartbeatTask was cancled
-    heartbeatTask = Some(socketioEx.scheduler.schedule(heartbeatDelay, socketio.Settings.heartbeatInterval.seconds, self, socketio.HeartbeatTick))
+    heartbeatTask = Some(scheduler.schedule(heartbeatDelay, socketio.Settings.heartbeatInterval.seconds, self, socketio.HeartbeatTick))
   }
 
   def enableCloseTimeout() {
     log.debug("enabled close-timeout, will close in {} seconds", socketio.Settings.CloseTimeout)
     closeTimeoutTask foreach { _.cancel } // it better to confirm previous closeTimeoutTask was cancled
     if (context != null) {
-      closeTimeoutTask = Some(socketioEx.scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds, self, socketio.CloseTimeout))
+      closeTimeoutTask = Some(scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds, self, socketio.CloseTimeout))
     }
   }
 

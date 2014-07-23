@@ -25,9 +25,10 @@ object Transport {
     HtmlFile,
     WebSocket,
     FlashSocket,
-    JsonpPolling).map(x => x.ID -> x).toMap
+    JsonpPolling,
+    Empty).map(x => x.ID -> x).toMap
 
-  def isSupported(id: String) = transportIds.contains(id)
+  def isSupported(id: String) = transportIds.contains(id) && id != Empty.ID
 }
 
 /**
@@ -175,6 +176,17 @@ object JsonpPolling extends Transport {
 
   protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
     // TODO
+  }
+}
+
+object Empty extends Transport {
+  val ID = "empty"
+
+  protected[socketio] def flushOrWait(connContext: ConnectionContext, transportConnection: ActorRef, pendingPackets: immutable.Queue[Packet]): immutable.Queue[Packet] = {
+    pendingPackets
+  }
+
+  protected[socketio] def write(connContext: ConnectionContext, transportConnection: ActorRef, payload: String) {
   }
 }
 

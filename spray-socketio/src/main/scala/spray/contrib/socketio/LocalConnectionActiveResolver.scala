@@ -12,7 +12,7 @@ object LocalConnectionActiveResolver {
   def props(mediator: ActorRef, connectionActiveProps: Props) = Props(classOf[LocalConnectionActiveResolver], mediator, connectionActiveProps)
 }
 
-class LocalConnectionActiveResolver(val mediator: ActorRef, val connectionActiveProps: Props) extends Actor with ActorLogging {
+class LocalConnectionActiveResolver(mediator: ActorRef, connectionActiveProps: Props) extends Actor with ActorLogging {
 
   def receive = {
     case ConnectionActive.CreateSession(sessionId: String) =>

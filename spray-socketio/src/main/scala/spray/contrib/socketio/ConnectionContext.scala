@@ -3,6 +3,7 @@ package spray.contrib.socketio
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
+import scala.collection.immutable
 
 /**
  * Socket.IO has built-in support for multiple channels of communication
@@ -19,21 +20,52 @@ import spray.http.Uri
  *
  * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
  */
-class ConnectionContext(val sessionId: String, val query: Uri.Query, val origins: Seq[HttpOrigin]) extends Serializable {
-  private var _transport: Transport = _
+class ConnectionContext(private var _sessionId: String = null, private var _query: Uri.Query = Uri.Query.Empty, private var _origins: Seq[HttpOrigin] = List()) extends Serializable {
+  def sessionId = _sessionId
+  private[socketio] def sessionId_=(sessionId: String) = {
+    _sessionId = sessionId
+    this
+  }
+
+  def query = _query
+  private[socketio] def query_=(query: Uri.Query) = {
+    _query = query
+    this
+  }
+
+  def origins = _origins
+  private[socketio] def origins_=(origins: Seq[HttpOrigin]) = {
+    _origins = origins
+    this
+  }
+
+  private var _transport: Transport = spray.contrib.socketio.transport.Empty
   def transport = _transport
-  def bindTransport(transport: Transport) = {
+  private[socketio] def transport_=(transport: Transport) = {
     _transport = transport
     this
   }
 
-  override def equals(x: Any) = {
-    x match {
-      case x: ConnectionContext =>
-        x.sessionId == this.sessionId && x.query == this.query && x.origins == this.origins
-      case _ => false
+  private var _isConnected: Boolean = _
+  def isConnected = _isConnected
+  private[socketio] def isConnected_=(isConnected: Boolean) = {
+    _isConnected = isConnected
+    this
+  }
+
+  override def equals(other: Any) = {
+    other match {
+      case x: ConnectionContext => x.sessionId == this.sessionId && x.query == this.query && x.origins == this.origins
+      case _ =>
+        false
     }
   }
 
-  override def toString(): String = sessionId + ", " + query + ", " + origins
+  override def toString(): String = {
+    new StringBuilder().append(sessionId)
+      .append(", query=").append(query)
+      .append(", origins=").append(origins)
+      .append(", isConnected=").append(isConnected)
+      .toString
+  }
 }

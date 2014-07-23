@@ -8,18 +8,18 @@ object PersistentConnectionActive {
 }
 
 class PersistentConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with EventsourcedProcessor with ActorLogging {
-
   import ConnectionActive._
 
   def receiveRecover: Receive = {
     case event: Event =>
-      isReplaying = true
       working(event)
-      isReplaying = false
-    case SnapshotOffer(_, offeredSnapshot: State) =>
-      log.debug("Got snapshotoffer: {}", offeredSnapshot)
+
+    case SnapshotOffer(metadata, offeredSnapshot: State) =>
+      log.info("Recovering from offeredSnapshot: {}", offeredSnapshot)
       state = offeredSnapshot
       state.topics foreach subscribeBroadcast
+
+    case x: SnapshotOffer => log.warning("Recovering received unknown: {}", x)
   }
 
   def receiveCommand: Receive = working orElse {
@@ -28,9 +28,9 @@ class PersistentConnectionActive(val namespaceMediator: ActorRef, val broadcastM
     case PersistenceFailure(_, _, reason) => log.error("Failed to persistence: {}", reason)
   }
 
-  override def updateState(evt: Any, state: State) {
-    super.updateState(evt, state)
-    if (!isReplaying) {
+  override def updateState(evt: Any, newState: State) {
+    super.updateState(evt, newState)
+    if (recoveryFinished) {
       saveSnapshot(state)
     }
   }

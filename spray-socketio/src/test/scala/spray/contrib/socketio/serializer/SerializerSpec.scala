@@ -1,9 +1,12 @@
 package spray.contrib.socketio.serializer
 
 import org.scalatest.{ BeforeAndAfterAll, Matchers, WordSpecLike }
+import akka.actor.Actor
 import akka.actor.ActorSystem
 import akka.testkit.{ ImplicitSender, TestKit }
+import akka.actor.Props
 import akka.serialization.SerializationExtension
+import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 import spray.contrib.socketio.ConnectionActive._
 import spray.contrib.socketio.ConnectionContext
@@ -17,8 +20,7 @@ import spray.contrib.socketio.ConnectionActive.OnFrame
 import spray.contrib.socketio.ConnectionActive.OnGet
 import spray.contrib.socketio.ConnectionActive.CreateSession
 import spray.contrib.socketio.ConnectionActive.Connecting
-import scala.Some
-import akka.util.ByteString
+import scala.collection.immutable
 
 class SerializerSpec(_system: ActorSystem) extends TestKit(_system) with ImplicitSender with WordSpecLike with Matchers with BeforeAndAfterAll {
 
@@ -27,18 +29,20 @@ akka {
   actor {
     serializers {
       frame = "spray.contrib.socketio.serializer.FrameSerializer"
-      command = "spray.contrib.socketio.serializer.CommandSerializer"
       packet = "spray.contrib.socketio.serializer.PacketSerializer"
       connctx = "spray.contrib.socketio.serializer.ConnectionContextSerializer"
+      state = "spray.contrib.socketio.serializer.ConnectionActiveStateSerializer"
+      command = "spray.contrib.socketio.serializer.CommandSerializer"
       onpacket = "spray.contrib.socketio.serializer.OnPacketSerializer"
       onbroadcast = "spray.contrib.socketio.serializer.OnBroadcastSerializer"
       status = "spray.contrib.socketio.serializer.StatusSerializer"
     }
     serialization-bindings {
       "spray.can.websocket.frame.Frame" = frame
-      "spray.contrib.socketio.ConnectionActive$Command" = command
       "spray.contrib.socketio.packet.Packet" = packet
       "spray.contrib.socketio.ConnectionContext" = connctx
+      "spray.contrib.socketio.ConnectionActive$State" = state
+      "spray.contrib.socketio.ConnectionActive$Command" = command
       "spray.contrib.socketio.ConnectionActive$OnPacket" = onpacket
       "spray.contrib.socketio.ConnectionActive$OnBroadcast" = onbroadcast
       "spray.contrib.socketio.ConnectionActive$Status" = status
@@ -59,10 +63,19 @@ akka {
     assertResult(obj)(back)
   }
 
+  class Test_Actor extends Actor {
+    def receive: Receive = {
+      case "test" =>
+    }
+  }
   val sessionId = "138129031209-DASDASLJDLKAS-DASd1938219381"
   val query = Query("a=1&b=2")
   val origins = List(HttpOrigin("http://www.google.com"))
   val packet = MessagePacket(-1, false, "", "hello world")
+  // If you want to make system.actorOf with nested classes, you will need to instantiate the 
+  // nested actor passing in a reference to the enclosing instance as a constructor arg.
+  val testActorRef = system.actorOf(Props(classOf[Test_Actor], this))
+  val deadleaters = system.deadLetters
 
   "Serializer" must {
     "handle Frame" in {
@@ -76,7 +89,24 @@ akka {
 
     "handle ConnectionContext" in {
       val obj = new ConnectionContext(sessionId, query, origins)
-      obj.bindTransport(transport.WebSocket)
+      obj.transport = transport.WebSocket
+      obj.isConnected = true
+      test(obj)
+    }
+
+    "handle ConnectionActiveState with actorRef" in {
+      val ctx = new ConnectionContext(sessionId, query, origins)
+      ctx.transport = transport.WebSocket
+      ctx.isConnected = true
+      val obj = new State(ctx, testActorRef, immutable.Set("topic1, topic2"))
+      test(obj)
+    }
+
+    "handle ConnectionActiveState with deadletters" in {
+      val ctx = new ConnectionContext(sessionId, query, origins)
+      ctx.transport = transport.WebSocket
+      ctx.isConnected = true
+      val obj = new State(ctx, system.deadLetters, immutable.Set("topic1, topic2"))
       test(obj)
     }
 

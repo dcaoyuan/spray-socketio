@@ -111,7 +111,7 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
 
     case UHttp.Upgraded =>
       context.become(upgraded)
-      log.info("http connection of {} upgraded, sessionId: {}.", serverConnection.path, soConnContext.sessionId)
+      log.info("http connection of {} upgraded to websocket, sessionId: {}.", serverConnection.path, soConnContext.sessionId)
   }
 
   def handleWebsocket: Receive = {

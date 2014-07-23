@@ -111,7 +111,7 @@ class ConnectionActiveStateSerializer(val system: ExtendedActorSystem) extends S
 
   final def includeManifest: Boolean = false
 
-  final def identifier: Int = 2001
+  final def identifier: Int = 2008
 
   final def toBinary(o: AnyRef): Array[Byte] = {
     o match {

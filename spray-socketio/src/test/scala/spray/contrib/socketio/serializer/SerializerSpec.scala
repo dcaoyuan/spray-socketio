@@ -59,8 +59,11 @@ akka {
     val serialization = SerializationExtension(system)
     val serializer = serialization.findSerializerFor(obj)
     val bytes = serializer.toBinary(obj)
-    val back = serializer.fromBinary(bytes, if (serializer.includeManifest) Some(obj.getClass) else None)
-    assertResult(obj)(back)
+    val res = serialization.deserialize(bytes, obj.getClass).get
+    assertResult(obj)(res)
+
+    val resById = serialization.deserialize(bytes, serializer.identifier, Some(obj.getClass)).get
+    assertResult(obj)(resById)
   }
 
   class Test_Actor extends Actor {

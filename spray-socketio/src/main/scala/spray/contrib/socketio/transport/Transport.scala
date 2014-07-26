@@ -2,6 +2,7 @@ package spray.contrib.socketio.transport
 
 import akka.actor.ActorRef
 import akka.util.ByteString
+import scala.collection.immutable
 import spray.can.Http
 import spray.can.websocket.FrameCommand
 import spray.can.websocket.frame.TextFrame
@@ -16,7 +17,6 @@ import spray.http.HttpHeaders
 import spray.http.HttpResponse
 import spray.http.MediaTypes
 import spray.http.SomeOrigins
-import scala.collection.immutable
 
 object Transport {
   val transportIds = Set(

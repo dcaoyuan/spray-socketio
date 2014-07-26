@@ -6,7 +6,10 @@ import akka.actor.ActorRef
 import akka.actor.Props
 import akka.contrib.pattern.DistributedPubSubMediator
 import akka.pattern.ask
+import akka.util.Timeout
 import rx.lang.scala.Subject
+import scala.concurrent.Future
+import scala.util.{ Failure, Success }
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionActive
 import spray.contrib.socketio.ConnectionContext
@@ -17,9 +20,6 @@ import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.contrib.socketio.packet.Packet
-import scala.util.{ Failure, Success }
-import akka.util.Timeout
-import scala.concurrent.Future
 
 /**
  *

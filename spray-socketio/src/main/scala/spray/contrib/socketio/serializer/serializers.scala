@@ -4,6 +4,10 @@ import akka.actor.ExtendedActorSystem
 import akka.serialization.{ Serialization, Serializer }
 import akka.util.{ ByteIterator, ByteStringBuilder, ByteString }
 import java.nio.ByteOrder
+import scala.collection.mutable
+import scala.collection.immutable
+import scala.util.Failure
+import scala.util.Success
 import spray.can.websocket.frame.{ FrameParser, FrameRender, Frame }
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionActive
@@ -13,10 +17,6 @@ import spray.contrib.socketio.transport
 import spray.contrib.socketio.transport.Transport
 import spray.http.{ HttpOrigin, StringRendering }
 import spray.http.Uri.Query
-import scala.collection.mutable
-import scala.collection.immutable
-import scala.util.Failure
-import scala.util.Success
 
 object StringSerializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN

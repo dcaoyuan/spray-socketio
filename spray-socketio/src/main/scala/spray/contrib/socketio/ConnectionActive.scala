@@ -14,11 +14,6 @@ import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, Subs
 import akka.event.LoggingAdapter
 import akka.io.Tcp
 import akka.pattern.ask
-import akka.persistence.EventsourcedProcessor
-import akka.persistence.PersistenceFailure
-import akka.persistence.SaveSnapshotFailure
-import akka.persistence.SaveSnapshotSuccess
-import akka.persistence.SnapshotOffer
 import akka.routing.ConsistentHashingRouter.ConsistentHashable
 import akka.util.ByteString
 import org.parboiled.errors.ParsingException

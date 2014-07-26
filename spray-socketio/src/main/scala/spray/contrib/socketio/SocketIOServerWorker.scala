@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ Cancellable, Actor, ActorLogging, ActorRef, PoisonPill }
+import akka.actor.{ Actor, ActorLogging, ActorRef, PoisonPill }
 import akka.io.Tcp
 import java.util.UUID
 import scala.concurrent.Future
@@ -119,10 +119,6 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
       log.debug("Got {}", frame)
   }
 
-  /**
-   * TODO how about heartbeat/closetimeout for freq changed xhtpolling connection?
-   * which, may be closed before a heartbeat sent.
-   */
   def handleXrhpolling: Receive = {
     case req @ socketio.HttpGet(ok) =>
       socketioTransport = Some(XhrPolling)

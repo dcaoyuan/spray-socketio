@@ -17,11 +17,11 @@ import scala.collection.mutable
 import scala.collection.JavaConversions._
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import scala.concurrent.forkjoin.ThreadLocalRandom
 import spray.can.Http
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.MessageArrived
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnClose
 import spray.contrib.socketio.examples.benchmark.SocketIOTestClient.OnOpen
-import scala.util.Random
 
 object SocketIOLoadDriver {
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
@@ -223,7 +223,7 @@ class SocketIOLoadDriver extends Actor with ActorLogging {
 
       var i = 0
       while (i < nToCreate) {
-        val client = system.actorOf(Props(new SocketIOTestClient(connect(Random.nextInt(connect.size)), self)))
+        val client = system.actorOf(Props(new SocketIOTestClient(connect(ThreadLocalRandom.current.nextInt(connect.size)), self)))
         clients ::= client
         i += 1
       }

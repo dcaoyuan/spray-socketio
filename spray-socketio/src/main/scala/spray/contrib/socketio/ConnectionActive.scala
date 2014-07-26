@@ -19,6 +19,7 @@ import akka.util.ByteString
 import org.parboiled.errors.ParsingException
 import scala.collection.immutable
 import scala.concurrent.Future
+import scala.concurrent.forkjoin.ThreadLocalRandom
 import scala.util.Failure
 import scala.util.Success
 import spray.contrib.socketio
@@ -159,7 +160,7 @@ object ConnectionActive {
   val GlobalConnectPacket = ConnectPacket()
   val GlobalDisconnectPacket = DisconnectPacket()
 
-  private def heartbeatDelay = util.Random.nextInt((math.min(socketio.Settings.HeartbeatTimeout, socketio.Settings.CloseTimeout) * 0.618).round.toInt).seconds
+  private def heartbeatDelay = ThreadLocalRandom.current.nextInt((math.min(socketio.Settings.HeartbeatTimeout, socketio.Settings.CloseTimeout) * 0.618).round.toInt).seconds
 }
 
 /**

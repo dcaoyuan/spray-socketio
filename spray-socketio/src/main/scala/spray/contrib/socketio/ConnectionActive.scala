@@ -1,10 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef, ActorSystem, Props, ActorLogging, ActorSelection, Cancellable }
-import akka.cluster.ClusterEvent.MemberEvent
-import akka.cluster.ClusterEvent.MemberRemoved
-import akka.cluster.ClusterEvent.MemberUp
-import akka.cluster.ClusterEvent.UnreachableMember
+import akka.actor.{ PoisonPill, Actor, ActorRef, ActorSystem, Props, ActorLogging, Cancellable }
 import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
@@ -222,13 +218,14 @@ trait ConnectionActive { _: Actor =>
   }
 
   def working: Receive = {
-    // ---- heartbeat
+    // ---- heartbeat / timeout
     case socketio.HeartbeatTick => // scheduled sending heartbeat
       log.debug("send heartbeat")
       sendPacket(HeartbeatPacket)
-      closeTimeoutTask match {
-        case Some(x) if !x.isCancelled => // keep previous close timeout. We may pass by one closetimeout for this heartbeat, but we'll reset one at next time.
-        case _                         => enableCloseTimeout()
+
+      // keep previous close timeout. We may skip one closetimeout for this heartbeat, but we'll reset one at next heartbeat.
+      if (closeTimeoutTask.fold(true)(_.isCancelled)) {
+        enableCloseTimeout()
       }
 
     case socketio.CloseTimeout =>
@@ -275,6 +272,7 @@ trait ConnectionActive { _: Actor =>
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
     case cmd @ Connecting(sessionId, query, origins, transportConnection, transport) => // transport fired connecting command
+      disableCloseTimeout()
       enableHeartbeat()
 
       state.context.sessionId match {
@@ -311,14 +309,14 @@ trait ConnectionActive { _: Actor =>
         }
       }
 
-    // TODO we do not monitor state.transportConnection any more, but we can try to monitor the Node where transportConnection is resided.
-    case MemberUp(member) =>
-      log.info("Member is Up: {}", member.address)
-    case UnreachableMember(member) =>
-      log.info("Member detected as unreachable: {}", member)
-    case MemberRemoved(member, previousStatus) =>
-      log.info("Member is Removed: {} after {}", member.address, previousStatus)
-    case _: MemberEvent => // ignore    case MemberEvent(ref) =>
+    // TODO we do not monitor state.transportConnection any more, but we can try to monitor the Node where the transportConnection resided.
+    //    case MemberUp(member) =>
+    //      log.info("Member is Up: {}", member.address)
+    //    case UnreachableMember(member) =>
+    //      log.info("Member detected as unreachable: {}", member)
+    //    case MemberRemoved(member, previousStatus) =>
+    //      log.info("Member is Removed: {} after {}", member.address, previousStatus)
+    //    case _: MemberEvent => // ignore    case MemberEvent(ref) =>
     //      log.info("Terminated: {}, {}", state, )
     //      if (state.transportConnection == ref) {
     //        if (state.context.isConnected) {
@@ -380,10 +378,11 @@ trait ConnectionActive { _: Actor =>
             case _: Closing => // ignore Closing (which is sent from the Transport) to avoid cycle
             case _          => state.transportConnection ! Tcp.Close
           }
+          state.topics foreach unsubscribeBroadcast
           state.topics = Set()
+          state.transportConnection = context.system.deadLetters
           state.context.isConnected = false
           updateState(cmd, state)
-          state.topics foreach unsubscribeBroadcast
 
           close()
         } else {
@@ -494,13 +493,7 @@ trait ConnectionActive { _: Actor =>
 object ConnectionActiveClusterClient {
   def props(path: String, clusterClient: ActorRef) = Props(classOf[ConnectionActiveClusterClient], path, clusterClient)
 
-  def getClient(system: ActorSystem, initialContacts: Set[ActorSelection]) = {
-  }
-
   private var _client: ActorRef = _
-  /**
-   * Proxied cluster client
-   */
   def apply(system: ActorSystem) = {
     if (_client eq null) {
       val originalClient = ConnectionActive(system).clusterClient

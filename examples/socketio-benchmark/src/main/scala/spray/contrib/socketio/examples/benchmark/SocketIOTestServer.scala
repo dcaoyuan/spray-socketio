@@ -20,7 +20,7 @@ import spray.http.HttpRequest
 
 object SocketIOTestServer extends App {
 
-  final case object COUNT
+  case object COUNT
 
   object SocketIOServer {
     def props(resolver: ActorRef) = Props(classOf[SocketIOServer], resolver)
@@ -67,7 +67,7 @@ object SocketIOTestServer extends App {
       _sessionId
     }
   }
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerWorker {
+  final class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerWorker {
 
     override def sessionIdGenerator: HttpRequest => Future[String] = { req =>
       Future.successful(SocketIOWorker.nextSessionId().toString)

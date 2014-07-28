@@ -35,6 +35,7 @@ package object socketio {
     val heartbeatInterval = config.getInt("server.heartbeat-interval")
     val HeartbeatTimeout = config.getInt("server.heartbeat-timeout")
     val CloseTimeout = config.getInt("server.close-timeout")
+    val IdleTimeout = config.getInt("server.idle-timeout")
     val namespacesDispatcher = config.getString("namespaces-dispatcher")
     val namespaceDispatcher = config.getString("namespace-dispatcher")
   }
@@ -185,9 +186,6 @@ package object socketio {
       case _ => None
     }
   }
-
-  case object HeartbeatTick
-  case object CloseTimeout
 
 }
 

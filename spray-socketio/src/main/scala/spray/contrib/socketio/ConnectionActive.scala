@@ -156,6 +156,10 @@ object ConnectionActive {
   val GlobalConnectPacket = ConnectPacket()
   val GlobalDisconnectPacket = DisconnectPacket()
 
+  case object HeartbeatTick
+  case object CloseTimeout
+  case object IdleTimeout
+
   private def heartbeatDelay = ThreadLocalRandom.current.nextInt((math.min(socketio.Settings.HeartbeatTimeout, socketio.Settings.CloseTimeout) * 0.618).round.toInt).seconds
 }
 
@@ -179,6 +183,8 @@ trait ConnectionActive { _: Actor =>
 
   private val startTime = System.currentTimeMillis
 
+  private var idleTimeoutTask: Option[Cancellable] = None
+
   // It seems socket.io client may fire heartbeat only when it received heartbeat
   // from server, or, just bounce heartheat instead of firing heartbeat standalone.
   private var heartbeatTask: Option[Cancellable] = None
@@ -201,8 +207,9 @@ trait ConnectionActive { _: Actor =>
     state = newState
   }
 
-  def close() {
-    clear()
+  def doStop() {
+    deactivate()
+    disableIdleTimeout()
 
     if (SocketIOExtension(context.system).Settings.isCluster) {
       context.parent ! Passivate(stopMessage = PoisonPill)
@@ -211,15 +218,15 @@ trait ConnectionActive { _: Actor =>
     }
   }
 
-  def clear() {
-    log.debug("clear")
+  def deactivate() {
+    log.debug("deactivated.")
     disableHeartbeat()
     disableCloseTimeout()
   }
 
   def working: Receive = {
     // ---- heartbeat / timeout
-    case socketio.HeartbeatTick => // scheduled sending heartbeat
+    case HeartbeatTick => // scheduled sending heartbeat
       log.debug("send heartbeat")
       sendPacket(HeartbeatPacket)
 
@@ -228,12 +235,16 @@ trait ConnectionActive { _: Actor =>
         enableCloseTimeout()
       }
 
-    case socketio.CloseTimeout =>
+    case CloseTimeout =>
       state.transportConnection ! Tcp.Close
-      log.info("Timeout Closing: {}, state: {}", state.context.sessionId, state)
+      log.info("CloseTimeout disconnect: {}, state: {}", state.context.sessionId, state)
       if (state.context.isConnected) { // make sure only send disconnect packet one time
         onPacket(null)(GlobalDisconnectPacket)
       }
+
+    case IdleTimeout =>
+      log.info("IdleTimeout stop: {}, state: {}", state.context.sessionId, state)
+      doStop()
 
     // ---- on data
     case cmd @ OnFrame(sessionId, payload) =>
@@ -272,6 +283,7 @@ trait ConnectionActive { _: Actor =>
     case CreateSession(_) => // may be forwarded by resolver, just ignore it.
 
     case cmd @ Connecting(sessionId, query, origins, transportConnection, transport) => // transport fired connecting command
+      disableIdleTimeout()
       disableCloseTimeout()
       enableHeartbeat()
 
@@ -384,7 +396,8 @@ trait ConnectionActive { _: Actor =>
           state.context.isConnected = false
           updateState(cmd, state)
 
-          close()
+          deactivate()
+          enableIdleTimeout()
         } else {
           if (recoveryFinished) {
             publishToNamespace(OnPacket(packet, state.context))
@@ -465,29 +478,42 @@ trait ConnectionActive { _: Actor =>
   def enableHeartbeat() {
     log.debug("enabled heartbeat, will repeatly send heartbeat every {} seconds", socketio.Settings.heartbeatInterval.seconds)
     heartbeatTask foreach { _.cancel } // it better to confirm previous heartbeatTask was cancled
-    heartbeatTask = Some(scheduler.schedule(heartbeatDelay, socketio.Settings.heartbeatInterval.seconds, self, socketio.HeartbeatTick))
+    heartbeatTask = Some(scheduler.schedule(heartbeatDelay, socketio.Settings.heartbeatInterval.seconds, self, HeartbeatTick))
   }
 
   def enableCloseTimeout() {
-    log.debug("enabled close-timeout, will close in {} seconds", socketio.Settings.CloseTimeout)
+    log.debug("enabled close-timeout, will disconnect in {} seconds", socketio.Settings.CloseTimeout)
     closeTimeoutTask foreach { _.cancel } // it better to confirm previous closeTimeoutTask was cancled
     if (context != null) {
-      closeTimeoutTask = Some(scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds, self, socketio.CloseTimeout))
+      closeTimeoutTask = Some(scheduler.scheduleOnce(socketio.Settings.CloseTimeout.seconds, self, CloseTimeout))
+    }
+  }
+
+  def enableIdleTimeout() {
+    log.debug("enabled idle-timeout, will stop/exit in {} seconds", socketio.Settings.IdleTimeout)
+    idleTimeoutTask foreach { _.cancel } // it better to confirm previous idleTimeoutTask was cancled
+    if (context != null) {
+      idleTimeoutTask = Some(scheduler.scheduleOnce(socketio.Settings.IdleTimeout.seconds, self, IdleTimeout))
     }
   }
 
   def disableHeartbeat() {
-    log.debug("cleared heartbeat")
+    log.debug("disabled heartbeat")
     heartbeatTask foreach { _.cancel }
     heartbeatTask = None
   }
 
   def disableCloseTimeout() {
-    log.debug("cleared close-timeout")
+    log.debug("disabled close-timeout")
     closeTimeoutTask foreach { _.cancel }
     closeTimeoutTask = None
   }
 
+  def disableIdleTimeout() {
+    log.debug("disabled idle-timeout")
+    idleTimeoutTask foreach { _.cancel }
+    idleTimeoutTask = None
+  }
 }
 
 object ConnectionActiveClusterClient {

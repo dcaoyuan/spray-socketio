@@ -13,6 +13,20 @@ We did a simple load test on laptop (i7-2630QM 4xcore CPU @2.00GHz), with Client
 
 The test code could be found at spray.contrib.socketio.examples.benchmark
 
+To run cluster benchmark:
+
+1. Install cassandra and start it.
+2. sbt clean compile xitrum-package
+3. cd examples/socketio-benchmark/target/xitrum/bin
+4. ./start_cluster.sh tran 2551
+5. ./start_cluster.sh conn1
+6. ./start_cluster.sh conn2
+7. ./start_cluster.sh busi
+8. ./start_driver.sh
+9. cd ../logs
+10. tail -f driver_rt.log
+
+
 ### Usage
 The artifact is published to Sonatype, so in order to use it you just have to add the following dependency:
 

@@ -33,6 +33,8 @@ The artifact is published to Sonatype, so in order to use it you just have to ad
 ```scala
 resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 
+resolvers += "Spray" at "http://repo.spray.io"
+
 libraryDependencies += "com.wandoulabs.akka" %% "spray-socketio" % "0.1.1-SNAPSHOT"
 ```
 

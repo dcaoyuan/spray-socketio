@@ -76,7 +76,7 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
-  // --- json protocals for socketio messages:
+  // --- json protocols for socketio messages:
   case class Msg(message: String)
   case class Now(time: String)
   object TheJsonProtocol extends DefaultJsonProtocol {

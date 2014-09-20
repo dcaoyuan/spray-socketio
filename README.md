@@ -15,16 +15,16 @@ The test code could be found at spray.contrib.socketio.examples.benchmark
 
 To run cluster benchmark:
 
-1. Install cassandra and start it.
-2. sbt clean compile xitrum-package
-3. cd examples/socketio-benchmark/target/xitrum/bin
-4. ./start_cluster.sh tran 2551
-5. ./start_cluster.sh conn1
-6. ./start_cluster.sh conn2
-7. ./start_cluster.sh busi
-8. ./start_driver.sh
-9. cd ../logs
-10. tail -f driver_rt.log
+0. Install cassandra and start it.
+0. sbt clean compile xitrum-package
+0. cd examples/socketio-benchmark/target/xitrum/bin
+0. ./start_cluster.sh tran 2551
+0. ./start_cluster.sh sess1 # ./start_cluster.sh conn1 # for branch 0.1.x
+0. ./start_cluster.sh sess2 # ./start_cluster.sh conn2 # for branch 0.1.x
+0. ./start_cluster.sh busi
+0. ./start_driver.sh
+0. cd ../logs
+0. tail -f driver_rt.log
 
 
 ### Usage

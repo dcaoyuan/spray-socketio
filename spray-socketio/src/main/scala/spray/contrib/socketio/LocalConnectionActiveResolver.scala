@@ -8,22 +8,22 @@ import akka.actor.Terminated
 import scala.collection.concurrent
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Unsubscribe, SubscribeAck, Subscribe }
 
-object LocalConnectionActiveResolver {
-  def props(mediator: ActorRef, connectionActiveProps: Props) = Props(classOf[LocalConnectionActiveResolver], mediator, connectionActiveProps)
+object LocalConnectionSessionResolver {
+  def props(mediator: ActorRef, connectionSessionProps: Props) = Props(classOf[LocalConnectionSessionResolver], mediator, connectionSessionProps)
 }
 
-class LocalConnectionActiveResolver(mediator: ActorRef, connectionActiveProps: Props) extends Actor with ActorLogging {
+class LocalConnectionSessionResolver(mediator: ActorRef, connectionSessionProps: Props) extends Actor with ActorLogging {
 
   def receive = {
-    case ConnectionActive.CreateSession(sessionId: String) =>
+    case ConnectionSession.CreateSession(sessionId: String) =>
       context.child(sessionId) match {
         case Some(_) =>
         case None =>
-          val connectActive = context.actorOf(connectionActiveProps, name = sessionId)
-          context.watch(connectActive)
+          val connectSession = context.actorOf(connectionSessionProps, name = sessionId)
+          context.watch(connectSession)
       }
 
-    case cmd: ConnectionActive.Command =>
+    case cmd: ConnectionSession.Command =>
       context.child(cmd.sessionId) match {
         case Some(ref) => ref forward cmd
         case None      => log.warning("Failed to select actor {}", cmd.sessionId)

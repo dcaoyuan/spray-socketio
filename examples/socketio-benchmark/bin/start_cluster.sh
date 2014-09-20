@@ -10,7 +10,7 @@ fi
 module="$1"
 port="$2"
 usage() {
-    echo "Usage: `basename $0` [tran|conn|busi]"
+    echo "Usage: `basename $0` [tran*|sess*|busi*]"
     exit 1
 }
 
@@ -19,7 +19,7 @@ cluster_hostname=127.0.0.1
 
 case $module in
     tran*)   cluster_module="transport"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
-    conn*)   cluster_module="connectionactive"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
+    sess*)   cluster_module="session"; akka_args="-Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@${cluster_seed}";;
     busi*)   cluster_module="business"; akka_args="-Dspray.socketio.cluster.client-initial-contacts.0=akka.tcp://ClusterSystem@${cluster_seed}/user/receptionist";;
     *) usage
 esac

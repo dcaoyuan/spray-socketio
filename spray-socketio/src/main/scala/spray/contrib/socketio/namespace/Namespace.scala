@@ -11,7 +11,7 @@ import rx.lang.scala.Subject
 import scala.concurrent.Future
 import scala.util.{ Failure, Success }
 import spray.contrib.socketio
-import spray.contrib.socketio.ConnectionActive
+import spray.contrib.socketio.ConnectionSession
 import spray.contrib.socketio.ConnectionContext
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DataPacket
@@ -24,12 +24,12 @@ import spray.contrib.socketio.packet.Packet
 /**
  *
  *
- *    +===serverConn===+               +===connActive===+              +====namespace===+
- *    |                |    OnFrame    |                |   OnPacket   |                |
- *    |                | ------------> |                | -----------> |                |
- *    |                | <------------ |                | <----------- |                |
- *    |                |  FrameCommand |                |  SendPackets |                |
- *    +================+               +================+              +================+
+ *    +===serverConn===+               +===connSession===+              +====namespace===+
+ *    |                |    OnFrame    |                 |   OnPacket   |                |
+ *    |                | ------------> |                 | -----------> |                |
+ *    |                | <------------ |                 | <----------- |                |
+ *    |                |  FrameCommand |                 |  SendPackets |                |
+ *    +================+               +=================+              +================+
  *
  *
  *    +======node======+
@@ -84,7 +84,7 @@ object Namespace {
     final def endpoint = packet.endpoint
     final def sessionId = context.sessionId
 
-    import ConnectionActive._
+    import ConnectionSession._
 
     def replyMessage(msg: String)(implicit resolver: ActorRef) =
       resolver ! SendMessage(sessionId, endpoint, msg)
@@ -163,7 +163,7 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
     }
   }
 
-  import ConnectionActive.OnPacket
+  import ConnectionSession.OnPacket
   def receive: Receive = {
     case x @ Subscribe(channel) =>
       val commander = sender()

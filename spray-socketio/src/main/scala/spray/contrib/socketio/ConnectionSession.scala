@@ -15,6 +15,7 @@ import akka.util.ByteString
 import org.parboiled.errors.ParsingException
 import scala.collection.immutable
 import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.concurrent.forkjoin.ThreadLocalRandom
 import scala.util.Failure
 import scala.util.Success
@@ -32,9 +33,8 @@ import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
-import scala.concurrent.duration._
 
-object ConnectionActive {
+object ConnectionSession {
 
   case object AskConnectedTime
 
@@ -84,7 +84,7 @@ object ConnectionActive {
   final case class GetStatus(sessionId: String) extends Command
   final case class Status(sessionId: String, connectionTime: Long, location: String) extends Serializable
 
-  val shardName: String = "ConnectionActives"
+  val shardName: String = "ConnectionSessions"
 
   val idExtractor: ShardRegion.IdExtractor = {
     case cmd: Command => (cmd.sessionId, cmd)
@@ -99,21 +99,21 @@ object ConnectionActive {
    * system is started by defining it in the akka.extensions configuration property:
    *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
    */
-  def startShard(system: ActorSystem, connectionActiveProps: Props) {
+  def startShard(system: ActorSystem, connectionSessionProps: Props) {
     ClusterSharding(system).start(
-      typeName = ConnectionActive.shardName,
-      entryProps = Some(connectionActiveProps),
-      idExtractor = ConnectionActive.idExtractor,
-      shardResolver = ConnectionActive.shardResolver)
+      typeName = ConnectionSession.shardName,
+      entryProps = Some(connectionSessionProps),
+      idExtractor = ConnectionSession.idExtractor,
+      shardResolver = ConnectionSession.shardResolver)
     ClusterReceptionistExtension(system).registerService(
-      ClusterSharding(system).shardRegion(ConnectionActive.shardName))
+      ClusterSharding(system).shardRegion(ConnectionSession.shardName))
   }
 
   final class SystemSingletons(system: ActorSystem) {
     lazy val clusterClient: ActorRef = {
       import scala.collection.JavaConversions._
       val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
-      system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-connactive-client")
+      system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-connsession-client")
     }
   }
 
@@ -165,10 +165,10 @@ object ConnectionActive {
 
 /**
  *
- * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
+ * transportConnection <1..n--1> connectionSession <1--1> connContext <1--n> transport
  */
-trait ConnectionActive { _: Actor =>
-  import ConnectionActive._
+trait ConnectionSession { _: Actor =>
+  import ConnectionSession._
   import context.dispatcher
 
   def log: LoggingAdapter
@@ -516,28 +516,28 @@ trait ConnectionActive { _: Actor =>
   }
 }
 
-object ConnectionActiveClusterClient {
-  def props(path: String, clusterClient: ActorRef) = Props(classOf[ConnectionActiveClusterClient], path, clusterClient)
+object ConnectionSessionClusterClient {
+  def props(path: String, clusterClient: ActorRef) = Props(classOf[ConnectionSessionClusterClient], path, clusterClient)
 
   private var _client: ActorRef = _
   def apply(system: ActorSystem) = {
     if (_client eq null) {
-      val originalClient = ConnectionActive(system).clusterClient
+      val originalClient = ConnectionSession(system).clusterClient
       val shardingName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
-      _client = system.actorOf(props(s"/user/${shardingName}/${ConnectionActive.shardName}", originalClient))
+      _client = system.actorOf(props(s"/user/${shardingName}/${ConnectionSession.shardName}", originalClient))
     }
     _client
   }
 }
 
 /**
- * A proxy actor that runs on the namespace nodes to make forwarding msg to ConnectionActive easy.
+ * A proxy actor that runs on the namespace nodes to make forwarding msg to ConnectionSession easy.
  *
- * @param path ConnectionActive sharding service's path
+ * @param path ConnectionSession sharding service's path
  * @param client [[ClusterClient]] to access SocketIO Cluster
  */
-class ConnectionActiveClusterClient(path: String, clusterClient: ActorRef) extends Actor with ActorLogging {
+class ConnectionSessionClusterClient(path: String, clusterClient: ActorRef) extends Actor with ActorLogging {
   def receive: Actor.Receive = {
-    case cmd: ConnectionActive.Command => clusterClient forward ClusterClient.Send(path, cmd, false)
+    case cmd: ConnectionSession.Command => clusterClient forward ClusterClient.Send(path, cmd, false)
   }
 }

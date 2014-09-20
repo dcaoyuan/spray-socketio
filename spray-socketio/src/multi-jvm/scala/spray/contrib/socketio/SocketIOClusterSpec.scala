@@ -39,8 +39,8 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
 
   val transport1 = role("transport1")
   val transport2 = role("transport2")
-  val connectionActive1 = role("connectionActive1")
-  val connectionActive2 = role("connectionActive2")
+  val connectionSession1 = role("connectionSession1")
+  val connectionSession2 = role("connectionSession2")
   val business1 = role("business1")
   val business2 = role("business2")
   val business3 = role("business3")
@@ -63,7 +63,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       dir = "target/test-shared-journal"
     }
     akka.persistence.snapshot-store.local.dir = "target/test-snapshots"
-    akka.contrib.cluster.sharding.role = "connectionActive"
+    akka.contrib.cluster.sharding.role = "connectionSession"
     spray.socketio.mode = "cluster"
                                          """))
 
@@ -71,15 +71,15 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString("""akka.cluster.roles =["transport"]""")
   }
 
-  nodeConfig(connectionActive2) {
-    ConfigFactory.parseString("""akka.cluster.roles = ["connectionActive"]""")
+  nodeConfig(connectionSession2) {
+    ConfigFactory.parseString("""akka.cluster.roles = ["connectionSession"]""")
   }
 
-  nodeConfig(connectionActive1) {
+  nodeConfig(connectionSession1) {
     ConfigFactory.parseString(
       """
         akka.remote.netty.tcp.port = 2551
-        akka.cluster.roles = ["connectionActive"]
+        akka.cluster.roles = ["connectionSession"]
       """)
   }
 
@@ -239,7 +239,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
       enterBarrier("peristence-started")
 
-      runOn(connectionActive1, connectionActive2) {
+      runOn(connectionSession1, connectionSession2) {
         system.actorSelection(node(controller) / "user" / "store") ! Identify(None)
         val sharedStore = expectMsgType[ActorIdentity].ref.get
         SharedLeveldbJournal.setStore(sharedStore, system)
@@ -250,10 +250,10 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "join cluster" in within(15.seconds) {
       join(transport1, transport1)
       join(transport2, transport1)
-      join(connectionActive1, transport1)
-      join(connectionActive2, transport1)
+      join(connectionSession1, transport1)
+      join(connectionSession2, transport1)
 
-      runOn(transport1, transport2, connectionActive1, connectionActive2) {
+      runOn(transport1, transport2, connectionSession1, connectionSession2) {
         awaitCount(8)
       }
       enterBarrier("join-cluster")
@@ -313,7 +313,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     }
 
     "broadcast subscribers" in within(25.seconds) {
-      runOn(connectionActive1) {
+      runOn(connectionSession1) {
         val client = self
         system.actorOf(Props(new Actor {
           override def receive: Receive = {
@@ -322,17 +322,17 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         }), name="test")
       }
 
-      runOn(connectionActive2) {
-        val subscriptions = Await.result(system.actorSelection(node(connectionActive2).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
+      runOn(connectionSession2) {
+        val subscriptions = Await.result(system.actorSelection(node(connectionSession2).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
         log.info("subscriptions: " + subscriptions.toString)
         import system.dispatcher
-        system.actorSelection(node(connectionActive1).toSerializationFormat + "user/test").resolveOne()(5 seconds).onSuccess {
+        system.actorSelection(node(connectionSession1).toSerializationFormat + "user/test").resolveOne()(5 seconds).onSuccess {
           case actor => actor ! subscriptions.subscriptions
         }
       }
 
-      runOn(connectionActive1) {
-        val subscriptions = Await.result(system.actorSelection(node(connectionActive1).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
+      runOn(connectionSession1) {
+        val subscriptions = Await.result(system.actorSelection(node(connectionSession1).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
         log.info("subscriptions: " + subscriptions.toString)
         awaitAssert {
            expectMsg(subscriptions.subscriptions.toSet)
@@ -370,7 +370,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         enterBarrier("one-group")
       }
 
-      runOn(controller, transport1, transport2, connectionActive1, connectionActive2, business1, business2, client2) {
+      runOn(controller, transport1, transport2, connectionSession1, connectionSession2, business1, business2, client2) {
         enterBarrier("two-groups-tested")
         enterBarrier("one-group")
       }
@@ -401,7 +401,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         }
       }
 
-      runOn(controller, transport1, transport2, connectionActive1, connectionActive2, business1, business2, business3) {
+      runOn(controller, transport1, transport2, connectionSession1, connectionSession2, business1, business2, business3) {
         enterBarrier("client2-started")
       }
 

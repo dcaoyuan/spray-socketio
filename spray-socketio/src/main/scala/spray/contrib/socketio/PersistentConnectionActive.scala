@@ -3,18 +3,18 @@ package spray.contrib.socketio
 import akka.actor.{ Props, ActorLogging, ActorRef }
 import akka.persistence.{ PersistenceFailure, PersistentActor, SaveSnapshotSuccess, SaveSnapshotFailure, SnapshotOffer, RecoveryCompleted }
 
-object PersistentConnectionActive {
-  def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef): Props = Props(classOf[PersistentConnectionActive], namespaceMediator, broadcastMediator)
+object PersistentConnectionSession {
+  def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef): Props = Props(classOf[PersistentConnectionSession], namespaceMediator, broadcastMediator)
 }
 
-final class PersistentConnectionActive(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionActive with PersistentActor with ActorLogging {
+final class PersistentConnectionSession(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionSession with PersistentActor with ActorLogging {
 
   override def persistenceId = self.path.toStringWithoutAddress
 
   def receiveRecover: Receive = {
-    case event: ConnectionActive.Event => working(event)
+    case event: ConnectionSession.Event => working(event)
 
-    case SnapshotOffer(metadata, offeredSnapshot: ConnectionActive.State) =>
+    case SnapshotOffer(metadata, offeredSnapshot: ConnectionSession.State) =>
       log.info("Recovering from offeredSnapshot: {}", offeredSnapshot)
       state = offeredSnapshot
       state.topics foreach subscribeBroadcast
@@ -34,7 +34,7 @@ final class PersistentConnectionActive(val namespaceMediator: ActorRef, val broa
     case PersistenceFailure(_, _, reason) => log.error("Failed to persistence: {}", reason)
   }
 
-  override def updateState(evt: Any, newState: ConnectionActive.State) {
+  override def updateState(evt: Any, newState: ConnectionSession.State) {
     super.updateState(evt, newState)
     if (recoveryFinished) {
       saveSnapshot(state)

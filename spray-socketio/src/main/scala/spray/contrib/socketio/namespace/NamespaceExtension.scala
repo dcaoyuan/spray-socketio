@@ -19,7 +19,7 @@ import scala.collection.concurrent.TrieMap
 import scala.collection.immutable
 import scala.concurrent.Await
 import spray.contrib.socketio
-import spray.contrib.socketio.ConnectionActive
+import spray.contrib.socketio.ConnectionSession
 import spray.contrib.socketio.SocketIOExtension
 
 object NamespaceExtension extends ExtensionId[NamespaceExtension] with ExtensionIdProvider {
@@ -47,7 +47,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   private lazy val guardian = system.actorOf(NamesapceGuardian.props, "socketio-guardian")
 
   private lazy val client = if (isCluster) {
-    ConnectionActive(system).clusterClient
+    ConnectionSession(system).clusterClient
   } else {
     ActorRef.noSender
   }
@@ -59,7 +59,7 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   }
 
   lazy val resolver = if (isCluster) {
-    socketio.ConnectionActiveClusterClient(system)
+    socketio.ConnectionSessionClusterClient(system)
   } else {
     SocketIOExtension(system).resolver
   }

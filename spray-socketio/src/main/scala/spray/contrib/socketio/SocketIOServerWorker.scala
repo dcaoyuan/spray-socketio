@@ -15,7 +15,7 @@ import spray.contrib.socketio.transport.{ WebSocket, XhrPolling, Transport }
 /**
  *
  *             +--------------------------------------+
- *             |     +---ConnectionActive(actor)      |
+ *             |     +---ConnectionSession(actor)      |
  *             |     |                                | -----------  virtual connection (identified by sessionId etc.)
  *             |     +---ConnectionContext            |
  *             +--------------------------------------+
@@ -58,7 +58,7 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
   def resolver: ActorRef
   def sessionIdGenerator: HttpRequest => Future[String] = { req => Future(UUID.randomUUID.toString) } // default one
 
-  var isConnectionActiveClosed = false
+  var isConnectionSessionClosed = false
 
   implicit lazy val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, resolver, log, context.dispatcher)
 
@@ -131,11 +131,11 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
 
   def handleTerminated: Receive = {
     case x: Http.ConnectionClosed =>
-      closeConnectionActive()
+      closeConnectionSession()
       self ! PoisonPill
       log.debug("http connection of {} stopped due to {}.", serverConnection.path, x)
     case Tcp.Closed => // may be triggered by the first socketio handshake http connection, which will always be droped.
-      closeConnectionActive()
+      closeConnectionSession()
       self ! PoisonPill
       log.debug("http connection of {} stopped due to Tcp.Closed}.", serverConnection.path)
   }
@@ -144,14 +144,14 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
 
   override def postStop() {
     log.debug("postStop")
-    closeConnectionActive()
+    closeConnectionSession()
   }
 
-  def closeConnectionActive() {
-    log.debug("ask to close connectionsActive")
-    if (soConnContext.sessionId != null && !isConnectionActiveClosed) {
-      isConnectionActiveClosed = true
-      resolver ! ConnectionActive.Closing(soConnContext.sessionId, soConnContext.serverConnection)
+  def closeConnectionSession() {
+    log.debug("ask to close connectionSession")
+    if (soConnContext.sessionId != null && !isConnectionSessionClosed) {
+      isConnectionSessionClosed = true
+      resolver ! ConnectionSession.Closing(soConnContext.sessionId, soConnContext.serverConnection)
     }
   }
 

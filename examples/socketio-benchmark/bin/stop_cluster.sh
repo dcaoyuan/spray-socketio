@@ -1,6 +1,6 @@
 #!/bin/sh
 
-lock_files=("./.lock_benchtransport" "./.lock_benchconnectionActive" "./.lock_benchbusiness")
+lock_files=("./.lock_benchtransport" "./.lock_benchsession" "./.lock_benchbusiness")
 
 for lock_file in "${lock_files[@]}"
 do

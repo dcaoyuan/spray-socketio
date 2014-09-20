@@ -24,7 +24,7 @@ object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionId
   override def createExtension(system: ExtendedActorSystem): SocketIOExtension = new SocketIOExtension(system)
 
   val mediatorName: String = "socketioMediator"
-  val mediatorSingleton: String = "active"
+  val mediatorSingleton: String = "socketiosession"
 
 }
 
@@ -37,8 +37,8 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   private[socketio] object Settings {
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
-    val connRole: String = "connectionActive"
-    val enableConnPersistence: Boolean = config.getBoolean("server.enable-connectionactive-persistence")
+    val connRole: String = "connectionSession"
+    val enableConnPersistence: Boolean = config.getBoolean("server.enable-connectionsession-persistence")
     val schedulerTickDuration: FiniteDuration = Duration(config.getDuration("scheduler.tick-duration", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
     val schedulerTicksPerWheel: Int = config.getInt("scheduler.ticks-per-wheel")
   }
@@ -67,20 +67,20 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     }
   } else localMediator
 
-  lazy val connectionActiveProps: Props = if (Settings.enableConnPersistence) {
-    PersistentConnectionActive.props(namespaceMediator, broadcastMediator)
+  lazy val connectionSessionProps: Props = if (Settings.enableConnPersistence) {
+    PersistentConnectionSession.props(namespaceMediator, broadcastMediator)
   } else {
-    TransientConnectionActive.props(namespaceMediator, broadcastMediator)
+    TransientConnectionSession.props(namespaceMediator, broadcastMediator)
   }
 
   if (Settings.isCluster) {
-    ConnectionActive.startShard(system, connectionActiveProps)
+    ConnectionSession.startShard(system, connectionSessionProps)
   }
 
   lazy val resolver = if (Settings.isCluster) {
-    ClusterSharding(system).shardRegion(ConnectionActive.shardName)
+    ClusterSharding(system).shardRegion(ConnectionSession.shardName)
   } else {
-    system.actorOf(LocalConnectionActiveResolver.props(localMediator, connectionActiveProps), name = ConnectionActive.shardName)
+    system.actorOf(LocalConnectionSessionResolver.props(localMediator, connectionSessionProps), name = ConnectionSession.shardName)
   }
 
   lazy val scheduler: Scheduler = {

@@ -6,7 +6,7 @@ import com.google.caliper.{ Runner, Param }
 import akka.serialization.{ Serializer, JavaSerializer }
 import akka.actor.{ ExtendedActorSystem, ActorSystem }
 import com.typesafe.config.ConfigFactory
-import spray.contrib.socketio.ConnectionActive.{ OnFrame, SendEvent }
+import spray.contrib.socketio.ConnectionSession.{ OnFrame, SendEvent }
 
 class SerializerBenchmark extends SimpleScalaBenchmark {
 

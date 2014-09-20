@@ -59,12 +59,12 @@ class DistributedBalancingPubSubMediator(role: Option[String], routingLogic: Rou
   override def preStart(): Unit = {
     context.actorOf(ClusterSingletonManager.props(
       singletonProps = DistributedBalancingPubSubCoordinator.props(self),
-      singletonName = "active",
+      singletonName = "socketiosession",
       terminationMessage = PoisonPill,
       role = role),
       name = "coordinator")
 
-    coordinator = context.actorOf(ClusterSingletonProxy.props(self.path.toStringWithoutAddress + "/coordinator/active", role), name = "coordinatorProxy")
+    coordinator = context.actorOf(ClusterSingletonProxy.props(self.path.toStringWithoutAddress + "/coordinator/socketiosession", role), name = "coordinatorProxy")
 
     pubsubMediator ! Subscribe(InternalTopic, self)
     coordinator ! MediatorRegister(self)

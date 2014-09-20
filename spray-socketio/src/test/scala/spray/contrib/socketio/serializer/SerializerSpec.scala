@@ -8,7 +8,7 @@ import akka.actor.Props
 import akka.serialization.SerializationExtension
 import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
-import spray.contrib.socketio.ConnectionActive._
+import spray.contrib.socketio.ConnectionSession._
 import spray.contrib.socketio.ConnectionContext
 import spray.contrib.socketio.packet.{ Packet, MessagePacket }
 import spray.can.websocket.frame.TextFrame
@@ -16,10 +16,10 @@ import spray.contrib.socketio.transport
 import spray.http.Uri.Query
 import spray.http.HttpOrigin
 import spray.contrib.socketio.transport.WebSocket
-import spray.contrib.socketio.ConnectionActive.OnFrame
-import spray.contrib.socketio.ConnectionActive.OnGet
-import spray.contrib.socketio.ConnectionActive.CreateSession
-import spray.contrib.socketio.ConnectionActive.Connecting
+import spray.contrib.socketio.ConnectionSession.OnFrame
+import spray.contrib.socketio.ConnectionSession.OnGet
+import spray.contrib.socketio.ConnectionSession.CreateSession
+import spray.contrib.socketio.ConnectionSession.Connecting
 import scala.collection.immutable
 
 class SerializerSpec(_system: ActorSystem) extends TestKit(_system) with ImplicitSender with WordSpecLike with Matchers with BeforeAndAfterAll {
@@ -31,7 +31,7 @@ akka {
       frame = "spray.contrib.socketio.serializer.FrameSerializer"
       packet = "spray.contrib.socketio.serializer.PacketSerializer"
       connctx = "spray.contrib.socketio.serializer.ConnectionContextSerializer"
-      state = "spray.contrib.socketio.serializer.ConnectionActiveStateSerializer"
+      state = "spray.contrib.socketio.serializer.ConnectionSessionStateSerializer"
       command = "spray.contrib.socketio.serializer.CommandSerializer"
       onpacket = "spray.contrib.socketio.serializer.OnPacketSerializer"
       onbroadcast = "spray.contrib.socketio.serializer.OnBroadcastSerializer"
@@ -41,11 +41,11 @@ akka {
       "spray.can.websocket.frame.Frame" = frame
       "spray.contrib.socketio.packet.Packet" = packet
       "spray.contrib.socketio.ConnectionContext" = connctx
-      "spray.contrib.socketio.ConnectionActive$State" = state
-      "spray.contrib.socketio.ConnectionActive$Command" = command
-      "spray.contrib.socketio.ConnectionActive$OnPacket" = onpacket
-      "spray.contrib.socketio.ConnectionActive$OnBroadcast" = onbroadcast
-      "spray.contrib.socketio.ConnectionActive$Status" = status
+      "spray.contrib.socketio.ConnectionSession$State" = state
+      "spray.contrib.socketio.ConnectionSession$Command" = command
+      "spray.contrib.socketio.ConnectionSession$OnPacket" = onpacket
+      "spray.contrib.socketio.ConnectionSession$OnBroadcast" = onbroadcast
+      "spray.contrib.socketio.ConnectionSession$Status" = status
     }
   }
 }
@@ -97,7 +97,7 @@ akka {
       test(obj)
     }
 
-    "handle ConnectionActiveState with actorRef" in {
+    "handle ConnectionSessionState with actorRef" in {
       val ctx = new ConnectionContext(sessionId, query, origins)
       ctx.transport = transport.WebSocket
       ctx.isConnected = true
@@ -105,7 +105,7 @@ akka {
       test(obj)
     }
 
-    "handle ConnectionActiveState with deadletters" in {
+    "handle ConnectionSessionState with deadletters" in {
       val ctx = new ConnectionContext(sessionId, query, origins)
       ctx.transport = transport.WebSocket
       ctx.isConnected = true

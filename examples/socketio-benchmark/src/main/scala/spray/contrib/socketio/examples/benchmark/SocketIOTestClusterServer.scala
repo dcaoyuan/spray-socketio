@@ -22,7 +22,7 @@ import spray.json.JsString
 
 object SocketIOTestClusterServer extends App {
   val usage = """
-    Usage: SocketIOTestClusterServer [transport|connectionactive|business] -Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@host1:port -Dakka.remote.netty.tcp.hostname=host1 -Dakka.remote.netty.tcp.port=port
+    Usage: SocketIOTestClusterServer [transport|session|business] -Dakka.cluster.seed-nodes.0=akka.tcp://ClusterSystem@host1:port -Dakka.remote.netty.tcp.hostname=host1 -Dakka.remote.netty.tcp.port=port
               """
 
   def exitWithUsage = {
@@ -58,8 +58,8 @@ object SocketIOTestClusterServer extends App {
       val port = config.getInt("transport.port")
       IO(UHttp) ! Http.Bind(server, host, port)
 
-    case "connectionactive" :: tail =>
-      val config = parseString("akka.cluster.roles =[\"connectionActive\"]").withFallback(commonSettings)
+    case "session" :: tail =>
+      val config = parseString("akka.cluster.roles =[\"connectionSession\"]").withFallback(commonSettings)
       system = startCluster(config)
       Persistence(system)
     //val sharedStore = system.actorOf(Props[SharedLeveldbStore], "store")

@@ -18,7 +18,7 @@ import scala.collection.immutable
  * @Note let this context not to be final, so business application can store more
  * states in it.
  *
- * transportConnection <1..n--1> connectionActive <1--1> connContext <1--n> transport
+ * transportConnection <1..n--1> connectionSession <1--1> connContext <1--n> transport
  */
 class ConnectionContext(private var _sessionId: String = null, private var _query: Uri.Query = Uri.Query.Empty, private var _origins: Seq[HttpOrigin] = List()) extends Serializable {
   def sessionId = _sessionId

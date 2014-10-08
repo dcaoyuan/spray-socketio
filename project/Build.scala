@@ -45,7 +45,8 @@ object Build extends sbt.Build {
   lazy val basicSettings = Seq(
       organization := "com.wandoulabs.akka",
       version := "0.2.0-SNAPSHOT",
-      scalaVersion := "2.10.4",
+      scalaVersion := "2.11.2",
+      crossScalaVersions := Seq("2.10.4", "2.11.2"),
       scalacOptions ++= Seq("-unchecked", "-deprecation"),
       resolvers ++= Seq(
         "Sonatype OSS Releases" at "https://oss.sonatype.org/content/repositories/releases",
@@ -140,19 +141,19 @@ object Build extends sbt.Build {
 }
 
 object Dependencies {
-  val SPRAY_VERSION = "1.3.2-20140428"
-  val AKKA_VERSION = "2.3.5"
+  val SPRAY_VERSION = "1.3.2-20140909"
+  val AKKA_VERSION = "2.3.6"
 
-  val spray_websocket = "com.wandoulabs.akka" %% "spray-websocket" % "0.1.2"
-  val spray_can = "io.spray" % "spray-can" % SPRAY_VERSION
-  val spray_json = "io.spray" % "spray-json_2.10" % "1.2.6" 
+  val spray_websocket = "com.wandoulabs.akka" %% "spray-websocket" % "0.1.3"
+  val spray_can = "io.spray" %% "spray-can" % SPRAY_VERSION
+  val spray_json = "io.spray" %% "spray-json" % "1.2.6" 
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
   val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
   val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.5"
   val parboiled2 = "org.parboiled" %% "parboiled" % "2.0-M2" //changing ()
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % "test"
   val akka_multinode_testkit = "com.typesafe.akka" %% "akka-multi-node-testkit" % AKKA_VERSION % "test"
-  val scalatest = "org.scalatest" %% "scalatest" % "2.0" % "test"
+  val scalatest = "org.scalatest" %% "scalatest" % "2.1.3" % "test"
   val rxscala = "com.netflix.rxjava" % "rxjava-scala" % "0.17.1"
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
   val caliper = "com.google.caliper" % "caliper" % "0.5-rc1" % "test"

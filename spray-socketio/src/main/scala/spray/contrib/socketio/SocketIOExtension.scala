@@ -48,7 +48,10 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   /** No lazy, need to start immediately to accept broadcast etc. */
   val broadcastMediator = if (Settings.isCluster) DistributedPubSubExtension(system).mediator else localMediator
 
-  /** No lazy, need to start immediately to accept subscriptions msg etc. */
+  /**
+   * No lazy, need to start immediately to accept subscriptions msg etc.
+   * namespaceMediator is used by client outside of cluster.
+   */
   val namespaceMediator = if (Settings.isCluster) {
     val cluster = Cluster(system)
     if (cluster.getSelfRoles.contains(Settings.connRole)) {

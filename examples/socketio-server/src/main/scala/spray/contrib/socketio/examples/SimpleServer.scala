@@ -23,14 +23,14 @@ import spray.json.DefaultJsonProtocol
 object SimpleServer extends App with MySslConfiguration {
 
   object SocketIOServer {
-    def props(resovler: ActorRef) = Props(classOf[SocketIOServer], resolver)
+    def props(sessionRegion: ActorRef) = Props(classOf[SocketIOServer], sessionRegion)
   }
-  class SocketIOServer(resolver: ActorRef) extends Actor with ActorLogging {
+  class SocketIOServer(sessionRegion: ActorRef) extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(SocketIOWorker.props(serverConnection, resolver))
+        val conn = context.actorOf(SocketIOWorker.props(serverConnection, sessionRegion))
         serverConnection ! Http.Register(conn)
     }
   }
@@ -38,9 +38,9 @@ object SimpleServer extends App with MySslConfiguration {
   val WEB_ROOT = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
   object SocketIOWorker {
-    def props(serverConnection: ActorRef, resolver: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, resolver)
+    def props(serverConnection: ActorRef, sessionRegion: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, sessionRegion)
   }
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerWorker {
+  class SocketIOWorker(val serverConnection: ActorRef, val sessionRegion: ActorRef) extends Actor with SocketIOServerWorker {
 
     override def sessionIdGenerator: HttpRequest => Future[String] = { req =>
       Future.successful("123456")
@@ -89,7 +89,7 @@ object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
   val socketioExt = SocketIOExtension(system)
   val namespaceExt = NamespaceExtension(system)
-  implicit val resolver = namespaceExt.resolver
+  implicit val sessionRegion = namespaceExt.sessionRegion
 
   val observer = new Observer[OnEvent] {
     override def onNext(value: OnEvent) {
@@ -123,7 +123,7 @@ object SimpleServer extends App with MySslConfiguration {
   namespaceExt.startNamespace("testendpoint")
   namespaceExt.namespace("testendpoint") ! Namespace.Subscribe(channel)
 
-  val server = system.actorOf(SocketIOServer.props(resolver), name = "socketio-server")
+  val server = system.actorOf(SocketIOServer.props(sessionRegion), name = "socketio-server")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)
 

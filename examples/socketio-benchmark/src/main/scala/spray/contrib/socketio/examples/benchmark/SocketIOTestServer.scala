@@ -23,10 +23,10 @@ object SocketIOTestServer extends App {
   case object COUNT
 
   object SocketIOServer {
-    def props(resolver: ActorRef) = Props(classOf[SocketIOServer], resolver)
+    def props(sessionRegion: ActorRef) = Props(classOf[SocketIOServer], sessionRegion)
   }
 
-  class SocketIOServer(val resolver: ActorRef) extends Actor with ActorLogging {
+  class SocketIOServer(val sessionRegion: ActorRef) extends Actor with ActorLogging {
     var connected = 0
     var preconnected = 0
 
@@ -39,7 +39,7 @@ object SocketIOTestServer extends App {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(SocketIOWorker.props(serverConnection, resolver))
+        val conn = context.actorOf(SocketIOWorker.props(serverConnection, sessionRegion))
         context watch conn
         connected += 1
         serverConnection ! Http.Register(conn)
@@ -58,7 +58,7 @@ object SocketIOTestServer extends App {
   }
 
   object SocketIOWorker {
-    def props(serverConnection: ActorRef, resolver: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, resolver)
+    def props(serverConnection: ActorRef, sessionRegion: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, sessionRegion)
 
     private var _sessionId = 0
     private val sessionIdMutex = new AnyRef
@@ -67,7 +67,7 @@ object SocketIOTestServer extends App {
       _sessionId
     }
   }
-  final class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerWorker {
+  final class SocketIOWorker(val serverConnection: ActorRef, val sessionRegion: ActorRef) extends Actor with SocketIOServerWorker {
 
     override def sessionIdGenerator: HttpRequest => Future[String] = { req =>
       Future.successful(SocketIOWorker.nextSessionId().toString)
@@ -82,7 +82,7 @@ object SocketIOTestServer extends App {
   SocketIOExtension(system)
 
   val observer = new Observer[OnData] with Serializable {
-    implicit val resolverForNamescape = NamespaceExtension(system).resolver
+    implicit val sessionRegion = NamespaceExtension(system).sessionRegion
     override def onNext(value: OnData) {
       value match {
         case OnEvent("chat", args, context) =>
@@ -105,8 +105,8 @@ object SocketIOTestServer extends App {
   NamespaceExtension(system).startNamespace("")
   NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
 
-  val resolverForTransport = SocketIOExtension(system).resolver
-  val server = system.actorOf(SocketIOServer.props(resolverForTransport), name = "socketio-server")
+  val sessionRegionForTransport = SocketIOExtension(system).sessionRegion
+  val server = system.actorOf(SocketIOServer.props(sessionRegionForTransport), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val host = config.getString("server.host")

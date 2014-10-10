@@ -52,8 +52,8 @@ object SocketIOTestClusterServer extends App {
       val config = parseString("akka.cluster.roles =[\"transport\"]").withFallback(commonSettings)
       system = startCluster(config)
 
-      implicit val resolver = SocketIOExtension(system).resolver
-      val server = system.actorOf(SocketIOServer.props(resolver), name = "socketio-server")
+      implicit val sessionRegion = SocketIOExtension(system).sessionRegion
+      val server = system.actorOf(SocketIOServer.props(sessionRegion), name = "socketio-server")
       val host = config.getString("transport.hostname")
       val port = config.getInt("transport.port")
       IO(UHttp) ! Http.Bind(server, host, port)
@@ -68,7 +68,7 @@ object SocketIOTestClusterServer extends App {
     case "business" :: tail =>
       val config = parseString("akka.cluster.roles =[\"business\"]").withFallback(commonSettings)
       system = ActorSystem("NamespaceSystem", config)
-      implicit val resolver = NamespaceExtension(system).resolver
+      implicit val sessionRegion = NamespaceExtension(system).sessionRegion
 
       val appConfig = load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")

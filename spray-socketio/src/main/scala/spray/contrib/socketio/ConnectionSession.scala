@@ -280,7 +280,7 @@ trait ConnectionSession { _: Actor =>
       unsubscribeBroadcast(topic)
 
     // -- connecting / closing  
-    case CreateSession(_) => // may be forwarded by resolver, just ignore it.
+    case CreateSession(_) => // may be forwarded by region, just ignore it.
 
     case cmd @ Connecting(sessionId, query, origins, transportConnection, transport) => // transport fired connecting command
       disableIdleTimeout()

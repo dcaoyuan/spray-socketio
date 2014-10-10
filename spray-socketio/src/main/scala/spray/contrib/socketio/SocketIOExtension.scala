@@ -80,10 +80,10 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     ConnectionSession.startShard(system, connectionSessionProps)
   }
 
-  lazy val resolver = if (Settings.isCluster) {
+  lazy val sessionRegion = if (Settings.isCluster) {
     ClusterSharding(system).shardRegion(ConnectionSession.shardName)
   } else {
-    system.actorOf(LocalConnectionSessionResolver.props(localMediator, connectionSessionProps), name = ConnectionSession.shardName)
+    system.actorOf(LocalConnectionSessionRegion.props(localMediator, connectionSessionProps), name = ConnectionSession.shardName)
   }
 
   lazy val scheduler: Scheduler = {

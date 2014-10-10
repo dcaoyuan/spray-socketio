@@ -121,23 +121,23 @@ class SocketIOClusterSpecMultiJvmNode10 extends SocketIOClusterSpec
 
 object SocketIOClusterSpec {
   object SocketIOServer {
-    def props(resolver: ActorRef, commander:ActorRef) = Props(classOf[SocketIOServer], resolver, commander)
+    def props(sessionRegion: ActorRef, commander:ActorRef) = Props(classOf[SocketIOServer], sessionRegion, commander)
   }
 
-  class SocketIOServer(val resolver: ActorRef, val commander: ActorRef) extends Actor with ActorLogging {
+  class SocketIOServer(val sessionRegion: ActorRef, val commander: ActorRef) extends Actor with ActorLogging {
 
     def receive = {
       case x: Tcp.Bound => commander ! x
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, resolver))
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, sessionRegion))
         serverConnection ! Http.Register(conn)
     }
 
   }
 
-  class SocketIOWorker(val serverConnection: ActorRef, val resolver: ActorRef) extends Actor with SocketIOServerWorker {
+  class SocketIOWorker(val serverConnection: ActorRef, val sessionRegion: ActorRef) extends Actor with SocketIOServerWorker {
 
     def genericLogic: Receive = {
       case x: Frame =>
@@ -261,8 +261,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "startup server" in within(15.seconds) {
       runOn(transport1) {
-        val resolver = SocketIOExtension(system).resolver
-        val server = system.actorOf(SocketIOServer.props(resolver, self), "socketio-server")
+        val sessionRegion = SocketIOExtension(system).sessionRegion
+        val server = system.actorOf(SocketIOServer.props(sessionRegion, self), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port1)
         awaitAssert {
           expectMsgType[Tcp.Bound]
@@ -270,8 +270,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(transport2) {
-        val resolver = SocketIOExtension(system).resolver
-        val server = system.actorOf(SocketIOServer.props(resolver, self), "socketio-server")
+        val sessionRegion = SocketIOExtension(system).sessionRegion
+        val server = system.actorOf(SocketIOServer.props(sessionRegion, self), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port2)
         awaitAssert {
           expectMsgType[Tcp.Bound]
@@ -283,16 +283,16 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "startup business" in within(25.seconds) {
       runOn(business1, business2, business3) {
-        val resolver = NamespaceExtension(system).resolver
+        val sessionRegion = NamespaceExtension(system).sessionRegion
 
         val observer = new Observer[OnData] {
           override def onNext(value: OnData) {
             value match {
               case OnEvent("chat", args, context) =>
-                value.replyEvent("chat", args)(resolver)
+                value.replyEvent("chat", args)(sessionRegion)
               case OnEvent("broadcast", args, context) =>
                 val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
-                value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(resolver)
+                value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(sessionRegion)
               case _ =>
                 println("observed: " + value)
             }

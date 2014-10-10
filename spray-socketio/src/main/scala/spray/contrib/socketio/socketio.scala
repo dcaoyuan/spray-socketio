@@ -60,7 +60,7 @@ package object socketio {
     val sessionIdGenerator: HttpRequest => Future[String],
     val serverConnection: ActorRef,
     val socketioWorker: ActorRef,
-    val resolver: ActorRef,
+    val sessionRegion: ActorRef,
     val log: LoggingAdapter,
     implicit val ec: ExecutionContext)
 
@@ -76,7 +76,7 @@ package object socketio {
             import ctx.ec
             ctx.sessionIdGenerator(req) onComplete {
               case Success(sessionId) =>
-                ctx.resolver ! ConnectionSession.CreateSession(sessionId)
+                ctx.sessionRegion ! ConnectionSession.CreateSession(sessionId)
 
                 val origins = headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
                 val originsHeaders = List(
@@ -128,7 +128,7 @@ package object socketio {
       case Array("", SOCKET_IO, protocalVersion, transport.WebSocket.ID, sessionId) =>
         ctx.sessionId = sessionId
         import ctx.ec
-        ctx.resolver ! ConnectionSession.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket)
+        ctx.sessionRegion ! ConnectionSession.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket)
         Some(true)
       case _ =>
         None
@@ -143,7 +143,7 @@ package object socketio {
       import ctx.ec
       // ctx.sessionId should have been set during wsConnected
       ctx.log.debug("Got TextFrame: {}", frame.payload.utf8String)
-      ctx.resolver ! ConnectionSession.OnFrame(ctx.sessionId, frame.payload)
+      ctx.sessionRegion ! ConnectionSession.OnFrame(ctx.sessionId, frame.payload)
       Some(true)
     }
   }
@@ -159,8 +159,8 @@ package object socketio {
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
-            ctx.resolver ! ConnectionSession.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling)
-            ctx.resolver ! ConnectionSession.OnGet(sessionId, ctx.serverConnection)
+            ctx.sessionRegion ! ConnectionSession.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling)
+            ctx.sessionRegion ! ConnectionSession.OnGet(sessionId, ctx.serverConnection)
             Some(true)
           case _ => None
         }
@@ -179,7 +179,7 @@ package object socketio {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
             val payload = entity.data.toByteString
-            ctx.resolver ! ConnectionSession.OnPost(sessionId, ctx.serverConnection, payload)
+            ctx.sessionRegion ! ConnectionSession.OnPost(sessionId, ctx.serverConnection, payload)
             Some(true)
           case _ => None
         }

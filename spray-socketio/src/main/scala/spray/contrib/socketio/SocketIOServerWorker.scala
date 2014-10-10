@@ -55,12 +55,12 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
   import context.dispatcher
 
   def serverConnection: ActorRef
-  def resolver: ActorRef
+  def sessionRegion: ActorRef
   def sessionIdGenerator: HttpRequest => Future[String] = { req => Future(UUID.randomUUID.toString) } // default one
 
   var isConnectionSessionClosed = false
 
-  implicit lazy val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, resolver, log, context.dispatcher)
+  implicit lazy val soConnContext = new socketio.SoConnectingContext(null, sessionIdGenerator, serverConnection, self, sessionRegion, log, context.dispatcher)
 
   var socketioTransport: Option[Transport] = None
 
@@ -151,7 +151,7 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
     log.debug("ask to close connectionSession")
     if (soConnContext.sessionId != null && !isConnectionSessionClosed) {
       isConnectionSessionClosed = true
-      resolver ! ConnectionSession.Closing(soConnContext.sessionId, soConnContext.serverConnection)
+      sessionRegion ! ConnectionSession.Closing(soConnContext.sessionId, soConnContext.serverConnection)
     }
   }
 

@@ -58,10 +58,10 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
     SocketIOExtension(system).localMediator
   }
 
-  lazy val resolver = if (isCluster) {
+  lazy val sessionRegion = if (isCluster) {
     socketio.ConnectionSessionClusterClient(system)
   } else {
-    SocketIOExtension(system).resolver
+    SocketIOExtension(system).sessionRegion
   }
 
   def startNamespace(endpoint: String) {

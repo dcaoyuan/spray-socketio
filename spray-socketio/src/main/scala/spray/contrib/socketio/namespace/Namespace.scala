@@ -3,11 +3,14 @@ package spray.contrib.socketio.namespace
 import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
+import akka.actor.ActorSystem
 import akka.actor.Props
+import akka.contrib.pattern.ClusterReceptionistExtension
+import akka.contrib.pattern.ClusterSharding
 import akka.contrib.pattern.DistributedPubSubMediator
+import akka.contrib.pattern.ShardRegion
 import akka.pattern.ask
 import akka.util.Timeout
-import rx.lang.scala.Subject
 import scala.concurrent.Future
 import scala.util.{ Failure, Success }
 import spray.contrib.socketio
@@ -66,14 +69,20 @@ import spray.contrib.socketio.packet.Packet
  *
  *
  * @Note Akka can do millions of messages per second per actor per core.
+ *
+ * Namespace is usually out of socketio cluster, or, socketio's tranport/session cluster
+ * are not aware of Namespace actors, all messages in that cluster are sent to mediator.
+ *
+ * Namespace actors just accept messages via namespaceMediator, and then deliver them to
+ * subscribted channels.
  */
 object Namespace {
 
   def props(endpoint: String, mediator: ActorRef) = Props(classOf[Namespace], endpoint, mediator)
 
-  final case class Subscribe(channel: Subject[OnData])
+  final case class Subscribe(channel: ActorRef)
   final case class SubscribeAck(subcribe: Subscribe)
-  final case class Unsubscribe(channel: Option[Subject[OnData]])
+  final case class Unsubscribe(channel: Option[ActorRef])
   final case class UnsubscribeAck(subcribe: Unsubscribe)
 
   // --- Observable data
@@ -116,6 +125,36 @@ object Namespace {
   final case class OnMessage(msg: String, context: ConnectionContext)(implicit val packet: MessagePacket) extends OnData
   final case class OnJson(json: String, context: ConnectionContext)(implicit val packet: JsonPacket) extends OnData
   final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val packet: EventPacket) extends OnData
+
+  sealed trait Command extends Serializable {
+    def endpoint: String
+  }
+
+  val shardName: String = "SocketIONamespaces"
+
+  val idExtractor: ShardRegion.IdExtractor = {
+    case cmd: Command => (cmd.endpoint, cmd)
+  }
+
+  val shardResolver: ShardRegion.ShardResolver = {
+    case cmd: Command => (math.abs(cmd.endpoint.hashCode) % 100).toString
+  }
+
+  /**
+   * It is recommended to load the ClusterReceptionistExtension when the actor
+   * system is started by defining it in the akka.extensions configuration property:
+   *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
+   */
+  def startShard(system: ActorSystem, entryProps: Props) {
+    val sharding = ClusterSharding(system)
+    sharding.start(
+      entryProps = Some(entryProps),
+      typeName = shardName,
+      idExtractor = idExtractor,
+      shardResolver = shardResolver)
+    ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
+  }
+
 }
 
 /**
@@ -124,10 +163,10 @@ object Namespace {
 class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLogging {
   import Namespace._
 
-  var channels = Set[Subject[OnData]]()
+  var channels = Set[ActorRef]() // ActorRef of Channel
 
   private var isMediatorSubscribed: Boolean = _
-  def subscribeMediatorForNamespace(action: () => Unit) = {
+  def subscribeToMediator(action: () => Unit) = {
     if (!isMediatorSubscribed) {
       import context.dispatcher
       implicit val timeout = Timeout(socketio.namespaceSubscribeTimeout)
@@ -145,7 +184,7 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
     }
   }
 
-  def unsubscribeMediatorForNamespace(action: () => Unit) = {
+  def unsubscribeToMediator(action: () => Unit) = {
     if (isMediatorSubscribed && channels.isEmpty) {
       import context.dispatcher
       implicit val timeout = Timeout(socketio.namespaceSubscribeTimeout)
@@ -167,7 +206,7 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
   def receive: Receive = {
     case x @ Subscribe(channel) =>
       val commander = sender()
-      subscribeMediatorForNamespace { () =>
+      subscribeToMediator { () =>
         channels += channel
         commander ! SubscribeAck(x)
       }
@@ -177,15 +216,12 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
         case Some(c) => channels -= c
         case None    => channels = channels.empty
       }
-      unsubscribeMediatorForNamespace { () =>
+      unsubscribeToMediator { () =>
         commander ! UnsubscribeAck(x)
       }
 
-    case OnPacket(packet: ConnectPacket, connContext)    => channels foreach (_.onNext(OnConnect(packet.args, connContext)(packet)))
-    case OnPacket(packet: DisconnectPacket, connContext) => channels foreach (_.onNext(OnDisconnect(connContext)(packet)))
-    case OnPacket(packet: MessagePacket, connContext)    => channels foreach (_.onNext(OnMessage(packet.data, connContext)(packet)))
-    case OnPacket(packet: JsonPacket, connContext)       => channels foreach (_.onNext(OnJson(packet.json, connContext)(packet)))
-    case OnPacket(packet: EventPacket, connContext)      => channels foreach (_.onNext(OnEvent(packet.name, packet.args, connContext)(packet)))
+    // --- messages got via mediator
+    case x: OnPacket[_] => channels foreach (_ ! x)
   }
 
 }

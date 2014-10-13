@@ -2,9 +2,10 @@ package spray.contrib.socketio.examples
 
 import akka.io.IO
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
-import rx.lang.scala.Observable
-import rx.lang.scala.Observer
-import rx.lang.scala.Subject
+import akka.stream.actor.ActorPublisher
+import akka.stream.actor.ActorSubscriber
+import akka.stream.actor.ActorSubscriberMessage.OnNext
+import akka.stream.actor.WatermarkRequestStrategy
 import scala.concurrent.Future
 import spray.can.Http
 import spray.can.server.UHttp
@@ -12,6 +13,7 @@ import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.packet.EventPacket
+import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.{ OnData, OnEvent }
 import spray.contrib.socketio.namespace.NamespaceExtension
@@ -89,40 +91,46 @@ object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
   val socketioExt = SocketIOExtension(system)
   val namespaceExt = NamespaceExtension(system)
-  implicit val sessionRegion = namespaceExt.sessionRegion
 
-  val observer = new Observer[OnEvent] {
-    override def onNext(value: OnEvent) {
-      value match {
-        case event @ OnEvent("Hi!", args, context) =>
-          println("observed: " + "Hi!" + ", " + args)
-          if (event.packet.hasAckData) {
-            event.ack("[]")
-          }
-          event.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
-          event.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
-          // batched packets
-          event.reply(
-            EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio")).toJson.toString),
-            EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString)).toJson.toString))
-        case OnEvent("time", args, context) =>
-          println("observed: " + "time" + ", " + args)
-        case _ =>
-          println("observed: " + value)
-      }
+  class Receiver extends ActorSubscriber {
+    implicit val sessionRegion = namespaceExt.sessionRegion
+
+    override val requestStrategy = WatermarkRequestStrategy(10)
+
+    def receive = {
+      case OnNext(event @ OnEvent("Hi!", args, context)) =>
+        println("observed: " + "Hi!" + ", " + args)
+        if (event.packet.hasAckData) {
+          event.ack("[]")
+        }
+        event.replyEvent("welcome", List(Msg("Greeting from spray-socketio")).toJson.toString)
+        event.replyEvent("time", List(Now((new java.util.Date).toString)).toJson.toString)
+        // batched packets
+        event.reply(
+          EventPacket(-1L, false, "testendpoint", "welcome", List(Msg("Batcher Greeting from spray-socketio")).toJson.toString),
+          EventPacket(-1L, false, "testendpoint", "time", List(Now("Batched " + (new java.util.Date).toString)).toJson.toString))
+
+      case OnNext(OnEvent("time", args, context)) =>
+        println("observed: " + "time" + ", " + args)
+
+      case OnNext(value) =>
+        println("observed: " + value)
     }
   }
 
-  val channel = Subject[OnData]()
+  val channel = system.actorOf(Channel.props(), "mychannel")
+  val receiver = system.actorOf(Props(new Receiver), "myreceiver")
+  ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
   // there is no channel.ofType method for RxScala, why?
-  channel.flatMap {
-    case x: OnEvent => Observable.items(x)
-    case _          => Observable.empty
-  }.subscribe(observer)
+  //channel.flatMap {
+  //  case x: OnEvent => Observable.items(x)
+  //  case _          => Observable.empty
+  //}.subscribe(observer)
 
   namespaceExt.startNamespace("testendpoint")
   namespaceExt.namespace("testendpoint") ! Namespace.Subscribe(channel)
 
+  val sessionRegion = namespaceExt.sessionRegion
   val server = system.actorOf(SocketIOServer.props(sessionRegion), name = "socketio-server")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)

@@ -99,14 +99,14 @@ object ConnectionSession {
    * system is started by defining it in the akka.extensions configuration property:
    *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
    */
-  def startShard(system: ActorSystem, connectionSessionProps: Props) {
-    ClusterSharding(system).start(
-      typeName = ConnectionSession.shardName,
-      entryProps = Some(connectionSessionProps),
-      idExtractor = ConnectionSession.idExtractor,
-      shardResolver = ConnectionSession.shardResolver)
-    ClusterReceptionistExtension(system).registerService(
-      ClusterSharding(system).shardRegion(ConnectionSession.shardName))
+  def startShard(system: ActorSystem, entryProps: Props) {
+    val sharding = ClusterSharding(system)
+    sharding.start(
+      entryProps = Some(entryProps),
+      typeName = shardName,
+      idExtractor = idExtractor,
+      shardResolver = shardResolver)
+    ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
   }
 
   final class SystemSingletons(system: ActorSystem) {

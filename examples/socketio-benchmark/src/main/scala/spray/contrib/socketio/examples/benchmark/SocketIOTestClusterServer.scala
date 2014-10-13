@@ -1,16 +1,19 @@
 package spray.contrib.socketio.examples.benchmark
 
+import akka.stream.actor.ActorPublisher
+import akka.stream.actor.ActorSubscriber
+import akka.stream.actor.ActorSubscriberMessage.OnNext
+import akka.stream.actor.WatermarkRequestStrategy
 import com.typesafe.config.{ Config, ConfigFactory }
-import akka.actor.{ ActorSystem }
+import akka.actor.{ ActorSystem, Props }
 import akka.io.IO
 import akka.persistence.Persistence
 //import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
-import rx.lang.scala.Observer
 import spray.can.server.UHttp
-import rx.lang.scala.Subject
 import spray.can.Http
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
+import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
@@ -68,32 +71,34 @@ object SocketIOTestClusterServer extends App {
     case "business" :: tail =>
       val config = parseString("akka.cluster.roles =[\"business\"]").withFallback(commonSettings)
       system = ActorSystem("NamespaceSystem", config)
-      implicit val sessionRegion = NamespaceExtension(system).sessionRegion
 
       val appConfig = load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
-      val observer = new Observer[OnData] {
-        override def onNext(value: OnData) {
-          value match {
-            case OnEvent("chat", args, context) => // for spec and load test
-              spray.json.JsonParser(args) // test spray-json too.
-              //println("on chat event")
-              if (isBroadcast) {
-                value.broadcast("", EventPacket(-1L, false, value.endpoint, "chat", args))
-              } else {
-                value.replyEvent("chat", args)
-              }
-            case OnEvent("broadcast", args, context) => // for spec test
-              val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
-              value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))
-            case _ =>
-            //println("observed: " + value)
-          }
+      class Receiver extends ActorSubscriber {
+        implicit val sessionRegion = NamespaceExtension(system).sessionRegion
+        override val requestStrategy = WatermarkRequestStrategy(10)
+
+        def receive = {
+          case OnNext(value @ OnEvent("chat", args, context)) => // for spec and load test
+            spray.json.JsonParser(args) // test spray-json too.
+            //println("on chat event")
+            if (isBroadcast) {
+              value.broadcast("", EventPacket(-1L, false, value.endpoint, "chat", args))
+            } else {
+              value.replyEvent("chat", args)
+            }
+
+          case OnNext(value @ OnEvent("broadcast", args, context)) => // for spec test
+            val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
+            value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))
+
+          case _ =>
         }
       }
 
-      val channel = Subject[OnData]()
-      channel.subscribe(observer)
+      val channel = system.actorOf(Channel.props())
+      val receiver = system.actorOf(Props(new Receiver))
+      ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
       NamespaceExtension(system).startNamespace("")
       NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)

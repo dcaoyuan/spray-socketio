@@ -2,9 +2,11 @@ package spray.contrib.socketio.examples.benchmark
 
 import akka.io.IO
 import akka.actor.{ Terminated, ActorSystem, Actor, Props, ActorLogging, ActorRef }
+import akka.stream.actor.ActorSubscriber
+import akka.stream.actor.ActorSubscriberMessage.OnNext
+import akka.stream.actor.ActorPublisher
+import akka.stream.actor.WatermarkRequestStrategy
 import com.typesafe.config.ConfigFactory
-import rx.lang.scala.Observer
-import rx.lang.scala.Subject
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import spray.can.Http
@@ -12,6 +14,7 @@ import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
+import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.{ OnData, OnEvent }
 import spray.contrib.socketio.namespace.NamespaceExtension
@@ -81,26 +84,29 @@ object SocketIOTestServer extends App {
   implicit val system = ActorSystem()
   SocketIOExtension(system)
 
-  val observer = new Observer[OnData] with Serializable {
+  class Receiver extends ActorSubscriber {
     implicit val sessionRegion = NamespaceExtension(system).sessionRegion
-    override def onNext(value: OnData) {
-      value match {
-        case OnEvent("chat", args, context) =>
-          spray.json.JsonParser(args) // test spray-json performance too.
-          if (isBroadcast) {
-            value.broadcast("", EventPacket(-1L, false, value.endpoint, "chat", args))
-          } else {
-            value.replyEvent("chat", args)
-          }
-        case _ =>
-          println("observed: " + value)
-      }
+
+    override val requestStrategy = WatermarkRequestStrategy(10)
+
+    def receive = {
+      case OnNext(value @ OnEvent("chat", args, context)) =>
+        spray.json.JsonParser(args) // test spray-json performance too.
+        if (isBroadcast) {
+          value.broadcast("", EventPacket(-1L, false, value.endpoint, "chat", args))
+        } else {
+          value.replyEvent("chat", args)
+        }
+
+      case OnNext(value) =>
+        println("observed: " + value)
+
     }
   }
 
-  val channel = Subject[OnData]()
-  // there is no channel.ofType method for RxScala, why?
-  channel.subscribe(observer)
+  val channel = system.actorOf(Channel.props())
+  val receiver = system.actorOf(Props(new Receiver))
+  ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
   NamespaceExtension(system).startNamespace("")
   NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)

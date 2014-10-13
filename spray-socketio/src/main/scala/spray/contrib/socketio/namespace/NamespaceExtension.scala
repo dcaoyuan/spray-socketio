@@ -11,15 +11,16 @@ import akka.actor.ExtensionIdProvider
 import akka.actor.NoSerializationVerificationNeeded
 import akka.actor.Props
 import akka.contrib.pattern.ClusterClient
-import akka.pattern.ask
 import akka.contrib.pattern.DistributedPubSubMediator.Publish
 import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
 import akka.contrib.pattern.DistributedPubSubMediator.Unsubscribe
+import akka.pattern.ask
 import scala.collection.concurrent.TrieMap
 import scala.collection.immutable
 import scala.concurrent.Await
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionSession
+import spray.contrib.socketio.ConnectionSessionClusterClient
 import spray.contrib.socketio.SocketIOExtension
 
 object NamespaceExtension extends ExtensionId[NamespaceExtension] with ExtensionIdProvider {
@@ -38,13 +39,14 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
     val namespaceGroup = config.getString("server.namespace-group-name")
+    val isClientInCluster = config.getBoolean("client.namespace.isCluster")
   }
 
   import Settings._
 
   private lazy val namespaces = new TrieMap[String, ActorRef]
 
-  private lazy val guardian = system.actorOf(NamesapceGuardian.props, "socketio-guardian")
+  private lazy val guardian = system.actorOf(NamespaceGuardian.props, "socketio-guardian")
 
   private lazy val client = if (isCluster) {
     ConnectionSession(system).clusterClient
@@ -52,23 +54,29 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
     ActorRef.noSender
   }
 
-  val mediator = if (isCluster) {
+  private lazy val mediator = if (isCluster) {
     system.actorOf(DistributedBalancingPubSubProxy.props(s"/user/${SocketIOExtension.mediatorName}", namespaceGroup, client))
   } else {
     SocketIOExtension(system).localMediator
   }
 
   lazy val sessionRegion = if (isCluster) {
-    socketio.ConnectionSessionClusterClient(system)
+    ConnectionSessionClusterClient(system)
   } else {
-    SocketIOExtension(system).sessionRegion
+    SocketIOExtension(system).localSessionRegion
+  }
+
+  lazy val namespaceRegion = if (isCluster) {
+
+  } else {
+
   }
 
   def startNamespace(endpoint: String) {
     implicit val timeout = system.settings.CreationTimeout
     val name = socketio.topicForNamespace(endpoint)
-    val startMsg = NamesapceGuardian.Start(name, Namespace.props(endpoint, mediator))
-    val NamesapceGuardian.Started(namespaceRef) = Await.result(guardian ? startMsg, timeout.duration)
+    val startMsg = NamespaceGuardian.Start(name, Namespace.props(endpoint, mediator))
+    val NamespaceGuardian.Started(namespaceRef) = Await.result(guardian ? startMsg, timeout.duration)
     namespaces(endpoint) = namespaceRef
   }
 
@@ -78,18 +86,18 @@ class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
   }
 }
 
-private[socketio] object NamesapceGuardian {
-  def props() = Props(classOf[NamesapceGuardian])
+private[socketio] object NamespaceGuardian {
+  def props() = Props(classOf[NamespaceGuardian])
 
   final case class Start(name: String, entryProps: Props) extends NoSerializationVerificationNeeded
   final case class Started(ref: ActorRef) extends NoSerializationVerificationNeeded
 }
 
-private[socketio] class NamesapceGuardian extends Actor {
-  import NamesapceGuardian._
+private[socketio] class NamespaceGuardian extends Actor {
+  import NamespaceGuardian._
   def receive: Actor.Receive = {
     case Start(name, entryProps) =>
-      val ref: ActorRef = context.child(name).getOrElse {
+      val ref = context.child(name).getOrElse {
         context.actorOf(entryProps, name = name)
       }
       sender() ! Started(ref)
@@ -115,7 +123,7 @@ object DistributedBalancingPubSubProxy {
  * @param client [[ClusterClient]] to access Cluster
  */
 class DistributedBalancingPubSubProxy(path: String, group: String, client: ActorRef) extends Actor with ActorLogging {
-  override def receive: Actor.Receive = {
+  def receive: Actor.Receive = {
     case Subscribe(topic, None, ref) =>
       client forward ClusterClient.Send(path, socketio.DistributedBalancingPubSubMediator.SubscribeGroup(topic, group, ref), false)
     case Unsubscribe(topic, None, ref) =>

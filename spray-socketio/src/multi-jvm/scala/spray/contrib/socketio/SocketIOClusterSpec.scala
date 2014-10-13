@@ -9,11 +9,16 @@ import akka.actor._
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import akka.persistence.Persistence
 import akka.pattern.ask
+import akka.stream.actor.ActorPublisher
+import akka.stream.actor.ActorSubscriber
+import akka.stream.actor.ActorSubscriberMessage.OnNext
+import akka.stream.actor.WatermarkRequestStrategy
 import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
 import akka.io.{Tcp, IO}
 import spray.can.server.UHttp
 import spray.can.Http
+import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
@@ -25,8 +30,6 @@ import akka.remote.testconductor.RoleName
 import scala.concurrent.Await
 import scala.concurrent.Promise
 import akka.actor.Identify
-import rx.lang.scala.Subject
-import rx.lang.scala.Observer
 import spray.contrib.socketio.DistributedBalancingPubSubMediator.Internal.{Subscription, GetSubscriptionsAck, GetSubscriptions}
 import spray.can.websocket.frame.{TextFrame, Frame}
 import akka.contrib.pattern.DistributedPubSubExtension
@@ -128,7 +131,7 @@ object SocketIOClusterSpec {
 
     def receive = {
       case x: Tcp.Bound => commander ! x
-      // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
+        // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
         val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, sessionRegion))
@@ -283,24 +286,24 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "startup business" in within(25.seconds) {
       runOn(business1, business2, business3) {
-        val sessionRegion = NamespaceExtension(system).sessionRegion
 
-        val observer = new Observer[OnData] {
-          override def onNext(value: OnData) {
-            value match {
-              case OnEvent("chat", args, context) =>
-                value.replyEvent("chat", args)(sessionRegion)
-              case OnEvent("broadcast", args, context) =>
-                val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
-                value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(sessionRegion)
-              case _ =>
-                println("observed: " + value)
-            }
+        class Receiver extends ActorSubscriber {
+          val sessionRegion = NamespaceExtension(system).sessionRegion
+          override val requestStrategy = WatermarkRequestStrategy(10)
+          def receive = {
+            case OnNext(value @ OnEvent("chat", args, context)) =>
+              value.replyEvent("chat", args)(sessionRegion)
+            case OnNext(value @ OnEvent("broadcast", args, context)) =>
+              val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
+              value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(sessionRegion)
+            case OnNext(value) =>
+              println("observed: " + value)
           }
         }
 
-        val channel = Subject[OnData]()
-        channel.subscribe(observer)
+        val channel = system.actorOf(Channel.props())
+        val receiver = system.actorOf(Props(new Receiver))
+        ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
         NamespaceExtension(system).startNamespace("")
         NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
@@ -316,10 +319,10 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(connectionSession1) {
         val client = self
         system.actorOf(Props(new Actor {
-          override def receive: Receive = {
-            case seq: Seq[Subscription] => client ! seq.toSet
-          }
-        }), name="test")
+              override def receive: Receive = {
+                case seq: Seq[Subscription] => client ! seq.toSet
+              }
+            }), name="test")
       }
 
       runOn(connectionSession2) {
@@ -335,7 +338,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val subscriptions = Await.result(system.actorSelection(node(connectionSession1).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
         log.info("subscriptions: " + subscriptions.toString)
         awaitAssert {
-           expectMsg(subscriptions.subscriptions.toSet)
+          expectMsg(subscriptions.subscriptions.toSet)
         }
       }
 

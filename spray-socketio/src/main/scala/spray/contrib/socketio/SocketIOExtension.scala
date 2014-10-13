@@ -37,13 +37,15 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   private[socketio] object Settings {
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
-    val connRole: String = "connectionSession"
-    val enableConnPersistence: Boolean = config.getBoolean("server.enable-connectionsession-persistence")
+    val sessionRole: String = "connectionSession"
+    val enableSessionPersistence: Boolean = config.getBoolean("server.enable-connectionsession-persistence")
     val schedulerTickDuration: FiniteDuration = Duration(config.getDuration("scheduler.tick-duration", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
     val schedulerTicksPerWheel: Int = config.getInt("scheduler.ticks-per-wheel")
   }
 
   lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
+
+  lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(localMediator, connectionSessionProps), name = ConnectionSession.shardName)
 
   /** No lazy, need to start immediately to accept broadcast etc. */
   val broadcastMediator = if (Settings.isCluster) DistributedPubSubExtension(system).mediator else localMediator
@@ -54,7 +56,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
    */
   val namespaceMediator = if (Settings.isCluster) {
     val cluster = Cluster(system)
-    if (cluster.getSelfRoles.contains(Settings.connRole)) {
+    if (cluster.getSelfRoles.contains(Settings.sessionRole)) {
       val routingLogic = Settings.config.getString("routing-logic") match {
         case "random"             => RandomRoutingLogic()
         case "round-robin"        => RoundRobinRoutingLogic()
@@ -62,15 +64,15 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
         case "broadcast"          => BroadcastRoutingLogic()
         case other                => throw new IllegalArgumentException(s"Unknown 'routing-logic': [$other]")
       }
-      val ref = system.actorOf(DistributedBalancingPubSubMediator.props(Some(Settings.connRole), routingLogic), name = SocketIOExtension.mediatorName)
-      ClusterReceptionistExtension(system).registerService(ref)
-      ref
+      val mediator = system.actorOf(DistributedBalancingPubSubMediator.props(Some(Settings.sessionRole), routingLogic), name = SocketIOExtension.mediatorName)
+      ClusterReceptionistExtension(system).registerService(mediator)
+      mediator
     } else {
       system.deadLetters
     }
   } else localMediator
 
-  lazy val connectionSessionProps: Props = if (Settings.enableConnPersistence) {
+  lazy val connectionSessionProps: Props = if (Settings.enableSessionPersistence) {
     PersistentConnectionSession.props(namespaceMediator, broadcastMediator)
   } else {
     TransientConnectionSession.props(namespaceMediator, broadcastMediator)

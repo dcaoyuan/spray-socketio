@@ -36,8 +36,6 @@ package object socketio {
     val HeartbeatTimeout = config.getInt("server.heartbeat-timeout")
     val CloseTimeout = config.getInt("server.close-timeout")
     val IdleTimeout = config.getInt("server.idle-timeout")
-    val namespacesDispatcher = config.getString("namespaces-dispatcher")
-    val namespaceDispatcher = config.getString("namespace-dispatcher")
   }
 
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds

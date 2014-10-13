@@ -15,6 +15,9 @@ import java.util.concurrent.TimeUnit
 import scala.collection.immutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
+import spray.contrib.socketio.namespace.DistributedBalancingPubSubProxy
+import spray.contrib.socketio.namespace.LocalNamespaceRegion
+import spray.contrib.socketio.namespace.Namespace
 
 object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionIdProvider {
   override def get(system: ActorSystem): SocketIOExtension = super.get(system)
@@ -35,17 +38,31 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
    * INTERNAL API
    */
   private[socketio] object Settings {
+    val sessionRole: String = "connectionSession"
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
-    val sessionRole: String = "connectionSession"
     val enableSessionPersistence: Boolean = config.getBoolean("server.enable-connectionsession-persistence")
     val schedulerTickDuration: FiniteDuration = Duration(config.getDuration("scheduler.tick-duration", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
     val schedulerTicksPerWheel: Int = config.getInt("scheduler.ticks-per-wheel")
+    val namespaceGroup = config.getString("server.namespace-group-name")
+  }
+
+  lazy val connectionSessionProps: Props = if (Settings.enableSessionPersistence) {
+    PersistentConnectionSession.props(namespaceMediator, broadcastMediator)
+  } else {
+    TransientConnectionSession.props(namespaceMediator, broadcastMediator)
+  }
+
+  lazy val clusterClient = {
+    import scala.collection.JavaConversions._
+    val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
+    system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-client")
   }
 
   lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
 
   lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(localMediator, connectionSessionProps), name = ConnectionSession.shardName)
+  lazy val localNamespaceRegion = system.actorOf(LocalNamespaceRegion.props(localMediator), name = Namespace.shardName)
 
   /** No lazy, need to start immediately to accept broadcast etc. */
   val broadcastMediator = if (Settings.isCluster) DistributedPubSubExtension(system).mediator else localMediator
@@ -72,20 +89,39 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     }
   } else localMediator
 
-  lazy val connectionSessionProps: Props = if (Settings.enableSessionPersistence) {
-    PersistentConnectionSession.props(namespaceMediator, broadcastMediator)
+  lazy val mediatorProxy = if (Settings.isCluster) {
+    system.actorOf(DistributedBalancingPubSubProxy.props(s"/user/${SocketIOExtension.mediatorName}", Settings.namespaceGroup, clusterClient))
   } else {
-    TransientConnectionSession.props(namespaceMediator, broadcastMediator)
+    localMediator
   }
 
   if (Settings.isCluster) {
-    ConnectionSession.startShard(system, connectionSessionProps)
+    ConnectionSession.startSharding(system, connectionSessionProps)
+    //Namespace.startSharding(system, Namespace.props(mediatorProxy))
   }
 
   lazy val sessionRegion = if (Settings.isCluster) {
     ClusterSharding(system).shardRegion(ConnectionSession.shardName)
   } else {
-    system.actorOf(LocalConnectionSessionRegion.props(localMediator, connectionSessionProps), name = ConnectionSession.shardName)
+    localSessionRegion
+  }
+
+  lazy val namespaceRegion = if (Settings.isCluster) {
+    ClusterSharding(system).shardRegion(Namespace.shardName)
+  } else {
+    localNamespaceRegion
+  }
+
+  lazy val sessionRegionClient = if (Settings.isCluster) {
+    ConnectionSession(system).clusterClient
+  } else {
+    localSessionRegion
+  }
+
+  lazy val namespaceRegionClient = if (Settings.isCluster) {
+    Namespace(system).clusterClient
+  } else {
+    localNamespaceRegion
   }
 
   lazy val scheduler: Scheduler = {
@@ -93,8 +129,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     log.info("Using a dedicated scheduler for socketio with 'spray.socketio.scheduler.tick-duration' [{} ms].", Settings.schedulerTickDuration.toMillis)
 
     val cfg = ConfigFactory.parseString(
-      s"socketio.scheduler.tick-duration=${Settings.schedulerTickDuration.toMillis}ms").withFallback(
-        system.settings.config)
+      s"socketio.scheduler.tick-duration=${Settings.schedulerTickDuration.toMillis}ms").withFallback(system.settings.config)
     val threadFactory = system.threadFactory match {
       case tf: MonitorableThreadFactory => tf.withName(tf.name + "-socketio-scheduler")
       case tf                           => tf

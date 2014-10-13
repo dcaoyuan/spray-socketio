@@ -16,7 +16,7 @@ import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.{ OnData, OnEvent }
+import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.EventPacket
 import spray.http.HttpRequest
@@ -82,10 +82,10 @@ object SocketIOTestServer extends App {
   }
 
   implicit val system = ActorSystem()
-  SocketIOExtension(system)
+  val socketioExt = SocketIOExtension(system)
 
   class Receiver extends ActorSubscriber {
-    implicit val sessionRegion = NamespaceExtension(system).sessionRegion
+    implicit val sessionRegion = socketioExt.sessionRegionClient
 
     override val requestStrategy = WatermarkRequestStrategy(10)
 
@@ -109,7 +109,7 @@ object SocketIOTestServer extends App {
   ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
   NamespaceExtension(system).startNamespace("")
-  NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
+  NamespaceExtension(system).namespace("") ! Namespace.Subscribe("", channel)
 
   val sessionRegionForTransport = SocketIOExtension(system).sessionRegion
   val server = system.actorOf(SocketIOServer.props(sessionRegionForTransport), name = "socketio-server")

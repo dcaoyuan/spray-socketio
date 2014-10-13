@@ -15,7 +15,6 @@ import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.EventPacket
@@ -75,7 +74,7 @@ object SocketIOTestClusterServer extends App {
       val appConfig = load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
       class Receiver extends ActorSubscriber {
-        implicit val sessionRegion = NamespaceExtension(system).sessionRegion
+        implicit val sessionRegion = SocketIOExtension(system).sessionRegionClient
         override val requestStrategy = WatermarkRequestStrategy(10)
 
         def receive = {
@@ -101,7 +100,7 @@ object SocketIOTestClusterServer extends App {
       ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
       NamespaceExtension(system).startNamespace("")
-      NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
+      NamespaceExtension(system).namespace("") ! Namespace.Subscribe("", channel)
 
     case _ =>
       exitWithUsage

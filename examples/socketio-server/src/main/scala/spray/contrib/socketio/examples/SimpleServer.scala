@@ -15,7 +15,7 @@ import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.{ OnData, OnEvent }
+import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
@@ -93,7 +93,7 @@ object SimpleServer extends App with MySslConfiguration {
   val namespaceExt = NamespaceExtension(system)
 
   class Receiver extends ActorSubscriber {
-    implicit val sessionRegion = namespaceExt.sessionRegion
+    implicit val sessionRegion = socketioExt.sessionRegionClient
 
     override val requestStrategy = WatermarkRequestStrategy(10)
 
@@ -128,9 +128,9 @@ object SimpleServer extends App with MySslConfiguration {
   //}.subscribe(observer)
 
   namespaceExt.startNamespace("testendpoint")
-  namespaceExt.namespace("testendpoint") ! Namespace.Subscribe(channel)
+  namespaceExt.namespace("testendpoint") ! Namespace.Subscribe("testendpoint", channel)
 
-  val sessionRegion = namespaceExt.sessionRegion
+  val sessionRegion = socketioExt.sessionRegion
   val server = system.actorOf(SocketIOServer.props(sessionRegion), name = "socketio-server")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)

@@ -5,6 +5,7 @@ import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.actor.Props
+import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
 import akka.contrib.pattern.DistributedPubSubMediator
@@ -15,7 +16,9 @@ import scala.concurrent.Future
 import scala.util.{ Failure, Success }
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionSession
+import spray.contrib.socketio.ConnectionSession.OnPacket
 import spray.contrib.socketio.ConnectionContext
+import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DataPacket
 import spray.contrib.socketio.packet.DisconnectPacket
@@ -78,12 +81,12 @@ import spray.contrib.socketio.packet.Packet
  */
 object Namespace {
 
-  def props(endpoint: String, mediator: ActorRef) = Props(classOf[Namespace], endpoint, mediator)
+  def props(mediator: ActorRef) = Props(classOf[Namespace], mediator)
 
-  final case class Subscribe(channel: ActorRef)
-  final case class SubscribeAck(subcribe: Subscribe)
-  final case class Unsubscribe(channel: Option[ActorRef])
-  final case class UnsubscribeAck(subcribe: Unsubscribe)
+  final case class Subscribe(endpoint: String, channel: ActorRef)
+  final case class SubscribeAck(subscribe: Subscribe)
+  final case class Unsubscribe(endpoint: String, channel: Option[ActorRef])
+  final case class UnsubscribeAck(unsubscribe: Unsubscribe)
 
   // --- Observable data
   sealed trait OnData {
@@ -145,7 +148,7 @@ object Namespace {
    * system is started by defining it in the akka.extensions configuration property:
    *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
    */
-  def startShard(system: ActorSystem, entryProps: Props) {
+  def startSharding(system: ActorSystem, entryProps: Props) {
     val sharding = ClusterSharding(system)
     sharding.start(
       entryProps = Some(entryProps),
@@ -155,18 +158,59 @@ object Namespace {
     ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
   }
 
+  final class SystemSingletons(system: ActorSystem) {
+    lazy val clusterClient = {
+      val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
+      val path = s"/user/${shardingGuardianName}/${shardName}"
+      val originalClusterClient = SocketIOExtension(system).clusterClient
+      system.actorOf(Props(classOf[ProxiedClusterClient], path, originalClusterClient))
+    }
+  }
+
+  private var singletons: SystemSingletons = _
+  private val singletonsMutex = new AnyRef
+  /**
+   * Get the SystemSingletons, create it if none existed.
+   *
+   * @Note only one will be created no matter how many ActorSystems, actually
+   * one ActorSystem per application usaully.
+   */
+  def apply(system: ActorSystem): SystemSingletons = {
+    if (singletons eq null) {
+      singletonsMutex synchronized {
+        if (singletons eq null) {
+          singletons = new SystemSingletons(system)
+        }
+      }
+    }
+    singletons
+  }
+
+  /**
+   * A proxy actor that runs on the business nodes to make forwarding msg to Namespace easily.
+   *
+   * @param path Namespace sharding service's path
+   * @param client [[ClusterClient]] to access SocketIO Cluster
+   */
+  class ProxiedClusterClient(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
+    def receive: Actor.Receive = {
+      case cmd: Namespace.Command => originalClient forward ClusterClient.Send(shardingServicePath, cmd, false)
+    }
+  }
+
 }
 
 /**
  * Namespace is refered to endpoint for observers and will subscribe to topic 'namespace' of mediator
  */
-class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLogging {
+class Namespace(mediator: ActorRef) extends Actor with ActorLogging {
   import Namespace._
 
   var channels = Set[ActorRef]() // ActorRef of Channel
 
   private var isMediatorSubscribed: Boolean = _
-  def subscribeToMediator(action: () => Unit) = {
+
+  def subscribeToMediator(endpoint: String)(action: () => Unit) = {
     if (!isMediatorSubscribed) {
       import context.dispatcher
       implicit val timeout = Timeout(socketio.namespaceSubscribeTimeout)
@@ -184,7 +228,7 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
     }
   }
 
-  def unsubscribeToMediator(action: () => Unit) = {
+  def unsubscribeToMediator(endpoint: String)(action: () => Unit) = {
     if (isMediatorSubscribed && channels.isEmpty) {
       import context.dispatcher
       implicit val timeout = Timeout(socketio.namespaceSubscribeTimeout)
@@ -202,21 +246,20 @@ class Namespace(endpoint: String, mediator: ActorRef) extends Actor with ActorLo
     }
   }
 
-  import ConnectionSession.OnPacket
   def receive: Receive = {
-    case x @ Subscribe(channel) =>
+    case x @ Subscribe(endpoint, channel) =>
       val commander = sender()
-      subscribeToMediator { () =>
+      subscribeToMediator(endpoint) { () =>
         channels += channel
         commander ! SubscribeAck(x)
       }
-    case x @ Unsubscribe(channel) =>
+    case x @ Unsubscribe(endpoint, channel) =>
       val commander = sender()
       channel match {
         case Some(c) => channels -= c
         case None    => channels = channels.empty
       }
-      unsubscribeToMediator { () =>
+      unsubscribeToMediator(endpoint) { () =>
         commander ! UnsubscribeAck(x)
       }
 

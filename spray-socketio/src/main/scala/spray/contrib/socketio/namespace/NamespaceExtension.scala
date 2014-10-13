@@ -19,8 +19,6 @@ import scala.collection.concurrent.TrieMap
 import scala.collection.immutable
 import scala.concurrent.Await
 import spray.contrib.socketio
-import spray.contrib.socketio.ConnectionSession
-import spray.contrib.socketio.ConnectionSessionClusterClient
 import spray.contrib.socketio.SocketIOExtension
 
 object NamespaceExtension extends ExtensionId[NamespaceExtension] with ExtensionIdProvider {
@@ -32,58 +30,22 @@ object NamespaceExtension extends ExtensionId[NamespaceExtension] with Extension
 }
 
 class NamespaceExtension(system: ExtendedActorSystem) extends Extension {
-  /**
-   * INTERNAL API
-   */
-  private[socketio] object Settings {
-    val config = system.settings.config.getConfig("spray.socketio")
-    val isCluster: Boolean = config.getString("mode") == "cluster"
-    val namespaceGroup = config.getString("server.namespace-group-name")
-    val isClientInCluster = config.getBoolean("client.namespace.isCluster")
-  }
-
-  import Settings._
-
   private lazy val namespaces = new TrieMap[String, ActorRef]
 
   private lazy val guardian = system.actorOf(NamespaceGuardian.props, "socketio-guardian")
 
-  private lazy val client = if (isCluster) {
-    ConnectionSession(system).clusterClient
-  } else {
-    ActorRef.noSender
-  }
-
-  private lazy val mediator = if (isCluster) {
-    system.actorOf(DistributedBalancingPubSubProxy.props(s"/user/${SocketIOExtension.mediatorName}", namespaceGroup, client))
-  } else {
-    SocketIOExtension(system).localMediator
-  }
-
-  lazy val sessionRegion = if (isCluster) {
-    ConnectionSessionClusterClient(system)
-  } else {
-    SocketIOExtension(system).localSessionRegion
-  }
-
-  lazy val namespaceRegion = if (isCluster) {
-
-  } else {
-
-  }
-
   def startNamespace(endpoint: String) {
     implicit val timeout = system.settings.CreationTimeout
     val name = socketio.topicForNamespace(endpoint)
-    val startMsg = NamespaceGuardian.Start(name, Namespace.props(endpoint, mediator))
+    val mediator = SocketIOExtension(system).mediatorProxy
+    val startMsg = NamespaceGuardian.Start(name, Namespace.props(mediator))
     val NamespaceGuardian.Started(namespaceRef) = Await.result(guardian ? startMsg, timeout.duration)
     namespaces(endpoint) = namespaceRef
   }
 
-  def namespace(endpoint: String): ActorRef = namespaces.get(endpoint) match {
-    case Some(ref) => ref
-    case None      => throw new IllegalArgumentException(s"Namespace endpoint [$endpoint] must be started first")
-  }
+  def namespace(endpoint: String) = namespaces.getOrElse(endpoint, {
+    throw new IllegalArgumentException(s"Namespace endpoint [$endpoint] must be started first")
+  })
 }
 
 private[socketio] object NamespaceGuardian {

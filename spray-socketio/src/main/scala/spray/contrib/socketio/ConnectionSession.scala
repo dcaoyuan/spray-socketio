@@ -99,7 +99,7 @@ object ConnectionSession {
    * system is started by defining it in the akka.extensions configuration property:
    *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
    */
-  def startShard(system: ActorSystem, entryProps: Props) {
+  def startSharding(system: ActorSystem, entryProps: Props) {
     val sharding = ClusterSharding(system)
     sharding.start(
       entryProps = Some(entryProps),
@@ -110,10 +110,11 @@ object ConnectionSession {
   }
 
   final class SystemSingletons(system: ActorSystem) {
-    lazy val clusterClient: ActorRef = {
-      import scala.collection.JavaConversions._
-      val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
-      system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-connsession-client")
+    lazy val clusterClient = {
+      val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
+      val path = s"/user/${shardingGuardianName}/${shardName}"
+      val originalClusterClient = SocketIOExtension(system).clusterClient
+      system.actorOf(Props(classOf[ProxiedClusterClient], path, originalClusterClient))
     }
   }
 
@@ -134,6 +135,18 @@ object ConnectionSession {
       }
     }
     singletons
+  }
+
+  /**
+   * A proxy actor that runs on the business nodes to make forwarding msg to ConnectionSession easily.
+   *
+   * @param path ConnectionSession sharding service's path
+   * @param client [[ClusterClient]] to access SocketIO Cluster
+   */
+  class ProxiedClusterClient(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
+    def receive: Actor.Receive = {
+      case cmd: ConnectionSession.Command => originalClient forward ClusterClient.Send(shardingServicePath, cmd, false)
+    }
   }
 
   final class State(val context: ConnectionContext, var transportConnection: ActorRef, var topics: immutable.Set[String]) extends Serializable {
@@ -516,28 +529,3 @@ trait ConnectionSession { _: Actor =>
   }
 }
 
-object ConnectionSessionClusterClient {
-  def props(path: String, clusterClient: ActorRef) = Props(classOf[ConnectionSessionClusterClient], path, clusterClient)
-
-  private var _client: ActorRef = _
-  def apply(system: ActorSystem) = {
-    if (_client eq null) {
-      val originalClient = ConnectionSession(system).clusterClient
-      val shardingName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
-      _client = system.actorOf(props(s"/user/${shardingName}/${ConnectionSession.shardName}", originalClient))
-    }
-    _client
-  }
-}
-
-/**
- * A proxy actor that runs on the namespace nodes to make forwarding msg to ConnectionSession easy.
- *
- * @param path ConnectionSession sharding service's path
- * @param client [[ClusterClient]] to access SocketIO Cluster
- */
-class ConnectionSessionClusterClient(path: String, clusterClient: ActorRef) extends Actor with ActorLogging {
-  def receive: Actor.Receive = {
-    case cmd: ConnectionSession.Command => clusterClient forward ClusterClient.Send(path, cmd, false)
-  }
-}

@@ -288,7 +288,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(business1, business2, business3) {
 
         class Receiver extends ActorSubscriber {
-          val sessionRegion = NamespaceExtension(system).sessionRegion
+          val sessionRegion = SocketIOExtension(system).sessionRegionClient
           override val requestStrategy = WatermarkRequestStrategy(10)
           def receive = {
             case OnNext(value @ OnEvent("chat", args, context)) =>
@@ -306,7 +306,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
         NamespaceExtension(system).startNamespace("")
-        NamespaceExtension(system).namespace("") ! Namespace.Subscribe(channel)
+        NamespaceExtension(system).namespace("") ! Namespace.Subscribe("", channel)
         awaitAssert {
           expectMsgType[Namespace.SubscribeAck]
         }
@@ -320,7 +320,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val client = self
         system.actorOf(Props(new Actor {
               override def receive: Receive = {
-                case seq: Seq[Subscription] => client ! seq.toSet
+                case seq: Seq[_] => client ! seq.toSet
               }
             }), name="test")
       }
@@ -366,7 +366,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
       runOn(business3) {
         enterBarrier("two-groups-tested")
-        NamespaceExtension(system).namespace("") ! Namespace.Unsubscribe(None)
+        NamespaceExtension(system).namespace("") ! Namespace.Unsubscribe("", None)
         awaitAssert {
           expectMsgType[Namespace.UnsubscribeAck]
         }

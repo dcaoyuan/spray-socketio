@@ -83,13 +83,17 @@ object Namespace {
 
   def props(mediator: ActorRef) = Props(classOf[Namespace], mediator)
 
-  final case class Subscribe(endpoint: String, channel: ActorRef)
-  final case class SubscribeAck(subscribe: Subscribe)
-  final case class Unsubscribe(endpoint: String, channel: Option[ActorRef])
-  final case class UnsubscribeAck(unsubscribe: Unsubscribe)
+  sealed trait Command extends Serializable {
+    def endpoint: String
+  }
+
+  final case class Subscribe(endpoint: String, channel: ActorRef) extends Command
+  final case class Unsubscribe(endpoint: String, channel: Option[ActorRef]) extends Command
+  final case class SubscribeAck(subscribe: Subscribe) extends Command { def endpoint = "" }
+  final case class UnsubscribeAck(unsubscribe: Unsubscribe) extends Command { def endpoint = "" }
 
   // --- Observable data
-  sealed trait OnData {
+  sealed trait OnData extends Serializable {
     def context: ConnectionContext
     def packet: Packet
 
@@ -129,18 +133,14 @@ object Namespace {
   final case class OnJson(json: String, context: ConnectionContext)(implicit val packet: JsonPacket) extends OnData
   final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val packet: EventPacket) extends OnData
 
-  sealed trait Command extends Serializable {
-    def endpoint: String
-  }
-
   val shardName: String = "SocketIONamespaces"
 
   val idExtractor: ShardRegion.IdExtractor = {
-    case cmd: Command => (cmd.endpoint, cmd)
+    case cmd: Command => (socketio.topicForNamespace(cmd.endpoint), cmd)
   }
 
   val shardResolver: ShardRegion.ShardResolver = {
-    case cmd: Command => (math.abs(cmd.endpoint.hashCode) % 100).toString
+    case cmd: Command => (math.abs(socketio.topicForNamespace(cmd.endpoint).hashCode) % 100).toString
   }
 
   /**
@@ -148,18 +148,19 @@ object Namespace {
    * system is started by defining it in the akka.extensions configuration property:
    *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
    */
-  def startSharding(system: ActorSystem, entryProps: Props) {
+  def startSharding(system: ActorSystem, entryProps: Option[Props]) {
     val sharding = ClusterSharding(system)
     sharding.start(
-      entryProps = Some(entryProps),
+      entryProps = entryProps,
       typeName = shardName,
       idExtractor = idExtractor,
       shardResolver = shardResolver)
-    ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
+    if (entryProps.isDefined) ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
   }
 
   final class SystemSingletons(system: ActorSystem) {
     lazy val clusterClient = {
+      startSharding(system, None)
       val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
       val path = s"/user/${shardingGuardianName}/${shardName}"
       val originalClusterClient = SocketIOExtension(system).clusterClient
@@ -252,6 +253,7 @@ class Namespace(mediator: ActorRef) extends Actor with ActorLogging {
       subscribeToMediator(endpoint) { () =>
         channels += channel
         commander ! SubscribeAck(x)
+        log.info("{} successfully subscribed to [{}]", channel, endpoint)
       }
     case x @ Unsubscribe(endpoint, channel) =>
       val commander = sender()
@@ -261,6 +263,7 @@ class Namespace(mediator: ActorRef) extends Actor with ActorLogging {
       }
       unsubscribeToMediator(endpoint) { () =>
         commander ! UnsubscribeAck(x)
+        log.info("{} successfully unsubscribed to [{}]", channel, endpoint)
       }
 
     // --- messages got via mediator

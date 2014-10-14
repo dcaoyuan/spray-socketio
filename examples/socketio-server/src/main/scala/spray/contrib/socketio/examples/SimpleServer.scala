@@ -127,8 +127,10 @@ object SimpleServer extends App with MySslConfiguration {
   //  case _          => Observable.empty
   //}.subscribe(observer)
 
-  namespaceExt.startNamespace("testendpoint")
-  namespaceExt.namespace("testendpoint") ! Namespace.Subscribe("testendpoint", channel)
+  val namespaceRegion = socketioExt.namespaceRegionClient
+  namespaceRegion ! Namespace.Subscribe("testendpoint", channel)
+  //namespaceExt.startNamespace("testendpoint")
+  //namespaceExt.namespace("testendpoint") ! Namespace.Subscribe("testendpoint", channel)
 
   val sessionRegion = socketioExt.sessionRegion
   val server = system.actorOf(SocketIOServer.props(sessionRegion), name = "socketio-server")

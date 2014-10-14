@@ -97,7 +97,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   if (Settings.isCluster) {
     ConnectionSession.startSharding(system, connectionSessionProps)
-    //Namespace.startSharding(system, Namespace.props(mediatorProxy))
+    Namespace.startSharding(system, Namespace.props(mediatorProxy))
   }
 
   lazy val sessionRegion = if (Settings.isCluster) {

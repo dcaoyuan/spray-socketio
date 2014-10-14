@@ -17,7 +17,7 @@ class SerializerBenchmark extends SimpleScalaBenchmark {
 
   val system = ActorSystem("test", ConfigFactory.parseString("")).asInstanceOf[ExtendedActorSystem]
   val javaSerializer = new JavaSerializer(system)
-  val commandSerializer = new CommandSerializer(system)
+  val commandSerializer = new ConnectionSessionCommandSerializer(system)
 
   override def setUp() {
     // set up all your benchmark data here

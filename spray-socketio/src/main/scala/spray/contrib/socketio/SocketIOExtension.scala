@@ -47,11 +47,13 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     val namespaceGroup = config.getString("server.namespace-group-name")
   }
 
-  lazy val connectionSessionProps: Props = if (Settings.enableSessionPersistence) {
-    PersistentConnectionSession.props(namespaceMediator, broadcastMediator)
+  lazy val sessionProps: Props = if (Settings.enableSessionPersistence) {
+    PersistentConnectionSession.props(broadcastMediator, broadcastMediator)
   } else {
-    TransientConnectionSession.props(namespaceMediator, broadcastMediator)
+    TransientConnectionSession.props(broadcastMediator, broadcastMediator)
   }
+
+  lazy val namespaceProps: Props = Namespace.props(broadcastMediator)
 
   lazy val clusterClient = {
     import scala.collection.JavaConversions._
@@ -61,17 +63,17 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
 
   lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
 
-  lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(localMediator, connectionSessionProps), name = ConnectionSession.shardName)
+  lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(localMediator, sessionProps), name = ConnectionSession.shardName)
   lazy val localNamespaceRegion = system.actorOf(LocalNamespaceRegion.props(localMediator), name = Namespace.shardName)
 
   /** No lazy, need to start immediately to accept broadcast etc. */
-  val broadcastMediator = if (Settings.isCluster) DistributedPubSubExtension(system).mediator else localMediator
+  lazy val broadcastMediator = if (Settings.isCluster) DistributedPubSubExtension(system).mediator else localMediator
 
   /**
    * No lazy, need to start immediately to accept subscriptions msg etc.
    * namespaceMediator is used by client outside of cluster.
    */
-  val namespaceMediator = if (Settings.isCluster) {
+  lazy val namespaceMediator = if (Settings.isCluster) {
     val cluster = Cluster(system)
     if (cluster.getSelfRoles.contains(Settings.sessionRole)) {
       val routingLogic = Settings.config.getString("routing-logic") match {
@@ -90,35 +92,32 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   } else localMediator
 
   lazy val mediatorProxy = if (Settings.isCluster) {
-    system.actorOf(DistributedBalancingPubSubProxy.props(s"/user/${SocketIOExtension.mediatorName}", Settings.namespaceGroup, clusterClient))
+    broadcastMediator //system.actorOf(DistributedBalancingPubSubProxy.props(s"/user/${SocketIOExtension.mediatorName}", Settings.namespaceGroup, clusterClient))
   } else {
     localMediator
   }
 
-  if (Settings.isCluster) {
-    ConnectionSession.startSharding(system, connectionSessionProps)
-    Namespace.startSharding(system, Namespace.props(mediatorProxy))
-  }
-
   lazy val sessionRegion = if (Settings.isCluster) {
+    //ConnectionSession.startSharding(system, None)
     ClusterSharding(system).shardRegion(ConnectionSession.shardName)
   } else {
     localSessionRegion
   }
 
   lazy val namespaceRegion = if (Settings.isCluster) {
+    //Namespace.startSharding(system, None)
     ClusterSharding(system).shardRegion(Namespace.shardName)
   } else {
     localNamespaceRegion
   }
 
-  lazy val sessionRegionClient = if (Settings.isCluster) {
+  lazy val sessionClient = if (Settings.isCluster) {
     ConnectionSession(system).clusterClient
   } else {
     localSessionRegion
   }
 
-  lazy val namespaceRegionClient = if (Settings.isCluster) {
+  lazy val namespaceClient = if (Settings.isCluster) {
     Namespace(system).clusterClient
   } else {
     localNamespaceRegion

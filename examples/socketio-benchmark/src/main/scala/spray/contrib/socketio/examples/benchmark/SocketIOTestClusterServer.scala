@@ -74,7 +74,7 @@ object SocketIOTestClusterServer extends App {
       val appConfig = load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
       class Receiver extends ActorSubscriber {
-        implicit val sessionRegion = SocketIOExtension(system).sessionRegionClient
+        implicit val sessionClient = SocketIOExtension(system).sessionClient
         override val requestStrategy = WatermarkRequestStrategy(10)
 
         def receive = {

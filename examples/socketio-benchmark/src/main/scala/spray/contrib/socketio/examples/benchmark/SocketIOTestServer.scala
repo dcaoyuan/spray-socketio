@@ -85,7 +85,7 @@ object SocketIOTestServer extends App {
   val socketioExt = SocketIOExtension(system)
 
   class Receiver extends ActorSubscriber {
-    implicit val sessionRegion = socketioExt.sessionRegionClient
+    implicit val sessionClient = socketioExt.sessionClient
 
     override val requestStrategy = WatermarkRequestStrategy(10)
 

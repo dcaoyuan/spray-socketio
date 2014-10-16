@@ -111,7 +111,7 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
 
     case UHttp.Upgraded =>
       context.become(upgraded)
-      log.info("http connection of {} upgraded to websocket, sessionId: {}.", serverConnection.path, soConnContext.sessionId)
+      log.info("HTTP connection of {} upgraded to websocket, sessionId: {}.", serverConnection.path, soConnContext.sessionId)
   }
 
   def handleWebsocket: Receive = {
@@ -133,11 +133,11 @@ trait SocketIOServerWorker extends ActorLogging { _: Actor =>
     case x: Http.ConnectionClosed =>
       closeConnectionSession()
       self ! PoisonPill
-      log.debug("http connection of {} stopped due to {}.", serverConnection.path, x)
+      log.debug("HTTP connection of {} stopped due to {}.", serverConnection.path, x)
     case Tcp.Closed => // may be triggered by the first socketio handshake http connection, which will always be droped.
       closeConnectionSession()
       self ! PoisonPill
-      log.debug("http connection of {} stopped due to Tcp.Closed}.", serverConnection.path)
+      log.debug("HTTP connection of {} stopped due to Tcp.Closed}.", serverConnection.path)
   }
 
   def genericLogic: Receive

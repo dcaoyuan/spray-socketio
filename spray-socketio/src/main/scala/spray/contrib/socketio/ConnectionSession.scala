@@ -99,18 +99,19 @@ object ConnectionSession {
    * system is started by defining it in the akka.extensions configuration property:
    *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
    */
-  def startSharding(system: ActorSystem, entryProps: Props) {
+  def startSharding(system: ActorSystem, entryProps: Option[Props]) {
     val sharding = ClusterSharding(system)
     sharding.start(
-      entryProps = Some(entryProps),
+      entryProps = entryProps,
       typeName = shardName,
       idExtractor = idExtractor,
       shardResolver = shardResolver)
-    ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
+    if (entryProps.isDefined) ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
   }
 
   final class SystemSingletons(system: ActorSystem) {
     lazy val clusterClient = {
+      startSharding(system, None)
       val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
       val path = s"/user/${shardingGuardianName}/${shardName}"
       val originalClusterClient = SocketIOExtension(system).clusterClient

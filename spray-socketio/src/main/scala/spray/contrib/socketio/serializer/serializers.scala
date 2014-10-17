@@ -645,6 +645,7 @@ class StatusSerializer extends Serializer {
   }
 }
 
+/*
 class NamespaceCommandSerializer(val system: ExtendedActorSystem) extends Serializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN
 
@@ -739,6 +740,7 @@ class NamespaceCommandSerializer(val system: ExtendedActorSystem) extends Serial
   }
 
 }
+*/
 
 class OnDataSerializer extends Serializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN

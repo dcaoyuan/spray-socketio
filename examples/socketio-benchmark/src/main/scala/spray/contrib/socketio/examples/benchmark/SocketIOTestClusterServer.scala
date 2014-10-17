@@ -1,22 +1,23 @@
 package spray.contrib.socketio.examples.benchmark
 
+import akka.actor.{ ActorSystem, Props }
+import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
+import akka.io.IO
+import akka.persistence.Persistence
 import akka.stream.actor.ActorPublisher
 import akka.stream.actor.ActorSubscriber
 import akka.stream.actor.ActorSubscriberMessage.OnNext
 import akka.stream.actor.WatermarkRequestStrategy
-import com.typesafe.config.{ Config, ConfigFactory }
-import akka.actor.{ ActorSystem, Props }
-import akka.io.IO
-import akka.persistence.Persistence
 //import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
+import com.typesafe.config.{ Config, ConfigFactory }
 import spray.can.server.UHttp
 import spray.can.Http
+import spray.contrib.socketio
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
-import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.json.JsArray
@@ -70,6 +71,7 @@ object SocketIOTestClusterServer extends App {
     case "business" :: tail =>
       val config = parseString("akka.cluster.roles =[\"business\"]").withFallback(commonSettings)
       system = ActorSystem("NamespaceSystem", config)
+      val socketioExt = SocketIOExtension(system)
 
       val appConfig = load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
@@ -99,8 +101,7 @@ object SocketIOTestClusterServer extends App {
       val receiver = system.actorOf(Props(new Receiver))
       ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
-      NamespaceExtension(system).startNamespace("")
-      NamespaceExtension(system).namespace("") ! Namespace.Subscribe("", channel)
+      socketioExt.namespaceClient ! Subscribe(socketio.GlobalTopic, channel)
 
     case _ =>
       exitWithUsage

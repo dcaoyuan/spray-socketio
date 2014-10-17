@@ -37,7 +37,6 @@ akka {
       onpacket = "spray.contrib.socketio.serializer.OnPacketSerializer"
       onbroadcast = "spray.contrib.socketio.serializer.OnBroadcastSerializer"
       status = "spray.contrib.socketio.serializer.StatusSerializer"
-      namespacecmd = "spray.contrib.socketio.serializer.NamespaceCommandSerializer"
       ondata = "spray.contrib.socketio.serializer.OnDataSerializer"
     }
     serialization-bindings {
@@ -49,7 +48,6 @@ akka {
       "spray.contrib.socketio.ConnectionSession$OnPacket" = onpacket
       "spray.contrib.socketio.ConnectionSession$OnBroadcast" = onbroadcast
       "spray.contrib.socketio.ConnectionSession$Status" = status
-      "spray.contrib.socketio.namespace.Namespace$Command" = namespacecmd
       "spray.contrib.socketio.namespace.Namespace$OnData" = ondata
     }
   }
@@ -211,31 +209,6 @@ akka {
     }
 
     "handle Namespace Command/OnData" when {
-      "Subsribe" in {
-        val obj = Namespace.Subscribe("topic", self)
-        test(obj)
-      }
-
-      "Unsubscribe with Some" in {
-        val obj = Namespace.Unsubscribe("topic", Some(self))
-        test(obj)
-      }
-
-      "Unsubscribe with None" in {
-        val obj = Namespace.Unsubscribe("topic", None)
-        test(obj)
-      }
-
-      "SubscribeAck" in {
-        val obj = Namespace.SubscribeAck(Namespace.Subscribe("topic", self))
-        test(obj)
-      }
-
-      "UnsubscribeAck" in {
-        val obj = Namespace.UnsubscribeAck(Namespace.Unsubscribe("topic", Some(self)))
-        test(obj)
-      }
-
       "OnConnect" in {
         val args = List(("a1", "v1"), ("a2", ""))
         val obj = Namespace.OnConnect(args, ctx)(ConnectPacket("endpoint", args))

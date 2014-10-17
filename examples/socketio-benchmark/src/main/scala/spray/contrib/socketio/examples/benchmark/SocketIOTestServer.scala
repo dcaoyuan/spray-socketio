@@ -1,7 +1,8 @@
 package spray.contrib.socketio.examples.benchmark
 
-import akka.io.IO
 import akka.actor.{ Terminated, ActorSystem, Actor, Props, ActorLogging, ActorRef }
+import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
+import akka.io.IO
 import akka.stream.actor.ActorSubscriber
 import akka.stream.actor.ActorSubscriberMessage.OnNext
 import akka.stream.actor.ActorPublisher
@@ -12,12 +13,12 @@ import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
+import spray.contrib.socketio
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnEvent
-import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.EventPacket
 import spray.http.HttpRequest
 
@@ -108,8 +109,7 @@ object SocketIOTestServer extends App {
   val receiver = system.actorOf(Props(new Receiver))
   ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
-  NamespaceExtension(system).startNamespace("")
-  NamespaceExtension(system).namespace("") ! Namespace.Subscribe("", channel)
+  socketioExt.namespaceClient ! Subscribe(socketio.GlobalTopic, channel)
 
   val sessionRegionForTransport = SocketIOExtension(system).sessionRegion
   val server = system.actorOf(SocketIOServer.props(sessionRegionForTransport), name = "socketio-server")

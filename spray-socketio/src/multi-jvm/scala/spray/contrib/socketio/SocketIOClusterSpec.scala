@@ -5,7 +5,7 @@ import akka.actor.Identify
 import akka.actor._
 import akka.cluster.Cluster
 import akka.contrib.pattern.DistributedPubSubExtension
-import akka.contrib.pattern.DistributedPubSubMediator.Count
+import akka.contrib.pattern.DistributedPubSubMediator.{Count, Subscribe, Unsubscribe, SubscribeAck, UnsubscribeAck }
 import akka.io.{Tcp, IO}
 import akka.persistence.journal.leveldb.{ SharedLeveldbJournal, SharedLeveldbStore }
 import akka.persistence.Persistence
@@ -27,14 +27,13 @@ import scala.concurrent.duration._
 import spray.can.Http
 import spray.can.websocket.frame.{TextFrame, Frame}
 import spray.can.server.UHttp
-import spray.contrib.socketio.DistributedBalancingPubSubMediator.Internal.{Subscription, GetSubscriptionsAck, GetSubscriptions}
+import spray.contrib.socketio
 import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.OnOpen
 import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.SendHello
 import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.namespace.Namespace.OnData
 import spray.contrib.socketio.namespace.Namespace.OnEvent
-import spray.contrib.socketio.namespace.NamespaceExtension
 import spray.contrib.socketio.packet.{EventPacket, Packet, MessagePacket}
 import spray.json.{JsArray, JsString}
 
@@ -112,7 +111,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
         akka.cluster.roles = ["business"]
         spray.socketio {
             cluster.client-initial-contacts = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
-            server.namespace-group-name = "group1"
+            //server.namespace-group-name = "group1"
         }
       """)
 
@@ -124,7 +123,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
         akka.cluster.roles = ["business"]
         spray.socketio {
             cluster.client-initial-contacts = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
-            server.namespace-group-name = "group2"
+            //server.namespace-group-name = "group2"
         }
       """)
 
@@ -205,6 +204,20 @@ object SocketIOClusterSpec {
         case _ =>
       }
 
+    }
+  }
+  
+  class Receiver(socketioExt: SocketIOExtension) extends ActorSubscriber {
+    val sessionClient = socketioExt.sessionClient
+    override val requestStrategy = WatermarkRequestStrategy(10)
+    def receive = {
+      case OnNext(value @ OnEvent("chat", args, context)) =>
+        value.replyEvent("chat", args)(sessionClient)
+      case OnNext(value @ OnEvent("broadcast", args, context)) =>
+        val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
+        value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(sessionClient)
+      case OnNext(value) =>
+        println("observed: " + value)
     }
   }
 }
@@ -336,32 +349,33 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("startup-server")
     }
 
+    var channelOfBusiness3: ActorRef = null 
+
     "startup business" in within(25.seconds) {
-      runOn(business1, business2, business3) {
+      runOn(business1, business2) {
         val socketioExt = SocketIOExtension(system)
 
-        class Receiver extends ActorSubscriber {
-          val sessionClient = socketioExt.sessionClient
-          override val requestStrategy = WatermarkRequestStrategy(10)
-          def receive = {
-            case OnNext(value @ OnEvent("chat", args, context)) =>
-              value.replyEvent("chat", args)(sessionClient)
-            case OnNext(value @ OnEvent("broadcast", args, context)) =>
-              val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
-              value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(sessionClient)
-            case OnNext(value) =>
-              println("observed: " + value)
-          }
-        }
-
         val channel = system.actorOf(Channel.props())
-        val receiver = system.actorOf(Props(new Receiver))
+        val receiver = system.actorOf(Props(new Receiver(socketioExt)))
         ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
         val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Namespace.Subscribe("", channel)
-        expectMsgType[Namespace.SubscribeAck]
+        namespaceClient ! Subscribe(socketio.GlobalTopic, Some("group1"), channel)
+        expectMsgType[SubscribeAck]
+      }
 
+      runOn(business3) {
+        val socketioExt = SocketIOExtension(system)
+
+        val channel = system.actorOf(Channel.props())
+        val receiver = system.actorOf(Props(new Receiver(socketioExt)))
+        ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
+
+        val namespaceClient = socketioExt.namespaceClient
+        namespaceClient ! Subscribe(socketio.GlobalTopic, Some("group2"), channel)
+        expectMsgType[SubscribeAck]
+
+        channelOfBusiness3 = channel
       }
 
       enterBarrier("startup-server")
@@ -397,29 +411,31 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
      enterBarrier("broadcast-subscribers")
      }
      */
-    "chat between client1 and server1" in within(60.seconds) {
+
+    "chat between client1 and server1" in within(25.seconds) {
       runOn(client1) {
         val connect = Http.Connect(host, port1)
         val client = system.actorOf(Props(classOf[SocketIOClient], connect, testActor))
         expectMsg(OnOpen)
         client ! SendHello
-        // we have two business groups, so got two messages back
+        // we have two business groups, so should got two messages back
         expectMsg(SendHello)
         expectMsg(SendHello)
         expectNoMsg(2.seconds)
         enterBarrier("two-groups-tested")
         enterBarrier("one-group")
         client ! SendHello
+       // because business nodes are now in one group, here should receive only one Hello
         expectMsg(SendHello)
-        expectNoMsg(2.seconds) // because business nodes are in the same group, here only receive one Hello
+        expectNoMsg(2.seconds) 
       }
 
       runOn(business3) {
         enterBarrier("two-groups-tested")
         val socketioExt = SocketIOExtension(system)
         val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Namespace.Unsubscribe("", None)
-        expectMsgType[Namespace.UnsubscribeAck]
+        namespaceClient ! Unsubscribe(socketio.GlobalTopic, Some("group2"), channelOfBusiness3)
+        expectMsgType[UnsubscribeAck]
         enterBarrier("one-group")
       }
 

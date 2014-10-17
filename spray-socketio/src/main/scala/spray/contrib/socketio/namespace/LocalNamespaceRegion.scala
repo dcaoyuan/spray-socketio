@@ -8,10 +8,10 @@ import akka.actor.Terminated
 import java.net.URLEncoder
 
 object LocalNamespaceRegion {
-  def props(mediator: ActorRef) = Props(classOf[LocalNamespaceRegion], mediator)
+  def props(namespaceProps: Props) = Props(classOf[LocalNamespaceRegion], namespaceProps)
 }
 
-class LocalNamespaceRegion(mediator: ActorRef) extends Actor with ActorLogging {
+class LocalNamespaceRegion(namespaceProps: Props) extends Actor with ActorLogging {
 
   def receive = {
     case Terminated(ref) =>
@@ -26,7 +26,7 @@ class LocalNamespaceRegion(mediator: ActorRef) extends Actor with ActorLogging {
     } else {
       val name = URLEncoder.encode(id, "utf-8")
       val entry = context.child(name).getOrElse {
-        context.watch(context.actorOf(Namespace.props(mediator), name))
+        context.watch(context.actorOf(namespaceProps, name))
       }
       entry.tell(m, snd)
     }

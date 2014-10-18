@@ -60,7 +60,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
   val port2 = 8082
 
   commonConfig(ConfigFactory.parseString(
-      """
+    """
       akka.loglevel = INFO
       akka.actor.provider = "akka.cluster.ClusterActorRefProvider"
       akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
@@ -111,7 +111,6 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
         akka.cluster.roles = ["business"]
         spray.socketio {
             cluster.client-initial-contacts = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
-            //server.namespace-group-name = "group1"
         }
       """)
 
@@ -123,7 +122,6 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
         akka.cluster.roles = ["business"]
         spray.socketio {
             cluster.client-initial-contacts = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
-            //server.namespace-group-name = "group2"
         }
       """)
 

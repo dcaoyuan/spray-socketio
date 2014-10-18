@@ -1,31 +1,31 @@
 <configuration scan="true">
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>../logs/business.log</file>
+        <file>../logs/namespace.log</file>
         <encoder>
             <!--pattern>%date %level %msg%n</pattern-->
             <!--pattern>%date{ISO8601} %-5level %logger{36} %X{sourceThread} - %msg%n</pattern-->
             <pattern>%date{ISO8601} %-5level %logger{36} %X{akkaSource} - %msg%n</pattern>
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>../logs/business.log.%d{yyyy-MM-dd}.gz</fileNamePattern>
+            <fileNamePattern>../logs/namespace.log.%d{yyyy-MM-dd}.gz</fileNamePattern>
             <maxHistory>30</maxHistory> 
         </rollingPolicy>
     </appender>
-    <appender name="ACCESS" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>../logs/business-access.log</file>
+    <appender name="SOCKETIO" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>../logs/namespace-socketio.log</file>
         <encoder>
-            <pattern>[%date{ISO8601}] %msg%n</pattern>
+            <pattern>%date{ISO8601} %-5level %logger{36} %X{akkaSource} - %msg%n</pattern>
         </encoder>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>../logs/business-access.log.%d{yyyy-MM-dd}.gz</fileNamePattern>
+            <fileNamePattern>../logs/namespace-socketio.log.%d{yyyy-MM-dd}.gz</fileNamePattern>
             <maxHistory>30</maxHistory>
         </rollingPolicy>
     </appender>
-    <logger name="spray.can.server" level="ERROR" additivity="false">
-        <appender-ref ref="FILE" />
+    <logger name="spray.can.server" level="INFO" additivity="false">
+        <appender-ref ref="SOCKETIO" />
     </logger>
-    <logger name="accessLog" level="INFO" additivity="false">
-        <appender-ref ref="ACCESS" />
+    <logger name="spray.contrib.socketio" level="INFO" additivity="false">
+        <appender-ref ref="SOCKETIO" />
     </logger>
     <root level="INFO">
         <appender-ref ref="FILE" />

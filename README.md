@@ -26,6 +26,12 @@ To run cluster benchmark:
 0. cd ../logs
 0. tail -f driver_rt.log
 
+To cleanup cassandra:
+
+0. cqlsh
+0. cqlsh> SELECT * from system.schema_keyspaces;
+0. cqlsh> drop keyspace akka;
+0. cqlsh> drop keyspace akka_snapshot;
 
 ### Usage
 The artifact is published to Sonatype, so in order to use it you just have to add the following dependency:

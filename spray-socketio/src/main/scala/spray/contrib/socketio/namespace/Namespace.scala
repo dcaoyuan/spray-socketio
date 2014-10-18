@@ -128,7 +128,7 @@ object Namespace {
   final case class OnJson(json: String, context: ConnectionContext)(implicit val packet: JsonPacket) extends OnData
   final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val packet: EventPacket) extends OnData
 
-  val shardName: String = "SocketIONamespaces"
+  val shardName: String = "Namespaces"
 
   val idExtractor: ShardRegion.IdExtractor = {
     case x: DistributedPubSubMediator.Subscribe      => (socketio.topicForNamespace(x.topic), x)
@@ -287,8 +287,8 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
 
     case x: OnPacket[_] => // messages got via mediator 
       groupToChannels foreach {
-        case (None, channels)        => channels foreach (_.ref ! x)
-        case (Some(group), channels) => groupRouter.withRoutees(channels.toVector).route(x, self)
+        case (None, channels) => channels foreach (_.ref ! x)
+        case (_, channels)    => groupRouter.withRoutees(channels.toVector).route(x, self)
       }
   }
 

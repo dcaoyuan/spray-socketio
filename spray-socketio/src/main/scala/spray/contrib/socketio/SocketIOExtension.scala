@@ -34,7 +34,6 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
    * INTERNAL API
    */
   private[socketio] object Settings {
-    val sessionRole: String = "connectionSession"
     val config = system.settings.config.getConfig("spray.socketio")
     val isCluster: Boolean = config.getString("mode") == "cluster"
     val enableSessionPersistence: Boolean = config.getBoolean("server.enable-connectionsession-persistence")

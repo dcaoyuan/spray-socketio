@@ -115,7 +115,7 @@ object ConnectionSession {
       val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
       val path = s"/user/${shardingGuardianName}/${shardName}"
       val originalClusterClient = SocketIOExtension(system).clusterClient
-      system.actorOf(Props(classOf[ProxiedClusterClient], path, originalClusterClient))
+      system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
   }
 
@@ -139,12 +139,12 @@ object ConnectionSession {
   }
 
   /**
-   * A proxy actor that runs on the business nodes to make forwarding msg to ConnectionSession easily.
+   * A broker actor that runs on the business nodes to make forwarding msg to ConnectionSession easily.
    *
    * @param path ConnectionSession sharding service's path
    * @param client [[ClusterClient]] to access SocketIO Cluster
    */
-  class ProxiedClusterClient(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
+  class ClusterClientBroker(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
     def receive: Actor.Receive = {
       case cmd: ConnectionSession.Command => originalClient forward ClusterClient.Send(shardingServicePath, cmd, false)
     }

@@ -167,7 +167,7 @@ object Namespace {
       val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
       val path = s"/user/${shardingGuardianName}/${shardName}"
       val originalClusterClient = SocketIOExtension(system).clusterClient
-      system.actorOf(Props(classOf[ProxiedClusterClient], path, originalClusterClient))
+      system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
   }
 
@@ -191,12 +191,12 @@ object Namespace {
   }
 
   /**
-   * A proxy actor that runs on the business nodes to make forwarding msg to Namespace easily.
+   * A broker actor that runs on the business nodes to make forwarding msg to Namespace easily.
    *
    * @param path Namespace sharding service's path
    * @param originalClient [[ClusterClient]] to access SocketIO Cluster
    */
-  class ProxiedClusterClient(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
+  class ClusterClientBroker(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
     def receive = {
       case x: DistributedPubSubMediator.Subscribe      => originalClient forward ClusterClient.Send(shardingServicePath, x, false)
       case x: DistributedPubSubMediator.Unsubscribe    => originalClient forward ClusterClient.Send(shardingServicePath, x, false)

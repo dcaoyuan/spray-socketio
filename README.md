@@ -13,23 +13,37 @@ We did a simple load test on laptop (i7-2630QM 4xcore CPU @2.00GHz), with Client
 
 The test code could be found at spray.contrib.socketio.examples.benchmark
 
-To run cluster benchmark:
+To run cluster benchmark (0.1.x):
 
 0. Install cassandra and start it.
 0. sbt clean compile xitrum-package
 0. cd examples/socketio-benchmark/target/xitrum/bin
 0. ./start_cluster.sh tran 2551
-0. ./start_cluster.sh sess1 # ./start_cluster.sh conn1 # for branch 0.1.x
-0. ./start_cluster.sh sess2 # ./start_cluster.sh conn2 # for branch 0.1.x
+0. ./start_cluster.sh conn1 
+0. ./start_cluster.sh conn2
 0. ./start_cluster.sh busi
 0. ./start_driver.sh
 0. cd ../logs
 0. tail -f driver_rt.log
 
+To run cluster benchmark (0.2.x):
+
+0. Install cassandra and start it.
+0. sbt clean compile xitrum-package
+0. cd examples/socketio-benchmark/target/xitrum/bin
+0. ./start_cluster.sh sess1 2551
+0. ./start_cluster.sh sess2
+0. ./start_cluster.sh tran
+0. ./start_cluster.sh name1 
+0. ./start_cluster.sh busi
+0. ./start_driver.sh
+0. cd ../logs
+0. tail -f rt_driver.log
+
 To cleanup cassandra:
 
 0. cqlsh
-0. cqlsh> SELECT * from system.schema_keyspaces;
+0. cqlsh> select * from system.schema_keyspaces;
 0. cqlsh> drop keyspace akka;
 0. cqlsh> drop keyspace akka_snapshot;
 

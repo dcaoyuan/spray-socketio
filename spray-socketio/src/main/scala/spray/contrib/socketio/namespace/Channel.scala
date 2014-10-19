@@ -16,7 +16,6 @@ import spray.contrib.socketio.packet.DisconnectPacket
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
-import spray.contrib.socketio.packet.Packet
 
 object Channel {
   def props() = Props(classOf[Channel])

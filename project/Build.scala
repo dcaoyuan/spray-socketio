@@ -45,8 +45,8 @@ object Build extends sbt.Build {
   lazy val basicSettings = Seq(
       organization := "com.wandoulabs.akka",
       version := "0.2.0-SNAPSHOT",
-      scalaVersion := "2.11.3",
-      crossScalaVersions := Seq("2.10.4", "2.11.3"),
+      scalaVersion := "2.11.2",
+      crossScalaVersions := Seq("2.10.4", "2.11.2"),
       scalacOptions ++= Seq("-unchecked", "-deprecation"),
       resolvers ++= Seq(
         "Sonatype OSS Releases" at "https://oss.sonatype.org/content/repositories/releases",

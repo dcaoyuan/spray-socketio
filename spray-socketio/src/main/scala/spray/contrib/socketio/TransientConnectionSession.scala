@@ -3,10 +3,10 @@ package spray.contrib.socketio
 import akka.actor.{ Props, ActorRef, ActorLogging, Actor }
 
 object TransientConnectionSession {
-  def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef): Props = Props(classOf[TransientConnectionSession], namespaceMediator, broadcastMediator)
+  def props(mediator: ActorRef): Props = Props(classOf[TransientConnectionSession], mediator)
 }
 
-final class TransientConnectionSession(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionSession with Actor with ActorLogging {
+final class TransientConnectionSession(val mediator: ActorRef) extends ConnectionSession with Actor with ActorLogging {
   def recoveryFinished: Boolean = true
   def recoveryRunning: Boolean = false
 

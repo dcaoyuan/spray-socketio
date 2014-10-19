@@ -4,10 +4,10 @@ import akka.actor.{ Props, ActorLogging, ActorRef }
 import akka.persistence.{ PersistenceFailure, PersistentActor, SaveSnapshotSuccess, SaveSnapshotFailure, SnapshotOffer, RecoveryCompleted }
 
 object PersistentConnectionSession {
-  def props(namespaceMediator: ActorRef, broadcastMediator: ActorRef): Props = Props(classOf[PersistentConnectionSession], namespaceMediator, broadcastMediator)
+  def props(mediator: ActorRef): Props = Props(classOf[PersistentConnectionSession], mediator)
 }
 
-final class PersistentConnectionSession(val namespaceMediator: ActorRef, val broadcastMediator: ActorRef) extends ConnectionSession with PersistentActor with ActorLogging {
+final class PersistentConnectionSession(val mediator: ActorRef) extends ConnectionSession with PersistentActor with ActorLogging {
 
   override def persistenceId = self.path.toStringWithoutAddress
 

@@ -52,15 +52,15 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   }
 
   private lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
-  private lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(TransientConnectionSession.props(localMediator, localMediator)), name = ConnectionSession.shardName)
+  private lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(TransientConnectionSession.props(localMediator)), name = ConnectionSession.shardName)
   private lazy val localNamespaceRegion = system.actorOf(LocalNamespaceRegion.props(Namespace.props(localMediator, groupRoutingLogic)), name = Namespace.shardName)
 
   lazy val mediator = if (Settings.isCluster) DistributedPubSubExtension(system).mediator else localMediator
 
   lazy val sessionProps: Props = if (Settings.enableSessionPersistence) {
-    PersistentConnectionSession.props(mediator, mediator)
+    PersistentConnectionSession.props(mediator)
   } else {
-    TransientConnectionSession.props(mediator, mediator)
+    TransientConnectionSession.props(mediator)
   }
 
   lazy val namespaceProps: Props = {

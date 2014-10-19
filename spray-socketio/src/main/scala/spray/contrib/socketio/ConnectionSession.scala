@@ -187,8 +187,7 @@ trait ConnectionSession { _: Actor =>
 
   def log: LoggingAdapter
 
-  def namespaceMediator: ActorRef
-  def broadcastMediator: ActorRef
+  def mediator: ActorRef
 
   def recoveryFinished: Boolean
   def recoveryRunning: Boolean
@@ -468,23 +467,23 @@ trait ConnectionSession { _: Actor =>
   }
 
   def publishDisconnect(ctx: ConnectionContext) {
-    namespaceMediator ! Publish(socketio.topicForDisconnect, OnPacket(GlobalDisconnectPacket, ctx))
+    mediator ! Publish(socketio.topicForDisconnect, OnPacket(GlobalDisconnectPacket, ctx))
   }
 
   def publishToNamespace[T <: Packet](msg: OnPacket[T]) {
-    namespaceMediator ! Publish(socketio.topicForNamespace(msg.packet.endpoint), msg, sendOneMessageToEachGroup = false)
+    mediator ! Publish(socketio.topicForNamespace(msg.packet.endpoint), msg, sendOneMessageToEachGroup = false)
   }
 
   def publishToBroadcast(msg: OnBroadcast) {
-    broadcastMediator ! Publish(socketio.topicForBroadcast(msg.packet.endpoint, msg.room), msg, sendOneMessageToEachGroup = false)
+    mediator ! Publish(socketio.topicForBroadcast(msg.packet.endpoint, msg.room), msg, sendOneMessageToEachGroup = false)
   }
 
   def subscribeBroadcast(topic: String): Future[SubscribeAck] = {
-    broadcastMediator.ask(Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
+    mediator.ask(Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
   }
 
   def unsubscribeBroadcast(topic: String) {
-    broadcastMediator ! Unsubscribe(topic, self)
+    mediator ! Unsubscribe(topic, self)
   }
 
   // ---- heartbeat and timeout

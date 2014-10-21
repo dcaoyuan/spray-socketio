@@ -146,7 +146,7 @@ object ConnectionSession {
    */
   class ClusterClientBroker(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
     def receive: Actor.Receive = {
-      case cmd: ConnectionSession.Command => originalClient forward ClusterClient.Send(shardingServicePath, cmd, false)
+      case cmd: Command => originalClient forward ClusterClient.Send(shardingServicePath, cmd, false)
     }
   }
 

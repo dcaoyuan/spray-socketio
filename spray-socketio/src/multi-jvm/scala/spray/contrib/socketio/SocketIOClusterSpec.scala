@@ -358,7 +358,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
         val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Subscribe(socketio.GlobalTopic, Some("group1"), channel)
+        namespaceClient ! Subscribe(Namespace.GlobalTopic, Some("group1"), channel)
         expectMsgType[SubscribeAck]
       }
 
@@ -370,7 +370,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
         val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Subscribe(socketio.GlobalTopic, Some("group2"), channel)
+        namespaceClient ! Subscribe(Namespace.GlobalTopic, Some("group2"), channel)
         expectMsgType[SubscribeAck]
 
         channelOfBusiness3 = channel
@@ -432,7 +432,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         enterBarrier("two-groups-tested")
         val socketioExt = SocketIOExtension(system)
         val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Unsubscribe(socketio.GlobalTopic, Some("group2"), channelOfBusiness3)
+        namespaceClient ! Unsubscribe(Namespace.GlobalTopic, Some("group2"), channelOfBusiness3)
         expectMsgType[UnsubscribeAck]
         enterBarrier("one-group")
       }

@@ -132,7 +132,7 @@ object SocketIOTestClusterServer extends App {
       ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
       val namespaceClient = socketioExt.namespaceClient
-      namespaceClient ! Subscribe(socketio.GlobalTopic, channel)
+      namespaceClient ! Subscribe(Namespace.GlobalTopic, channel)
 
     case _ =>
       exitWithUsage

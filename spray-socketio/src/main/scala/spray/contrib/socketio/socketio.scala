@@ -41,20 +41,6 @@ package object socketio {
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds
   val namespaceSubscribeTimeout = config.getInt("server.namespace-subscribe-timeout").seconds
 
-  val GlobalTopic = "socketio-namespace-global"
-
-  /**
-   * Topic for broadcast messages. Cannot contain '.' or '/'
-   */
-  def topicForBroadcast(topic: String, room: String) = "socketio-broadcast" + { if (topic != "") "-" + topic else "" } + { if (room != "") "-" + room else "" }
-
-  /**
-   * The topic used only by namespace actor. @Note __not for connections and broadcast__.
-   */
-  def topicForNamespace(topic: String) = if (topic == "") GlobalTopic else "socketio-namespace-" + topic
-
-  val topicForDisconnect = "socketio-global-disconnect"
-
   private[socketio] final class SoConnectingContext(
     var sessionId: String,
     val sessionIdGenerator: HttpRequest => Future[String],

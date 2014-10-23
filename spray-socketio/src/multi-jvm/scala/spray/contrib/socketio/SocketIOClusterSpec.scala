@@ -205,7 +205,7 @@ object SocketIOClusterSpec {
     }
   }
   
-  class Receiver(socketioExt: SocketIOExtension) extends ActorSubscriber {
+  class Receiver(socketioExt: SocketIOExtension, probe: ActorRef) extends ActorSubscriber {
     val sessionClient = socketioExt.sessionClient
     override val requestStrategy = WatermarkRequestStrategy(10)
     def receive = {
@@ -214,6 +214,17 @@ object SocketIOClusterSpec {
       case OnNext(value @ OnEvent("broadcast", args, context)) =>
         val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
         value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(sessionClient)
+      case OnNext(value) =>
+        println("observed: " + value)
+    }
+  }
+
+  class NamespaceEventReceiver(probe: ActorRef) extends ActorSubscriber with ActorLogging {
+    override val requestStrategy = WatermarkRequestStrategy(10)
+    def receive = {
+      case OnNext(value : Namespace.TopicCreated) =>
+        log.info("Got {}", value)
+        probe ! value
       case OnNext(value) =>
         println("observed: " + value)
     }
@@ -351,22 +362,29 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "startup business" in within(25.seconds) {
       runOn(business1, business2) {
+        val nschannel = system.actorOf(Channel.props())
+        val nsreceiver = system.actorOf(Props(new NamespaceEventReceiver(self)))
+        ActorPublisher(nschannel).subscribe(ActorSubscriber(nsreceiver))
+
         val socketioExt = SocketIOExtension(system)
 
         val channel = system.actorOf(Channel.props())
-        val receiver = system.actorOf(Props(new Receiver(socketioExt)))
+        val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
         val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Subscribe(Namespace.GlobalTopic, Some("group1"), channel)
+        namespaceClient ! Subscribe(Namespace.NamespaceEventSource, nschannel)
         expectMsgType[SubscribeAck]
+
+        namespaceClient ! Subscribe(Namespace.GlobalTopic, Some("group1"), channel)
+        expectMsgAnyClassOf(classOf[Namespace.TopicCreated], classOf[SubscribeAck])
       }
 
       runOn(business3) {
         val socketioExt = SocketIOExtension(system)
 
         val channel = system.actorOf(Channel.props())
-        val receiver = system.actorOf(Props(new Receiver(socketioExt)))
+        val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
         val namespaceClient = socketioExt.namespaceClient

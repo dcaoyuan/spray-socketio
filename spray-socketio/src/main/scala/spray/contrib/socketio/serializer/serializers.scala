@@ -645,32 +645,31 @@ class StatusSerializer extends Serializer {
   }
 }
 
-/*
-class NamespaceCommandSerializer(val system: ExtendedActorSystem) extends Serializer {
+class NamespaceEventSerializer(val system: ExtendedActorSystem) extends Serializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN
 
   final def includeManifest: Boolean = true
 
   final def identifier: Int = 2007
 
-  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Namespace.Command], Array[Byte] => AnyRef](
-    classOf[Namespace.Subscribe] -> (bytes => toSubscribe(bytes)),
-    classOf[Namespace.Unsubscribe] -> (bytes => toUnsubscribe(bytes)),
-    classOf[Namespace.SubscribeAck] -> (bytes => toSubscribeAck(bytes)),
-    classOf[Namespace.UnsubscribeAck] -> (bytes => toUnsubscribeAck(bytes)))
+  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Namespace.Event], Array[Byte] => AnyRef](
+    classOf[Namespace.TopicCreated] -> (bytes => toTopicCreated(bytes)))
+  //classOf[Namespace.Unsubscribe] -> (bytes => toUnsubscribe(bytes)),
+  //classOf[Namespace.SubscribeAck] -> (bytes => toSubscribeAck(bytes)),
+  //classOf[Namespace.UnsubscribeAck] -> (bytes => toUnsubscribeAck(bytes)))
 
   final def toBinary(o: AnyRef): Array[Byte] = {
     o match {
-      case cmd: Namespace.Subscribe      => fromSubscribe(cmd)
-      case cmd: Namespace.Unsubscribe    => fromUnsubscribe(cmd)
-      case cmd: Namespace.SubscribeAck   => fromSubscribeAck(cmd)
-      case cmd: Namespace.UnsubscribeAck => fromUnsubscribeAck(cmd)
+      case cmd: Namespace.TopicCreated => fromTopicCreated(cmd)
+      //case cmd: Namespace.Unsubscribe    => fromUnsubscribe(cmd)
+      //case cmd: Namespace.SubscribeAck   => fromSubscribeAck(cmd)
+      //case cmd: Namespace.UnsubscribeAck => fromUnsubscribeAck(cmd)
     }
   }
 
   final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
     manifest match {
-      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[Namespace.Command]]) match {
+      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[Namespace.Event]]) match {
         case Some(f) => f(bytes)
         case None    => throw new IllegalArgumentException(s"Unimplemented deserialization of message class $clazz in NamespaceCommandSerializer")
       }
@@ -678,69 +677,68 @@ class NamespaceCommandSerializer(val system: ExtendedActorSystem) extends Serial
     }
   }
 
-  final def fromSubscribe(cmd: Namespace.Subscribe) = {
+  final def fromTopicCreated(cmd: Namespace.TopicCreated) = {
     val builder = ByteString.newBuilder
 
-    StringSerializer.appendToBuilder(builder, cmd.endpoint)
-    StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(cmd.channel))
+    StringSerializer.appendToBuilder(builder, cmd.topic)
+    StringSerializer.appendToBuilder(builder, cmd.createdTopic)
 
     builder.result.toArray
   }
 
-  final def toSubscribe(bytes: Array[Byte]) = {
+  final def toTopicCreated(bytes: Array[Byte]) = {
     val data = ByteString(bytes).iterator
 
-    val endpoint = StringSerializer.fromByteIterator(data)
-    val channel = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
+    val topic = StringSerializer.fromByteIterator(data)
+    val createdTopic = StringSerializer.fromByteIterator(data)
 
-    Namespace.Subscribe(endpoint, channel)
+    Namespace.TopicCreated(topic, createdTopic)
   }
 
-  final def fromUnsubscribe(cmd: Namespace.Unsubscribe) = {
-    val builder = ByteString.newBuilder
-
-    StringSerializer.appendToBuilder(builder, cmd.endpoint)
-    cmd.channel match {
-      case Some(ref) =>
-        builder.putByte(0x00)
-        StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(ref))
-      case None =>
-        builder.putByte(0x01)
-    }
-
-    builder.result.toArray
-  }
-
-  final def toUnsubscribe(bytes: Array[Byte]) = {
-    val data = ByteString(bytes).iterator
-
-    val endpoint = StringSerializer.fromByteIterator(data)
-    val channel = data.getByte match {
-      case 0x00 => Some(system.provider.resolveActorRef(StringSerializer.fromByteIterator(data)))
-      case 0x01 => None
-    }
-
-    Namespace.Unsubscribe(endpoint, channel)
-  }
-
-  final def fromSubscribeAck(cmd: Namespace.SubscribeAck) = {
-    fromSubscribe(cmd.subscribe)
-  }
-
-  final def toSubscribeAck(bytes: Array[Byte]) = {
-    Namespace.SubscribeAck(toSubscribe(bytes))
-  }
-
-  final def fromUnsubscribeAck(cmd: Namespace.UnsubscribeAck) = {
-    fromUnsubscribe(cmd.unsubscribe)
-  }
-
-  final def toUnsubscribeAck(bytes: Array[Byte]) = {
-    Namespace.UnsubscribeAck(toUnsubscribe(bytes))
-  }
+  //  final def fromUnsubscribe(cmd: Namespace.Unsubscribe) = {
+  //    val builder = ByteString.newBuilder
+  //
+  //    StringSerializer.appendToBuilder(builder, cmd.endpoint)
+  //    cmd.channel match {
+  //      case Some(ref) =>
+  //        builder.putByte(0x00)
+  //        StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(ref))
+  //      case None =>
+  //        builder.putByte(0x01)
+  //    }
+  //
+  //    builder.result.toArray
+  //  }
+  //
+  //  final def toUnsubscribe(bytes: Array[Byte]) = {
+  //    val data = ByteString(bytes).iterator
+  //
+  //    val endpoint = StringSerializer.fromByteIterator(data)
+  //    val channel = data.getByte match {
+  //      case 0x00 => Some(system.provider.resolveActorRef(StringSerializer.fromByteIterator(data)))
+  //      case 0x01 => None
+  //    }
+  //
+  //    Namespace.Unsubscribe(endpoint, channel)
+  //  }
+  //
+  //  final def fromSubscribeAck(cmd: Namespace.SubscribeAck) = {
+  //    fromSubscribe(cmd.subscribe)
+  //  }
+  //
+  //  final def toSubscribeAck(bytes: Array[Byte]) = {
+  //    Namespace.SubscribeAck(toSubscribe(bytes))
+  //  }
+  //
+  //  final def fromUnsubscribeAck(cmd: Namespace.UnsubscribeAck) = {
+  //    fromUnsubscribe(cmd.unsubscribe)
+  //  }
+  //
+  //  final def toUnsubscribeAck(bytes: Array[Byte]) = {
+  //    Namespace.UnsubscribeAck(toUnsubscribe(bytes))
+  //  }
 
 }
-*/
 
 class OnDataSerializer extends Serializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN

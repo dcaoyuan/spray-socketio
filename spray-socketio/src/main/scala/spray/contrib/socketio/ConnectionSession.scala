@@ -79,7 +79,7 @@ object ConnectionSession {
    * Packet event to be published
    */
   final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext) extends ConsistentHashable {
-    override def consistentHashKey: Any = connContext.sessionId
+    override def consistentHashKey = connContext.sessionId
   }
 
   final case class GetStatus(sessionId: String) extends Command

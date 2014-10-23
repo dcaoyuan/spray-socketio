@@ -38,6 +38,7 @@ akka {
       onbroadcast = "spray.contrib.socketio.serializer.OnBroadcastSerializer"
       status = "spray.contrib.socketio.serializer.StatusSerializer"
       ondata = "spray.contrib.socketio.serializer.OnDataSerializer"
+      namespaceevt = "spray.contrib.socketio.serializer.NamespaceEventSerializer"
     }
     serialization-bindings {
       "spray.can.websocket.frame.Frame" = frame
@@ -49,6 +50,7 @@ akka {
       "spray.contrib.socketio.ConnectionSession$OnBroadcast" = onbroadcast
       "spray.contrib.socketio.ConnectionSession$Status" = status
       "spray.contrib.socketio.namespace.Namespace$OnData" = ondata
+      "spray.contrib.socketio.namespace.Namespace$Event" = namespaceevt
     }
   }
 }

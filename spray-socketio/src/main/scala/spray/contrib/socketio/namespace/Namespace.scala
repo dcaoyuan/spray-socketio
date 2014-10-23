@@ -13,6 +13,7 @@ import akka.contrib.pattern.DistributedPubSubMediator
 import akka.contrib.pattern.ShardRegion
 import akka.pattern.ask
 import akka.routing.ActorRefRoutee
+import akka.routing.ConsistentHashingRouter.ConsistentHashable
 import akka.routing.Router
 import akka.routing.RoutingLogic
 import akka.util.Timeout
@@ -87,8 +88,11 @@ object Namespace {
 
   def props(mediator: ActorRef, groupRoutingLogic: RoutingLogic) = Props(classOf[Namespace], mediator, groupRoutingLogic)
 
-  val NamespaceGlobal = "socketio-global"
+  val NamespaceEventSource = "socketio-namespace-event-source"
 
+  /**
+   * topic cannot be "" for DistributedPubSubMediator
+   */
   val GlobalTopic = "socketio-namespace-global"
 
   /**
@@ -103,8 +107,17 @@ object Namespace {
 
   val topicForDisconnect = "socketio-global-disconnect"
 
+  sealed trait Event extends ConsistentHashable with Serializable {
+    override def consistentHashKey = topic
+    def topic: String
+  }
+
+  case class TopicCreated(topic: String, createdTopic: String) extends Event
+
   // --- Observable data
-  sealed trait OnData extends Serializable {
+  sealed trait OnData extends ConsistentHashable with Serializable {
+    override def consistentHashKey = endpoint
+
     def context: ConnectionContext
     def packet: Packet
 
@@ -147,17 +160,19 @@ object Namespace {
   val shardName: String = "Namespaces"
 
   val idExtractor: ShardRegion.IdExtractor = {
-    case x: DistributedPubSubMediator.Subscribe      => (topicForNamespace(x.topic), x)
-    case x: DistributedPubSubMediator.Unsubscribe    => (topicForNamespace(x.topic), x)
-    case x: DistributedPubSubMediator.SubscribeAck   => (topicForNamespace(x.subscribe.topic), x)
-    case x: DistributedPubSubMediator.UnsubscribeAck => (topicForNamespace(x.unsubscribe.topic), x)
+    case x: DistributedPubSubMediator.Subscribe      => (x.topic, x)
+    case x: DistributedPubSubMediator.Unsubscribe    => (x.topic, x)
+    case x: DistributedPubSubMediator.SubscribeAck   => (x.subscribe.topic, x)
+    case x: DistributedPubSubMediator.UnsubscribeAck => (x.unsubscribe.topic, x)
+    case x: Event                                    => (x.topic, x)
   }
 
   val shardResolver: ShardRegion.ShardResolver = {
-    case x: DistributedPubSubMediator.Subscribe      => hashForShard(topicForNamespace(x.topic))
-    case x: DistributedPubSubMediator.Unsubscribe    => hashForShard(topicForNamespace(x.topic))
-    case x: DistributedPubSubMediator.SubscribeAck   => hashForShard(topicForNamespace(x.subscribe.topic))
-    case x: DistributedPubSubMediator.UnsubscribeAck => hashForShard(topicForNamespace(x.unsubscribe.topic))
+    case x: DistributedPubSubMediator.Subscribe      => hashForShard(x.topic)
+    case x: DistributedPubSubMediator.Unsubscribe    => hashForShard(x.topic)
+    case x: DistributedPubSubMediator.SubscribeAck   => hashForShard(x.subscribe.topic)
+    case x: DistributedPubSubMediator.UnsubscribeAck => hashForShard(x.unsubscribe.topic)
+    case x: Event                                    => hashForShard(x.topic)
   }
 
   private def hashForShard(topic: String) = (math.abs(topic.hashCode) % 100).toString
@@ -233,8 +248,16 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
   var channels = Set[ActorRef]() // ActorRef of Channel
   var groupToChannels: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
 
-  private var isMediatorSubscribed: Boolean = _
+  noticeTopicCreated()
 
+  private def noticeTopicCreated() {
+    val topic = self.path.name
+    if (topic != NamespaceEventSource) {
+      SocketIOExtension(context.system).namespaceRegion ! TopicCreated(NamespaceEventSource, topic)
+    }
+  }
+
+  private var isMediatorSubscribed: Boolean = _
   private def subscribeToMediator(topic: String)(action: () => Unit) = {
     if (!isMediatorSubscribed) {
       import context.dispatcher
@@ -299,13 +322,24 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
         unsubscribeToMediator(topic1) { () => }
       }
 
-    case Terminated(ref) => removeSubscription(ref)
+    case Terminated(ref)                                 => removeSubscription(ref)
 
-    case x: OnPacket[_] => // messages got via mediator 
-      groupToChannels foreach {
-        case (None, channels) => channels foreach (_.ref ! x)
-        case (_, channels)    => groupRouter.withRoutees(channels.toVector).route(x, self)
-      }
+    // messages got via mediator 
+    case OnPacket(packet: ConnectPacket, connContext)    => deliverMessage(OnConnect(packet.args, connContext)(packet))
+    case OnPacket(packet: DisconnectPacket, connContext) => deliverMessage(OnDisconnect(connContext)(packet))
+    case OnPacket(packet: MessagePacket, connContext)    => deliverMessage(OnMessage(packet.data, connContext)(packet))
+    case OnPacket(packet: JsonPacket, connContext)       => deliverMessage(OnJson(packet.json, connContext)(packet))
+    case OnPacket(packet: EventPacket, connContext)      => deliverMessage(OnEvent(packet.name, packet.args, connContext)(packet))
+
+    // messages that are needed to be published 
+    case x: TopicCreated                                 => deliverMessage(x)
+  }
+
+  def deliverMessage(x: Any) {
+    groupToChannels foreach {
+      case (None, channels) => channels foreach (_.ref ! x)
+      case (_, channels)    => groupRouter.withRoutees(channels.toVector).route(x, self)
+    }
   }
 
   def existChannel(channel: ActorRef) = {

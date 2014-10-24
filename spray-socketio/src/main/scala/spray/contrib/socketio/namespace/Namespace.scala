@@ -90,23 +90,6 @@ object Namespace {
 
   val NamespaceEventSource = "socketio-namespace-event-source"
 
-  /**
-   * topic cannot be "" for DistributedPubSubMediator
-   */
-  val GlobalTopic = "socketio-namespace-global"
-
-  /**
-   * Topic for broadcast messages. Cannot contain '.' or '/'
-   */
-  def topicForBroadcast(topic: String, room: String) = "socketio-broadcast" + { if (topic != "") "-" + topic else "" } + { if (room != "") "-" + room else "" }
-
-  /**
-   * The topic used only by namespace actor. @Note __not for connections and broadcast__.
-   */
-  def topicForNamespace(topic: String) = if (topic == "") GlobalTopic else "socketio-namespace-" + topic
-
-  val topicForDisconnect = "socketio-global-disconnect"
-
   sealed trait Event extends ConsistentHashable with Serializable {
     override def consistentHashKey = topic
     def topic: String
@@ -262,14 +245,14 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
     if (!isMediatorSubscribed) {
       import context.dispatcher
       implicit val timeout = Timeout(socketio.namespaceSubscribeTimeout)
-      val f1 = mediator.ask(DistributedPubSubMediator.Subscribe(Namespace.topicForDisconnect, self)).mapTo[DistributedPubSubMediator.SubscribeAck]
-      val f2 = mediator.ask(DistributedPubSubMediator.Subscribe(Namespace.topicForNamespace(topic), self)).mapTo[DistributedPubSubMediator.SubscribeAck]
+      val f1 = mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForDisconnect, self)).mapTo[DistributedPubSubMediator.SubscribeAck]
+      val f2 = mediator.ask(DistributedPubSubMediator.Subscribe(socketio.topicForNamespace(topic), self)).mapTo[DistributedPubSubMediator.SubscribeAck]
       Future.sequence(List(f1, f2)).onComplete {
         case Success(ack) =>
           isMediatorSubscribed = true
           action()
         case Failure(ex) =>
-          log.warning("Failed to subscribe to mediator on topic {}: {}", Namespace.topicForNamespace(topic), ex.getMessage)
+          log.warning("Failed to subscribe to mediator on topic {}: {}", socketio.topicForNamespace(topic), ex.getMessage)
       }
     } else {
       action()
@@ -280,14 +263,14 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
     if (isMediatorSubscribed && channels.isEmpty) {
       import context.dispatcher
       implicit val timeout = Timeout(socketio.namespaceSubscribeTimeout)
-      val f1 = mediator.ask(DistributedPubSubMediator.Unsubscribe(Namespace.topicForDisconnect, self)).mapTo[DistributedPubSubMediator.UnsubscribeAck]
-      val f2 = mediator.ask(DistributedPubSubMediator.Unsubscribe(Namespace.topicForNamespace(topic), self)).mapTo[DistributedPubSubMediator.UnsubscribeAck]
+      val f1 = mediator.ask(DistributedPubSubMediator.Unsubscribe(socketio.topicForDisconnect, self)).mapTo[DistributedPubSubMediator.UnsubscribeAck]
+      val f2 = mediator.ask(DistributedPubSubMediator.Unsubscribe(socketio.topicForNamespace(topic), self)).mapTo[DistributedPubSubMediator.UnsubscribeAck]
       Future.sequence(List(f1, f2)).onComplete {
         case Success(ack) =>
           isMediatorSubscribed = false
           action()
         case Failure(ex) =>
-          log.warning("Failed to unsubscribe to mediator on topic {}: {}", Namespace.topicForNamespace(topic), ex.getMessage)
+          log.warning("Failed to unsubscribe to mediator on topic {}: {}", socketio.topicForNamespace(topic), ex.getMessage)
       }
     } else {
       action()
@@ -297,8 +280,8 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
   def receive: Receive = {
     case x @ DistributedPubSubMediator.Subscribe(topic, group, channel) =>
       val topic1 = topic match {
-        case Namespace.GlobalTopic => ""
-        case x                     => x
+        case socketio.EmptyTopic => ""
+        case x                   => x
       }
 
       val commander = sender()
@@ -310,8 +293,8 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
 
     case x @ DistributedPubSubMediator.Unsubscribe(topic, group, channel) =>
       val topic1 = topic match {
-        case Namespace.GlobalTopic => ""
-        case x                     => x
+        case socketio.EmptyTopic => ""
+        case x                   => x
       }
 
       val commander = sender()

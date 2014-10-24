@@ -282,13 +282,13 @@ trait ConnectionSession { _: Actor =>
     case OnBroadcast(senderSessionId, room, packet) => sendPacket(packet) // write to client
 
     case cmd @ SubscribeBroadcast(sessionId, endpoint, room) =>
-      val topic = Namespace.topicForBroadcast(endpoint, room)
+      val topic = socketio.topicForBroadcast(endpoint, room)
       state.topics = state.topics + topic
       updateState(cmd, state)
       subscribeBroadcast(topic)
 
     case cmd @ UnsubscribeBroadcast(sessionId, endpoint, room) =>
-      val topic = Namespace.topicForBroadcast(endpoint, room)
+      val topic = socketio.topicForBroadcast(endpoint, room)
       state.topics = state.topics - topic
       updateState(cmd, state)
       unsubscribeBroadcast(topic)
@@ -381,7 +381,7 @@ trait ConnectionSession { _: Actor =>
           publishToNamespace(OnPacket(packet, state.context))
         }
 
-        val topic = Namespace.topicForBroadcast(endpoint, "")
+        val topic = socketio.topicForBroadcast(endpoint, "")
         state.topics = state.topics + topic
         state.context.isConnected = true
         updateState(cmd, state)
@@ -416,7 +416,7 @@ trait ConnectionSession { _: Actor =>
           if (recoveryFinished) {
             publishToNamespace(OnPacket(packet, state.context))
           }
-          val topic = Namespace.topicForBroadcast(endpoint, "")
+          val topic = socketio.topicForBroadcast(endpoint, "")
           state.topics = state.topics - topic
           updateState(cmd, state)
           unsubscribeBroadcast(topic)
@@ -468,15 +468,15 @@ trait ConnectionSession { _: Actor =>
   }
 
   def publishDisconnect(ctx: ConnectionContext) {
-    mediator ! Publish(Namespace.topicForDisconnect, OnPacket(GlobalDisconnectPacket, ctx))
+    mediator ! Publish(socketio.topicForDisconnect, OnPacket(GlobalDisconnectPacket, ctx))
   }
 
   def publishToNamespace[T <: Packet](msg: OnPacket[T]) {
-    mediator ! Publish(Namespace.topicForNamespace(msg.packet.endpoint), msg, sendOneMessageToEachGroup = false)
+    mediator ! Publish(socketio.topicForNamespace(msg.packet.endpoint), msg, sendOneMessageToEachGroup = false)
   }
 
   def publishToBroadcast(msg: OnBroadcast) {
-    mediator ! Publish(Namespace.topicForBroadcast(msg.packet.endpoint, msg.room), msg, sendOneMessageToEachGroup = false)
+    mediator ! Publish(socketio.topicForBroadcast(msg.packet.endpoint, msg.room), msg, sendOneMessageToEachGroup = false)
   }
 
   def subscribeBroadcast(topic: String): Future[SubscribeAck] = {

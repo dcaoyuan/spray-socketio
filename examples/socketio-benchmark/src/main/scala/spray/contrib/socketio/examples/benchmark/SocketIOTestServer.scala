@@ -109,7 +109,7 @@ object SocketIOTestServer extends App {
   val receiver = system.actorOf(Props(new Receiver))
   ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
-  socketioExt.namespaceClient ! Subscribe(Namespace.GlobalTopic, channel)
+  socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, channel)
 
   val sessionRegionForTransport = SocketIOExtension(system).sessionRegion
   val server = system.actorOf(SocketIOServer.props(sessionRegionForTransport), name = "socketio-server")

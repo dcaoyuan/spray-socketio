@@ -20,7 +20,6 @@ import scala.concurrent.forkjoin.ThreadLocalRandom
 import scala.util.Failure
 import scala.util.Success
 import spray.contrib.socketio
-import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.packet.AckPacket
 import spray.contrib.socketio.packet.ConnectPacket
 import spray.contrib.socketio.packet.DataPacket
@@ -113,15 +112,19 @@ object ConnectionSession {
   final class SystemSingletons(system: ActorSystem) {
     lazy val clusterClient = {
       startSharding(system, None)
-      val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
-      val path = s"/user/${shardingGuardianName}/${shardName}"
+      val path = shardPath(system)
       val originalClusterClient = SocketIOExtension(system).clusterClient
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
   }
 
+  def shardPath(system: ActorSystem) = {
+    val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
+    s"/user/${shardingGuardianName}/${shardName}"
+  }
+
   private var singletons: SystemSingletons = _
-  private val singletonsMutex = new AnyRef
+  private val singletonsMutex = new AnyRef()
   /**
    * Get the SystemSingletons, create it if none existed.
    *

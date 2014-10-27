@@ -6,7 +6,7 @@ import akka.actor.ActorRef
 import akka.actor.Props
 import akka.actor.Terminated
 import scala.collection.concurrent
-import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Unsubscribe, SubscribeAck, Subscribe }
+import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Unsubscribe, SubscribeAck, Subscribe, UnsubscribeAck }
 
 object LocalConnectionSessionRegion {
   def props(connectionSessionProps: Props) = Props(classOf[LocalConnectionSessionRegion], connectionSessionProps)
@@ -53,7 +53,7 @@ class LocalMediator extends Actor with ActorLogging {
       context.watch(subscriptions)
       sender() ! SubscribeAck(x)
 
-    case Unsubscribe(topic, _, subscriptions) =>
+    case x @ Unsubscribe(topic, _, subscriptions) =>
       topicToSubscriptions.get(topic) match {
         case Some(xs) =>
           val subs = xs - subscriptions
@@ -65,6 +65,7 @@ class LocalMediator extends Actor with ActorLogging {
 
         case None =>
       }
+      sender() ! UnsubscribeAck(x)
 
     case Terminated(ref) =>
       var topicsToRemove = List[String]()

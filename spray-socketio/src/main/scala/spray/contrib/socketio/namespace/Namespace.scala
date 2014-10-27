@@ -18,6 +18,7 @@ import akka.routing.Router
 import akka.routing.RoutingLogic
 import akka.util.Timeout
 import scala.concurrent.Future
+import scala.concurrent.duration._
 import scala.util.{ Failure, Success }
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionSession
@@ -90,10 +91,23 @@ object Namespace {
 
   val NamespaceEventSource = "socketio-namespace-event-source"
 
+  sealed trait Command extends ConsistentHashable with Serializable {
+    override def consistentHashKey = topic
+    def topic: String
+  }
+
   sealed trait Event extends ConsistentHashable with Serializable {
     override def consistentHashKey = topic
     def topic: String
   }
+
+  case object AskTopic
+  case object AskTopics extends Command {
+    def topic = NamespaceEventSource
+  }
+
+  final case class Topic(topic: String)
+  final case class Topics(topics: List[String])
 
   case class TopicCreated(topic: String, createdTopic: String) extends Event
 
@@ -179,14 +193,19 @@ object Namespace {
     lazy val clusterClient = {
       startSharding(system, None)
       val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
-      val path = s"/user/${shardingGuardianName}/${shardName}"
+      val path = shardPath(system)
       val originalClusterClient = SocketIOExtension(system).clusterClient
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
   }
 
+  def shardPath(system: ActorSystem) = {
+    val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
+    s"/user/${shardingGuardianName}/${shardName}"
+  }
+
   private var singletons: SystemSingletons = _
-  private val singletonsMutex = new AnyRef
+  private val singletonsMutex = new AnyRef()
   /**
    * Get the SystemSingletons, create it if none existed.
    *
@@ -234,11 +253,14 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
   noticeTopicCreated()
 
   private def noticeTopicCreated() {
-    val topic = self.path.name
-    if (topic != NamespaceEventSource) {
-      SocketIOExtension(context.system).namespaceRegion ! TopicCreated(NamespaceEventSource, topic)
+    topic match {
+      case NamespaceEventSource =>
+      case x                    => region ! TopicCreated(NamespaceEventSource, x)
     }
   }
+
+  private def topic = self.path.name
+  private def region = SocketIOExtension(context.system).namespaceRegion
 
   private var isMediatorSubscribed: Boolean = _
   private def subscribeToMediator(topic: String)(action: () => Unit) = {
@@ -305,7 +327,11 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
         unsubscribeToMediator(topic1) { () => }
       }
 
-    case Terminated(ref)                                 => removeSubscription(ref)
+    case AskTopic =>
+      sender() ! Topic(topic)
+    case AskTopics =>
+      mediator ! DistributedPubSubMediator.SendToAll(shardPath(context.system), AskTopic)
+      context.actorOf(TopicsAggregator.props(sender(), 5.seconds))
 
     // messages got via mediator 
     case OnPacket(packet: ConnectPacket, connContext)    => deliverMessage(OnConnect(packet.args, connContext)(packet))
@@ -316,6 +342,8 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
 
     // messages that are needed to be published 
     case x: TopicCreated                                 => deliverMessage(x)
+
+    case Terminated(ref)                                 => removeSubscription(ref)
   }
 
   def deliverMessage(x: Any) {
@@ -353,4 +381,28 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
     } yield (group -> (channels - ActorRefRoutee(channel)))
   }
 
+}
+
+object TopicsAggregator {
+  def props(originalSender: ActorRef, duration: FiniteDuration) = Props(classOf[TopicsAggregator], originalSender, duration)
+
+  case object TimedOut
+}
+
+class TopicsAggregator(originalSender: ActorRef, duration: FiniteDuration) extends Actor with ActorLogging {
+  import TopicsAggregator._
+
+  var topics = Set[String]()
+
+  import context.dispatcher
+  context.system.scheduler.scheduleOnce(duration, self, TimedOut)
+
+  def receive = {
+    case Namespace.Topic(topic) =>
+      topics += topic
+
+    case TimedOut =>
+      originalSender ! Namespace.Topics(topics.toList)
+      context.stop(self)
+  }
 }

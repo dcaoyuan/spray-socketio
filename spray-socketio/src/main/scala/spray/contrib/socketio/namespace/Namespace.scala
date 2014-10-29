@@ -331,7 +331,7 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
       sender() ! Topic(topic)
     case AskTopics =>
       mediator ! DistributedPubSubMediator.SendToAll(shardPath(context.system), AskTopic)
-      context.actorOf(TopicsAggregator.props(sender(), 5.seconds))
+      context.actorOf(TopicsAggregatorOnPull.props(sender(), 5.seconds))
 
     // messages got via mediator 
     case OnPacket(packet: ConnectPacket, connContext)    => deliverMessage(OnConnect(packet.args, connContext)(packet))
@@ -383,14 +383,14 @@ class Namespace(mediator: ActorRef, groupRoutingLogic: RoutingLogic) extends Act
 
 }
 
-object TopicsAggregator {
-  def props(originalSender: ActorRef, duration: FiniteDuration) = Props(classOf[TopicsAggregator], originalSender, duration)
+object TopicsAggregatorOnPull {
+  def props(originalSender: ActorRef, duration: FiniteDuration) = Props(classOf[TopicsAggregatorOnPull], originalSender, duration)
 
   case object TimedOut
 }
 
-class TopicsAggregator(originalSender: ActorRef, duration: FiniteDuration) extends Actor with ActorLogging {
-  import TopicsAggregator._
+class TopicsAggregatorOnPull(originalSender: ActorRef, duration: FiniteDuration) extends Actor with ActorLogging {
+  import TopicsAggregatorOnPull._
 
   var topics = Set[String]()
 

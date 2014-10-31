@@ -92,7 +92,7 @@ object SimpleServer extends App with MySslConfiguration {
   val socketioExt = SocketIOExtension(system)
 
   class Receiver extends ActorSubscriber {
-    implicit val sessionClient = socketioExt.sessionClient
+    implicit def sessionClient = socketioExt.sessionClient
 
     override val requestStrategy = WatermarkRequestStrategy(10)
 
@@ -126,8 +126,7 @@ object SimpleServer extends App with MySslConfiguration {
   //  case _          => Observable.empty
   //}.subscribe(observer)
 
-  val namespaceClient = socketioExt.namespaceClient
-  namespaceClient ! Subscribe("testendpoint", None, channel)
+  socketioExt.namespaceClient ! Subscribe("testendpoint", None, channel)
 
   val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
 

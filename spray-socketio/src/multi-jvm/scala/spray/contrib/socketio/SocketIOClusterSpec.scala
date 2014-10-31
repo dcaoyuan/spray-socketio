@@ -209,14 +209,13 @@ object SocketIOClusterSpec {
   }
   
   class Receiver(socketioExt: SocketIOExtension, probe: ActorRef) extends ActorSubscriber {
-    val sessionClient = socketioExt.sessionClient
     override val requestStrategy = WatermarkRequestStrategy(10)
     def receive = {
       case OnNext(value @ OnEvent("chat", args, context)) =>
-        value.replyEvent("chat", args)(sessionClient)
+        value.replyEvent("chat", args)(socketioExt.sessionClient)
       case OnNext(value @ OnEvent("broadcast", args, context)) =>
         val msg = spray.json.JsonParser(args).asInstanceOf[JsArray].elements.head.asInstanceOf[JsString].value
-        value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(sessionClient)
+        value.broadcast("", MessagePacket(-1, false, value.endpoint, msg))(socketioExt.sessionClient)
       case OnNext(value) =>
         println("observed: " + value)
     }
@@ -388,9 +387,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
-        val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Subscribe(Namespace.NamespaceEventSource, nschannel)
-        namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group1"), channel)
+        socketioExt.namespaceClient ! Subscribe(Namespace.NamespaceEventSource, nschannel)
+        socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group1"), channel)
         expectMsgAnyClassOf(classOf[Namespace.TopicCreated], classOf[SubscribeAck], classOf[SubscribeAck])
       }
 
@@ -401,8 +399,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
-        val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group2"), channel)
+        socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group2"), channel)
         expectMsgType[SubscribeAck]
 
         channelOfBusiness3 = channel
@@ -455,7 +452,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         enterBarrier("two-groups-tested")
         enterBarrier("one-group")
         client ! SendHello
-       // because business nodes are now in one group, here should receive only one Hello
+        // because business nodes are now in one group, here should receive only one Hello
         expectMsg(SendHello)
         expectNoMsg(2.seconds) 
       }
@@ -463,8 +460,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(business3) {
         enterBarrier("two-groups-tested")
         val socketioExt = SocketIOExtension(system)
-        val namespaceClient = socketioExt.namespaceClient
-        namespaceClient ! Unsubscribe(socketio.EmptyTopic, Some("group2"), channelOfBusiness3)
+        socketioExt.namespaceClient ! Unsubscribe(socketio.EmptyTopic, Some("group2"), channelOfBusiness3)
         expectMsgType[UnsubscribeAck]
         enterBarrier("one-group")
       }

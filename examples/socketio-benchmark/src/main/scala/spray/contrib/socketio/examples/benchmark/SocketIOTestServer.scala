@@ -102,7 +102,6 @@ object SocketIOTestServer extends App {
 
       case OnNext(value) =>
         println("observed: " + value)
-
     }
   }
 

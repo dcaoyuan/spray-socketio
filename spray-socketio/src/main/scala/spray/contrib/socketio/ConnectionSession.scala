@@ -6,7 +6,7 @@ import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
 import akka.contrib.pattern.ShardRegion
 import akka.contrib.pattern.ShardRegion.Passivate
-import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe }
+import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck }
 import akka.event.LoggingAdapter
 import akka.io.Tcp
 import akka.pattern.ask
@@ -28,6 +28,7 @@ import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.HeartbeatPacket
 import spray.contrib.socketio.packet.JsonPacket
 import spray.contrib.socketio.packet.MessagePacket
+import spray.contrib.socketio.packet.NoopPacket
 import spray.contrib.socketio.packet.Packet
 import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.transport.Transport
@@ -77,11 +78,48 @@ object ConnectionSession {
   /**
    * Packet event to be published
    */
-  final case class OnPacket[T <: Packet](packet: T, connContext: ConnectionContext) extends ConsistentHashable {
-    override def consistentHashKey = connContext.sessionId
-  }
+  sealed trait OnPacket extends ConsistentHashable with Serializable {
+    override def consistentHashKey = endpoint
 
-  final case class GetStatus(sessionId: String) extends Command
+    def context: ConnectionContext
+    def packet: Packet
+
+    final def endpoint = packet.endpoint
+    final def sessionId = context.sessionId
+
+    def replyMessage(msg: String)(implicit region: ActorRef) =
+      region ! SendMessage(sessionId, endpoint, msg)
+
+    def replyJson(json: String)(implicit region: ActorRef) =
+      region ! SendJson(sessionId, endpoint, json)
+
+    def replyEvent(name: String, args: String)(implicit region: ActorRef) =
+      region ! SendEvent(sessionId, endpoint, name, Left(args))
+
+    def replyEvent(name: String, args: Seq[String])(implicit region: ActorRef) =
+      region ! SendEvent(sessionId, endpoint, name, Right(args))
+
+    def reply(packets: Packet*)(implicit region: ActorRef) =
+      region ! SendPackets(sessionId, packets)
+
+    def ack(args: String)(implicit region: ActorRef) =
+      region ! SendAck(sessionId, packet.asInstanceOf[DataPacket], args)
+
+    /**
+     * @param room    room to broadcast
+     * @param packet  packet to broadcast
+     */
+    def broadcast(room: String, packet: Packet)(implicit region: ActorRef) =
+      region ! Broadcast(sessionId, room, packet)
+  }
+  final case class OnConnect(args: Seq[(String, String)], context: ConnectionContext)(implicit val packet: ConnectPacket) extends OnPacket
+  final case class OnDisconnect(context: ConnectionContext)(implicit val packet: DisconnectPacket) extends OnPacket
+  final case class OnMessage(msg: String, context: ConnectionContext)(implicit val packet: MessagePacket) extends OnPacket
+  final case class OnJson(json: String, context: ConnectionContext)(implicit val packet: JsonPacket) extends OnPacket
+  final case class OnEvent(name: String, args: String, context: ConnectionContext)(implicit val packet: EventPacket) extends OnPacket
+  final case class OnNoop(context: ConnectionContext)(implicit val packet: NoopPacket.type) extends OnPacket
+
+  final case class AskStatus(sessionId: String) extends Command
   final case class Status(sessionId: String, connectionTime: Long, location: String) extends Serializable
 
   val shardName: String = "ConnectionSessions"
@@ -108,6 +146,8 @@ object ConnectionSession {
       shardResolver = shardResolver)
     if (entryProps.isDefined) ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
   }
+
+  def shardRegion(system: ActorSystem) = ClusterSharding(system).shardRegion(shardName)
 
   final class SystemSingletons(system: ActorSystem) {
     lazy val clusterClient = {
@@ -190,11 +230,10 @@ trait ConnectionSession { _: Actor =>
   import context.dispatcher
 
   def log: LoggingAdapter
-
-  def mediator: ActorRef
-
   def recoveryFinished: Boolean
   def recoveryRunning: Boolean
+
+  def mediator: ActorRef
 
   private lazy val scheduler = SocketIOExtension(context.system).scheduler
 
@@ -244,7 +283,6 @@ trait ConnectionSession { _: Actor =>
   def working: Receive = {
     // ---- heartbeat / timeout
     case HeartbeatTick => // scheduled sending heartbeat
-      log.debug("send heartbeat")
       sendPacket(HeartbeatPacket)
 
       // keep previous close timeout. We may skip one closetimeout for this heartbeat, but we'll reset one at next heartbeat.
@@ -357,7 +395,7 @@ trait ConnectionSession { _: Actor =>
     case AskConnectedTime =>
       sender() ! System.currentTimeMillis - startTime
 
-    case GetStatus(sessionId) =>
+    case AskStatus(sessionId) =>
       val sessionId = if (state.context.isConnected) state.context.sessionId else null
       val location = if (state.transportConnection.path != null) state.transportConnection.path.toSerializationFormat else null
       sender() ! Status(sessionId, System.currentTimeMillis - startTime, location)
@@ -381,7 +419,7 @@ trait ConnectionSession { _: Actor =>
 
       case ConnectPacket(endpoint, args) =>
         if (recoveryFinished) {
-          publishToNamespace(OnPacket(packet, state.context))
+          publishToNamespace(packet, state.context)
         }
 
         val topic = socketio.topicForBroadcast(endpoint, "")
@@ -401,7 +439,7 @@ trait ConnectionSession { _: Actor =>
       case DisconnectPacket(endpoint) =>
         if (endpoint == "") {
           if (recoveryFinished) {
-            publishDisconnect(state.context)
+            publishDisconnect(GlobalDisconnectPacket, state.context)
           }
           cmd match {
             case _: Closing => // ignore Closing (which is sent from the Transport) to avoid cycle
@@ -417,7 +455,7 @@ trait ConnectionSession { _: Actor =>
           enableIdleTimeout()
         } else {
           if (recoveryFinished) {
-            publishToNamespace(OnPacket(packet, state.context))
+            publishToNamespace(packet, state.context)
           }
           val topic = socketio.topicForBroadcast(endpoint, "")
           state.topics = state.topics - topic
@@ -431,7 +469,7 @@ trait ConnectionSession { _: Actor =>
           case x: DataPacket if x.isAckRequested && !x.hasAckData => sendAck(x, "[]")
           case _ =>
         }
-        publishToNamespace(OnPacket(packet, state.context))
+        publishToNamespace(packet, state.context)
     }
   }
 
@@ -470,12 +508,24 @@ trait ConnectionSession { _: Actor =>
     sendPacket(AckPacket(originalPacket.id, args))
   }
 
-  def publishDisconnect(ctx: ConnectionContext) {
-    mediator ! Publish(socketio.topicForDisconnect, OnPacket(GlobalDisconnectPacket, ctx))
+  def publishDisconnect(packet: DisconnectPacket, connContext: ConnectionContext) {
+    mediator ! Publish(socketio.topicForDisconnect, toOnPacket(packet, connContext))
   }
 
-  def publishToNamespace[T <: Packet](msg: OnPacket[T]) {
-    mediator ! Publish(socketio.topicForNamespace(msg.packet.endpoint), msg, sendOneMessageToEachGroup = false)
+  def publishToNamespace(packet: Packet, connContext: ConnectionContext) {
+    val msg = toOnPacket(packet, connContext)
+    mediator ! Publish(socketio.topicForNamespace(packet.endpoint), msg, sendOneMessageToEachGroup = false)
+  }
+
+  def toOnPacket(packet: Packet, connContext: ConnectionContext) = packet match {
+    case x: ConnectPacket    => OnConnect(x.args, connContext)(x)
+    case x: DisconnectPacket => OnDisconnect(connContext)(x)
+    case x: MessagePacket    => OnMessage(x.data, connContext)(x)
+    case x: JsonPacket       => OnJson(x.json, connContext)(x)
+    case x: EventPacket      => OnEvent(x.name, x.args, connContext)(x)
+    case _ =>
+      log.warning("Packet should be processed internal: {}", packet)
+      OnNoop(connContext)(NoopPacket)
   }
 
   def publishToBroadcast(msg: OnBroadcast) {
@@ -483,11 +533,11 @@ trait ConnectionSession { _: Actor =>
   }
 
   def subscribeBroadcast(topic: String): Future[SubscribeAck] = {
-    mediator.ask(Subscribe(topic, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
+    mediator.ask(Subscribe(topic, None, self))(socketio.actorResolveTimeout).mapTo[SubscribeAck]
   }
 
   def unsubscribeBroadcast(topic: String) {
-    mediator ! Unsubscribe(topic, self)
+    mediator.ask(Unsubscribe(topic, None, self))(socketio.actorResolveTimeout).mapTo[UnsubscribeAck]
   }
 
   // ---- heartbeat and timeout

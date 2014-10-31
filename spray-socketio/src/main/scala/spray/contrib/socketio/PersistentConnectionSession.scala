@@ -1,13 +1,14 @@
 package spray.contrib.socketio
 
-import akka.actor.{ Props, ActorLogging, ActorRef }
+import akka.actor.{ ActorLogging, Props }
 import akka.persistence.{ PersistenceFailure, PersistentActor, SaveSnapshotSuccess, SaveSnapshotFailure, SnapshotOffer, RecoveryCompleted }
 
 object PersistentConnectionSession {
-  def props(mediator: ActorRef): Props = Props(classOf[PersistentConnectionSession], mediator)
+  def props(): Props = Props(classOf[PersistentConnectionSession])
 }
 
-final class PersistentConnectionSession(val mediator: ActorRef) extends ConnectionSession with PersistentActor with ActorLogging {
+final class PersistentConnectionSession() extends ConnectionSession with PersistentActor with ActorLogging {
+  def mediator = SocketIOExtension(context.system).namespaceRegion
 
   override def persistenceId = self.path.toStringWithoutAddress
 

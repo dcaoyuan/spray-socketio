@@ -11,12 +11,11 @@ import scala.concurrent.Future
 import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
+import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.namespace.Channel
-import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
 import spray.http.HttpResponse
@@ -25,14 +24,14 @@ import spray.json.DefaultJsonProtocol
 object SimpleServer extends App with MySslConfiguration {
 
   object SocketIOServer {
-    def props(sessionRegion: ActorRef) = Props(classOf[SocketIOServer], sessionRegion)
+    def props() = Props(classOf[SocketIOServer])
   }
-  class SocketIOServer(sessionRegion: ActorRef) extends Actor with ActorLogging {
+  class SocketIOServer() extends Actor with ActorLogging {
     def receive = {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(SocketIOWorker.props(serverConnection, sessionRegion))
+        val conn = context.actorOf(SocketIOWorker.props(serverConnection))
         serverConnection ! Http.Register(conn)
     }
   }
@@ -40,9 +39,10 @@ object SimpleServer extends App with MySslConfiguration {
   val WEB_ROOT = "/home/dcaoyuan/myprjs/spray-socketio/src/main/scala/spray/contrib/socketio/examples"
 
   object SocketIOWorker {
-    def props(serverConnection: ActorRef, sessionRegion: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, sessionRegion)
+    def props(serverConnection: ActorRef) = Props(classOf[SocketIOWorker], serverConnection)
   }
-  class SocketIOWorker(val serverConnection: ActorRef, val sessionRegion: ActorRef) extends Actor with SocketIOServerWorker {
+  class SocketIOWorker(val serverConnection: ActorRef) extends Actor with SocketIOServerWorker {
+    def sessionRegion = SocketIOExtension(context.system).sessionRegion
 
     override def sessionIdGenerator: HttpRequest => Future[String] = { req =>
       Future.successful("123456")
@@ -127,10 +127,9 @@ object SimpleServer extends App with MySslConfiguration {
   //}.subscribe(observer)
 
   val namespaceClient = socketioExt.namespaceClient
-  namespaceClient ! Subscribe("testendpoint", channel)
+  namespaceClient ! Subscribe("testendpoint", None, channel)
 
-  val sessionRegion = socketioExt.sessionRegion
-  val server = system.actorOf(SocketIOServer.props(sessionRegion), name = "socketio-server")
+  val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
 
   IO(UHttp) ! Http.Bind(server, "localhost", 8080)
 

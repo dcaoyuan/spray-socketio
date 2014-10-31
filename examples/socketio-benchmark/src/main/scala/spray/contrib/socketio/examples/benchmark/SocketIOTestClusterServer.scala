@@ -13,11 +13,11 @@ import spray.can.server.UHttp
 import spray.can.Http
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionSession
+import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
 import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.json.JsArray
@@ -26,7 +26,7 @@ import spray.json.JsString
 object SocketIOTestClusterServer extends App {
   val usage =
     """
-      Usage: SocketIOTestClusterServer [transport|session|namespace|business] -Dakka.cluster.seed-nodes.0=akka.tcp://SocketIOSystem@host1:port -Dakka.remote.netty.tcp.hostname=host -Dakka.remote.netty.tcp.port=port
+      Usage: SocketIOTestClusterServer [session|namespace|transport|business] -Dakka.cluster.seed-nodes.0=akka.tcp://SocketIOSystem@host1:port -Dakka.remote.netty.tcp.hostname=host -Dakka.remote.netty.tcp.port=port
     """
 
   def exitWithUsage = {
@@ -54,20 +54,20 @@ object SocketIOTestClusterServer extends App {
       val extraCfg =
         """
           akka.contrib.cluster.sharding.role = "session"
-          akka.cluster.roles =["statefule", "session"]
+          akka.cluster.roles = ["statefule", "session", "namespace"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
       implicit val system = socketioSystem(config)
       Persistence(system)
-      val socketioExt = SocketIOExtension(system)
-      ConnectionSession.startSharding(system, Some(socketioExt.sessionProps))
+      Namespace.startSharding(system, None)
+      ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps))
 
     case "namespace" :: tail =>
       val extraCfg =
         """
           akka.contrib.cluster.sharding.role = "namespace"
-          akka.cluster.roles =["statefule", "namespace"]
+          akka.cluster.roles = ["statefule", "namespace"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
@@ -84,11 +84,9 @@ object SocketIOTestClusterServer extends App {
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
       implicit val system = socketioSystem(config)
-      val socketioExt = SocketIOExtension(system)
       ConnectionSession.startSharding(system, None)
 
-      implicit val sessionRegion = socketioExt.sessionRegion
-      val server = system.actorOf(SocketIOServer.props(sessionRegion), name = "socketio-server")
+      val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
       val host = config.getString("transport.host")
       val port = config.getInt("transport.port")
       IO(UHttp) ! Http.Bind(server, host, port)

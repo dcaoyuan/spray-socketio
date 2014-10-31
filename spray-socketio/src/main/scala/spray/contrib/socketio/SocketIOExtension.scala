@@ -23,8 +23,6 @@ object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionId
   override def lookup(): ExtensionId[_ <: Extension] = SocketIOExtension
 
   override def createExtension(system: ExtendedActorSystem): SocketIOExtension = new SocketIOExtension(system)
-
-  val mediatorName: String = "socketioMediator"
 }
 
 class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
@@ -51,20 +49,17 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     }
   }
 
-  private lazy val localMediator = system.actorOf(LocalMediator.props(), name = SocketIOExtension.mediatorName)
-  private lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(TransientConnectionSession.props(localMediator)), name = ConnectionSession.shardName)
-  private lazy val localNamespaceRegion = system.actorOf(LocalNamespaceRegion.props(Namespace.props(localMediator, groupRoutingLogic)), name = Namespace.shardName)
-
-  lazy val mediator = if (Settings.isCluster) DistributedPubSubExtension(system).mediator else localMediator
+  private lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(TransientConnectionSession.props()), name = ConnectionSession.shardName)
+  private lazy val localNamespaceRegion = system.actorOf(LocalNamespaceRegion.props(Namespace.props(groupRoutingLogic)), name = Namespace.shardName)
 
   lazy val sessionProps: Props = if (Settings.enableSessionPersistence) {
-    PersistentConnectionSession.props(mediator)
+    PersistentConnectionSession.props()
   } else {
-    TransientConnectionSession.props(mediator)
+    TransientConnectionSession.props()
   }
 
   lazy val namespaceProps: Props = {
-    Namespace.props(mediator, groupRoutingLogic)
+    Namespace.props(groupRoutingLogic)
   }
 
   lazy val clusterClient = {
@@ -76,8 +71,8 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   /**
    * Should start sharding before by: ConnectionSession.startSharding(system, Option[sessionProps])
    */
-  lazy val sessionRegion = if (Settings.isCluster) {
-    ClusterSharding(system).shardRegion(ConnectionSession.shardName)
+  def sessionRegion = if (Settings.isCluster) {
+    ConnectionSession.shardRegion(system)
   } else {
     localSessionRegion
   }
@@ -85,19 +80,19 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   /**
    * Should start sharding before by: Namespace.startSharding(system, Option[namespcaeProps])
    */
-  lazy val namespaceRegion = if (Settings.isCluster) {
-    ClusterSharding(system).shardRegion(Namespace.shardName)
+  def namespaceRegion = if (Settings.isCluster) {
+    Namespace.shardRegion(system)
   } else {
     localNamespaceRegion
   }
 
-  lazy val sessionClient = if (Settings.isCluster) {
+  def sessionClient = if (Settings.isCluster) {
     ConnectionSession(system).clusterClient
   } else {
     localSessionRegion
   }
 
-  lazy val namespaceClient = if (Settings.isCluster) {
+  def namespaceClient = if (Settings.isCluster) {
     Namespace(system).clusterClient
   } else {
     localNamespaceRegion

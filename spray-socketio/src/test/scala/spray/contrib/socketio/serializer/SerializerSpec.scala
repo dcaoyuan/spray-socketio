@@ -11,7 +11,7 @@ import com.typesafe.config.ConfigFactory
 import spray.contrib.socketio.ConnectionSession._
 import spray.contrib.socketio.ConnectionContext
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.packet.{ Packet, MessagePacket, ConnectPacket, DisconnectPacket, JsonPacket, EventPacket }
+import spray.contrib.socketio.packet.{ Packet, MessagePacket, ConnectPacket, DisconnectPacket, JsonPacket, EventPacket, NoopPacket }
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio.transport
 import spray.http.Uri.Query
@@ -37,7 +37,6 @@ akka {
       onpacket = "spray.contrib.socketio.serializer.OnPacketSerializer"
       onbroadcast = "spray.contrib.socketio.serializer.OnBroadcastSerializer"
       status = "spray.contrib.socketio.serializer.StatusSerializer"
-      ondata = "spray.contrib.socketio.serializer.OnDataSerializer"
       namespaceevt = "spray.contrib.socketio.serializer.NamespaceEventSerializer"
     }
     serialization-bindings {
@@ -49,7 +48,6 @@ akka {
       "spray.contrib.socketio.ConnectionSession$OnPacket" = onpacket
       "spray.contrib.socketio.ConnectionSession$OnBroadcast" = onbroadcast
       "spray.contrib.socketio.ConnectionSession$Status" = status
-      "spray.contrib.socketio.namespace.Namespace$OnData" = ondata
       "spray.contrib.socketio.namespace.Namespace$Event" = namespaceevt
     }
   }
@@ -188,8 +186,8 @@ akka {
         test(obj)
       }
 
-      "GetStatus" in {
-        val obj = GetStatus(sessionId)
+      "AskStatus" in {
+        val obj = AskStatus(sessionId)
         test(obj)
       }
 
@@ -210,30 +208,35 @@ akka {
       }
     }
 
-    "handle Namespace Command/OnData" when {
+    "handle Namespace Command/OnPacket" when {
       "OnConnect" in {
         val args = List(("a1", "v1"), ("a2", ""))
-        val obj = Namespace.OnConnect(args, ctx)(ConnectPacket("endpoint", args))
+        val obj = OnConnect(args, ctx)(ConnectPacket("endpoint", args))
         test(obj)
       }
 
       "OnDisconnect" in {
-        val obj = Namespace.OnDisconnect(ctx)(DisconnectPacket("endpoint"))
+        val obj = OnDisconnect(ctx)(DisconnectPacket("endpoint"))
         test(obj)
       }
 
       "OnMessage" in {
-        val obj = Namespace.OnMessage("msg", ctx)(MessagePacket(-1, false, "", "hello world"))
+        val obj = OnMessage("msg", ctx)(MessagePacket(-1, false, "", "hello world"))
         test(obj)
       }
 
       "OnJson" in {
-        val obj = Namespace.OnJson("json", ctx)(JsonPacket(-1, false, "", "hello world"))
+        val obj = OnJson("json", ctx)(JsonPacket(-1, false, "", "hello world"))
         test(obj)
       }
 
       "OnEvent" in {
-        val obj = Namespace.OnEvent("event", "1", ctx)(EventPacket(-1, false, "", "edwald", Seq("""{"a": "b"}""", "2", "3")))
+        val obj = OnEvent("event", "1", ctx)(EventPacket(-1, false, "", "edwald", Seq("""{"a": "b"}""", "2", "3")))
+        test(obj)
+      }
+
+      "OnNoop" in {
+        val obj = OnNoop(ctx)(NoopPacket)
         test(obj)
       }
     }

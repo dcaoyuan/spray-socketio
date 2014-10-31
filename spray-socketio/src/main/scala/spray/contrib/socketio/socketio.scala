@@ -54,7 +54,7 @@ package object socketio {
   /**
    * The topic used only by namespace actor. @Note __not for connections and broadcast__.
    */
-  def topicForNamespace(topic: String) = if (topic == "") EmptyTopic else "socketio-namespace-" + topic
+  def topicForNamespace(topic: String) = if (topic == "") EmptyTopic else topic
 
   val topicForDisconnect = "socketio-disconnect"
 

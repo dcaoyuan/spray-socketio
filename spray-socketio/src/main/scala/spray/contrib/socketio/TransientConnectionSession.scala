@@ -1,12 +1,14 @@
 package spray.contrib.socketio
 
-import akka.actor.{ Props, ActorRef, ActorLogging, Actor }
+import akka.actor.{ Actor, ActorLogging, Props }
 
 object TransientConnectionSession {
-  def props(mediator: ActorRef): Props = Props(classOf[TransientConnectionSession], mediator)
+  def props(): Props = Props(classOf[TransientConnectionSession])
 }
 
-final class TransientConnectionSession(val mediator: ActorRef) extends ConnectionSession with Actor with ActorLogging {
+final class TransientConnectionSession() extends ConnectionSession with Actor with ActorLogging {
+  def mediator = SocketIOExtension(context.system).namespaceRegion
+
   def recoveryFinished: Boolean = true
   def recoveryRunning: Boolean = false
 

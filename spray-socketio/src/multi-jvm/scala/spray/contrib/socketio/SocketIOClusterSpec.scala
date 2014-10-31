@@ -4,6 +4,9 @@ import akka.actor.ActorIdentity
 import akka.actor.Identify
 import akka.actor._
 import akka.cluster.Cluster
+import akka.cluster.ClusterEvent._
+import akka.cluster.MemberStatus
+import akka.contrib.pattern.ClusterSharding
 import akka.contrib.pattern.DistributedPubSubExtension
 import akka.contrib.pattern.DistributedPubSubMediator.{Count, Subscribe, Unsubscribe, SubscribeAck, UnsubscribeAck }
 import akka.io.{Tcp, IO}
@@ -28,12 +31,12 @@ import spray.can.Http
 import spray.can.websocket.frame.{TextFrame, Frame}
 import spray.can.server.UHttp
 import spray.contrib.socketio
+import spray.contrib.socketio.ConnectionSession.OnPacket
+import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.OnOpen
 import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.SendHello
 import spray.contrib.socketio.namespace.Channel
 import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnData
-import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.{EventPacket, Packet, MessagePacket}
 import spray.json.{JsArray, JsString}
 
@@ -41,15 +44,15 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
   val controller = role("controller")
 
-  val transport1 = role("transport1")
-  val transport2 = role("transport2")
-  val session1 = role("session1")
-  val session2 = role("session2")
   val namespace1 = role("namespace1")
   val namespace2 = role("namespace2")
-  val business1 = role("business1")
-  val business2 = role("business2")
-  val business3 = role("business3")
+  val transport1 = role("transport1")
+  val transport2 = role("transport2")
+  val session1   = role("session1")
+  val session2   = role("session2")
+  val business1  = role("business1")
+  val business2  = role("business2")
+  val business3  = role("business3")
 
   val client1 = role("client1")
   val client2 = role("client2")
@@ -73,10 +76,19 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       spray.socketio.mode = "cluster"
     """))
 
-  nodeConfig(transport1, transport2) {
+  nodeConfig(namespace1) {
     ConfigFactory.parseString(
       """
-        akka.cluster.roles =["transport"]
+        akka.contrib.cluster.sharding.role = "namespace"
+        akka.cluster.roles = ["stateful", "namespace"]
+      """)
+  }
+
+  nodeConfig(namespace2) {
+    ConfigFactory.parseString(
+      """
+        akka.contrib.cluster.sharding.role = "namespace"
+        akka.cluster.roles = ["stateful", "namespace"]
       """)
   }
 
@@ -85,7 +97,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """
         akka.remote.netty.tcp.port = 2551
         akka.contrib.cluster.sharding.role = "session"
-        akka.cluster.roles = ["stateful", "session"]
+        akka.cluster.roles = ["stateful", "session", "namespace"]
       """)
   }
 
@@ -93,30 +105,18 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString(
       """
         akka.contrib.cluster.sharding.role = "session"
-        akka.cluster.roles = ["stateful", "session"]
+        akka.cluster.roles = ["stateful", "session", "namespace"]
       """)
   }
 
-  nodeConfig(namespace1, namespace2) {
+  nodeConfig(transport1, transport2) {
     ConfigFactory.parseString(
       """
-        akka.contrib.cluster.sharding.role = "namespace"
-        akka.cluster.roles =["stateful", "namespace"]
+        akka.cluster.roles =["transport"]
       """)
   }
 
-  nodeConfig(business1, business2) {
-    ConfigFactory.parseString(
-      """
-        akka.cluster.roles = ["business"]
-        spray.socketio {
-            cluster.client-initial-contacts = ["akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist"]
-        }
-      """)
-
-  }
-
-  nodeConfig(business3) {
+  nodeConfig(business1, business2, business3) {
     ConfigFactory.parseString(
       """
         akka.cluster.roles = ["business"]
@@ -126,6 +126,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """)
 
   }
+
 }
 
 class SocketIOClusterSpecMultiJvmNode1 extends SocketIOClusterSpec
@@ -144,7 +145,8 @@ class SocketIOClusterSpecMultiJvmNode12 extends SocketIOClusterSpec
 
 object SocketIOClusterSpec {
 
-  class SocketIOServer(val sessionRegion: ActorRef, probe: ActorRef) extends Actor with ActorLogging {
+  class SocketIOServer(probe: ActorRef) extends Actor with ActorLogging {
+    def sessionRegion = ConnectionSession.shardRegion(context.system)
 
     def receive = {
       case x: Tcp.Bound => probe ! x
@@ -152,13 +154,14 @@ object SocketIOClusterSpec {
 
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection, sessionRegion))
+        val conn = context.actorOf(Props(classOf[SocketIOWorker], serverConnection))
         serverConnection ! Http.Register(conn)
     }
 
   }
 
-  class SocketIOWorker(val serverConnection: ActorRef, val sessionRegion: ActorRef) extends Actor with SocketIOServerWorker {
+  class SocketIOWorker(val serverConnection: ActorRef) extends Actor with SocketIOServerWorker {
+    def sessionRegion = ConnectionSession.shardRegion(context.system)
 
     def genericLogic: Receive = {
       case x: Frame =>
@@ -238,14 +241,6 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
   override def initialParticipants: Int = roles.size
 
-  def awaitCount(expected: Int): Unit = {
-    val mediator = DistributedPubSubExtension(system).mediator
-    awaitAssert {
-      mediator ! Count
-      expectMsgType[Int] should be(expected)
-    }
-  }
-
   val storageLocations = List(
     "akka.persistence.journal.leveldb.dir",
     "akka.persistence.journal.leveldb-shared.store.dir",
@@ -263,14 +258,6 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     }
   }
 
-  def join(from: RoleName, to: RoleName)(starting: => Unit): Unit = {
-    runOn(from) {
-      starting
-      Cluster(system) join node(to).address
-    }
-    enterBarrier(from.name + "-joined")
-  }
-
   "Sharded socketio cluster" must {
 
     "setup shared journal" in {
@@ -281,7 +268,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
       enterBarrier("peristence-started")
 
-      runOn(session1, session2, namespace1, namespace2) {
+      runOn(namespace1, namespace2, session1, session2) {
         system.actorSelection(node(controller) / "user" / "store") ! Identify(None)
         val sharedStore = expectMsgType[ActorIdentity].ref.get
         SharedLeveldbJournal.setStore(sharedStore, system)
@@ -289,78 +276,107 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("setup-persistence")
     }
 
-    "join cluster" in within(15.seconds) {
+    "join cluster" in within(30.seconds) {
 
-      // 'session' sharding should start before sharding proxy, for instance, the sharding proxy on transport nodes.
-      join(session1, session1) {
-        val socketioExt = SocketIOExtension(system)
-        ConnectionSession.startSharding(system, Some(socketioExt.sessionProps)) 
-      }
+      val cluster = Cluster(system)
 
-      join(session2, session1) {
-        val socketioExt = SocketIOExtension(system)
-        ConnectionSession.startSharding(system, Some(socketioExt.sessionProps)) 
-      }
+      runOn(session1)   { cluster join node(session1).address }
+      runOn(session2)   { cluster join node(session1).address }
+      runOn(namespace1) { cluster join node(session1).address }
+      runOn(namespace2) { cluster join node(session1).address }
+      runOn(transport1) { cluster join node(session1).address }
+      runOn(transport2) { cluster join node(session1).address }
 
-      join(transport1, session1) {
-        val socketioExt = SocketIOExtension(system)
-        ConnectionSession.startSharding(system, None) 
-      }
 
-      join(transport2, session1) {
-        val socketioExt = SocketIOExtension(system)
-        ConnectionSession.startSharding(system, None) 
+      runOn(namespace1, namespace2, session1, session2, transport1, transport2) {
+        awaitAssert {
+          self ! cluster.state.members.filter(_.status == MemberStatus.Up).size  
+          expectMsg(6)
+        }
+        enterBarrier("join-cluster")
       }
-
-      join(namespace1, session1) {
-        val socketioExt = SocketIOExtension(system)
-        Namespace.startSharding(system, Some(socketioExt.namespaceProps))
+      
+      runOn(controller, business1, business2, business3, client1, client2) {
+        enterBarrier("join-cluster")
       }
-
-      join(namespace2, session1) {
-        val socketioExt = SocketIOExtension(system)
-        Namespace.startSharding(system, Some(socketioExt.namespaceProps))
-      } 
- 
-      runOn(transport1, transport2, session1, session2, namespace1, namespace2) {
-        awaitCount(4)
-      }
-      enterBarrier("join-cluster")
     }
 
-    "startup server" in within(15.seconds) {
-      //runOn(session1, session2) {
-      //  val socketioExt = SocketIOExtension(system)
-      //  ConnectionSession.startSharding(system, Some(socketioExt.sessionProps)) 
-      //}
+    "start cluster sevices" in within(30.seconds) {
+
+      // The first started node should start all sharding sevices, no matter it start this sharding for entries or for proxy.
+      // Since the sharding's singleton/coordinator will locate to oldest member.
+      runOn(session1) {
+        Namespace.startSharding(system, None) 
+        ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
+      }
+
+      runOn(session2) {
+        Namespace.startSharding(system, None) 
+        ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
+      }
+
+      runOn(namespace1) {
+        Thread.sleep(5000)
+
+        Namespace.startSharding(system, Some(SocketIOExtension(system).namespaceProps))
+      }
+
+      runOn(namespace2) {
+        Thread.sleep(5000)
+
+        Namespace.startSharding(system, Some(SocketIOExtension(system).namespaceProps))
+      } 
 
       runOn(transport1) {
-        val socketioExt = SocketIOExtension(system)
-        //ConnectionSession.startSharding(system, None) 
-        val sessionRegion = socketioExt.sessionRegion
-        val server = system.actorOf(Props(classOf[SocketIOServer], sessionRegion, testActor), "socketio-server")
+        Thread.sleep(10000)
+
+        ConnectionSession.startSharding(system, None) 
+
+        val server = system.actorOf(Props(classOf[SocketIOServer], testActor), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port1)
         expectMsgType[Tcp.Bound]
       }
 
       runOn(transport2) {
-        val socketioExt = SocketIOExtension(system)
-        //ConnectionSession.startSharding(system, None) 
-        val sessionRegion = socketioExt.sessionRegion
-        val server = system.actorOf(Props(classOf[SocketIOServer], sessionRegion, testActor), "socketio-server")
+        Thread.sleep(10000)
+
+        ConnectionSession.startSharding(system, None) 
+
+        val server = system.actorOf(Props(classOf[SocketIOServer], testActor), "socketio-server")
         IO(UHttp) ! Http.Bind(server, host, port2)
         expectMsgType[Tcp.Bound]
       }
 
-      //runOn(namespace1, namespace2) {
-      //}
+      enterBarrier("started-cluster-services")
+    }
 
-      enterBarrier("startup-server")
+    "verify cluster sevices" in within(30.seconds) {
+
+      runOn(session1) {
+        def namespaceRegion = Namespace.shardRegion(system)
+        log.info("namespaceRegion: {}", namespaceRegion)
+        namespaceRegion ! Identify(None) 
+        expectMsgType[ActorIdentity]
+
+        val channel = system.actorOf(Channel.props())
+        namespaceRegion ! Subscribe(Namespace.NamespaceEventSource, None, channel)
+        expectMsgType[SubscribeAck]
+      }
+
+     runOn(transport1) {
+        def sessionRegion = ConnectionSession.shardRegion(system)
+        log.info("sessionRegion: {}", sessionRegion)
+        sessionRegion ! ConnectionSession.AskStatus("0")
+        expectMsgType[ConnectionSession.Status]
+      }
+
+      enterBarrier("verified-cluster-services")
     }
 
     var channelOfBusiness3: ActorRef = null 
 
-    "startup business" in within(25.seconds) {
+    "start business sevices" in within(30.seconds) {
+
       runOn(business1, business2) {
         val nschannel = system.actorOf(Channel.props())
         val nsreceiver = system.actorOf(Props(new NamespaceEventReceiver(self)))
@@ -374,10 +390,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
         val namespaceClient = socketioExt.namespaceClient
         namespaceClient ! Subscribe(Namespace.NamespaceEventSource, nschannel)
-        expectMsgType[SubscribeAck]
-
         namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group1"), channel)
-        expectMsgAnyClassOf(classOf[Namespace.TopicCreated], classOf[SubscribeAck])
+        expectMsgAnyClassOf(classOf[Namespace.TopicCreated], classOf[SubscribeAck], classOf[SubscribeAck])
       }
 
       runOn(business3) {
@@ -394,7 +408,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         channelOfBusiness3 = channel
       }
 
-      enterBarrier("startup-server")
+      enterBarrier("started-business")
     }
 
     /*
@@ -428,7 +442,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
      }
      */
 
-    "chat between client1 and server1" in within(25.seconds) {
+    "chat between client1 and server1" in within(30.seconds) {
       runOn(client1) {
         val connect = Http.Connect(host, port1)
         val client = system.actorOf(Props(classOf[SocketIOClient], connect, testActor))

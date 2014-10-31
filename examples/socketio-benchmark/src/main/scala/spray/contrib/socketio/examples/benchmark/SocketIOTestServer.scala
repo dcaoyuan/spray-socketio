@@ -14,11 +14,10 @@ import spray.can.Http
 import spray.can.server.UHttp
 import spray.can.websocket.frame.Frame
 import spray.contrib.socketio
+import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.namespace.Channel
-import spray.contrib.socketio.namespace.Namespace
-import spray.contrib.socketio.namespace.Namespace.OnEvent
 import spray.contrib.socketio.packet.EventPacket
 import spray.http.HttpRequest
 
@@ -27,10 +26,11 @@ object SocketIOTestServer extends App {
   case object COUNT
 
   object SocketIOServer {
-    def props(sessionRegion: ActorRef) = Props(classOf[SocketIOServer], sessionRegion)
+    def props() = Props(classOf[SocketIOServer])
   }
 
-  class SocketIOServer(val sessionRegion: ActorRef) extends Actor with ActorLogging {
+  class SocketIOServer() extends Actor with ActorLogging {
+
     var connected = 0
     var preconnected = 0
 
@@ -43,7 +43,7 @@ object SocketIOTestServer extends App {
       // when a new connection comes in we register a SocketIOConnection actor as the per connection handler
       case Http.Connected(remoteAddress, localAddress) =>
         val serverConnection = sender()
-        val conn = context.actorOf(SocketIOWorker.props(serverConnection, sessionRegion))
+        val conn = context.actorOf(SocketIOWorker.props(serverConnection))
         context watch conn
         connected += 1
         serverConnection ! Http.Register(conn)
@@ -62,7 +62,7 @@ object SocketIOTestServer extends App {
   }
 
   object SocketIOWorker {
-    def props(serverConnection: ActorRef, sessionRegion: ActorRef) = Props(classOf[SocketIOWorker], serverConnection, sessionRegion)
+    def props(serverConnection: ActorRef) = Props(classOf[SocketIOWorker], serverConnection)
 
     private var _sessionId = 0
     private val sessionIdMutex = new AnyRef
@@ -71,7 +71,8 @@ object SocketIOTestServer extends App {
       _sessionId
     }
   }
-  final class SocketIOWorker(val serverConnection: ActorRef, val sessionRegion: ActorRef) extends Actor with SocketIOServerWorker {
+  final class SocketIOWorker(val serverConnection: ActorRef) extends Actor with SocketIOServerWorker {
+    def sessionRegion = SocketIOExtension(context.system).sessionRegion
 
     override def sessionIdGenerator: HttpRequest => Future[String] = { req =>
       Future.successful(SocketIOWorker.nextSessionId().toString)
@@ -109,10 +110,9 @@ object SocketIOTestServer extends App {
   val receiver = system.actorOf(Props(new Receiver))
   ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
 
-  socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, channel)
+  socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, None, channel)
 
-  val sessionRegionForTransport = SocketIOExtension(system).sessionRegion
-  val server = system.actorOf(SocketIOServer.props(sessionRegionForTransport), name = "socketio-server")
+  val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
 
   val config = ConfigFactory.load().getConfig("spray.socketio.benchmark")
   val host = config.getString("server.host")

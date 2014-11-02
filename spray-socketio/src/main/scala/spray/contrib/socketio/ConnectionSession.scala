@@ -419,7 +419,7 @@ trait ConnectionSession { _: Actor =>
 
       case ConnectPacket(endpoint, args) =>
         if (recoveryFinished) {
-          publishToNamespace(packet, state.context)
+          publishToTopic(packet, state.context)
         }
 
         val topic = socketio.topicForBroadcast(endpoint, "")
@@ -455,7 +455,7 @@ trait ConnectionSession { _: Actor =>
           enableIdleTimeout()
         } else {
           if (recoveryFinished) {
-            publishToNamespace(packet, state.context)
+            publishToTopic(packet, state.context)
           }
           val topic = socketio.topicForBroadcast(endpoint, "")
           state.topics = state.topics - topic
@@ -469,7 +469,7 @@ trait ConnectionSession { _: Actor =>
           case x: DataPacket if x.isAckRequested && !x.hasAckData => sendAck(x, "[]")
           case _ =>
         }
-        publishToNamespace(packet, state.context)
+        publishToTopic(packet, state.context)
     }
   }
 
@@ -512,9 +512,9 @@ trait ConnectionSession { _: Actor =>
     mediator ! Publish(socketio.topicForDisconnect, toOnPacket(packet, connContext))
   }
 
-  def publishToNamespace(packet: Packet, connContext: ConnectionContext) {
+  def publishToTopic(packet: Packet, connContext: ConnectionContext) {
     val msg = toOnPacket(packet, connContext)
-    mediator ! Publish(socketio.topicForNamespace(packet.endpoint), msg, sendOneMessageToEachGroup = false)
+    mediator ! Publish(socketio.topicForEndpoint(packet.endpoint), msg, sendOneMessageToEachGroup = false)
   }
 
   def toOnPacket(packet: Packet, connContext: ConnectionContext) = packet match {

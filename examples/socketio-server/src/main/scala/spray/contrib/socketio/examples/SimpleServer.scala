@@ -15,7 +15,7 @@ import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.packet.EventPacket
-import spray.contrib.socketio.namespace.Queue
+import spray.contrib.socketio.mq.Queue
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
 import spray.http.HttpResponse
@@ -126,7 +126,7 @@ object SimpleServer extends App with MySslConfiguration {
   //  case _          => Observable.empty
   //}.subscribe(observer)
 
-  socketioExt.namespaceClient ! Subscribe("testendpoint", None, queue)
+  socketioExt.topicClient ! Subscribe("testendpoint", None, queue)
 
   val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
 

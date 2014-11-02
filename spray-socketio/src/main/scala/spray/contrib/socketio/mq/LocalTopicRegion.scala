@@ -1,4 +1,4 @@
-package spray.contrib.socketio.namespace
+package spray.contrib.socketio.mq
 
 import akka.actor.Actor
 import akka.actor.ActorLogging
@@ -7,11 +7,11 @@ import akka.actor.Props
 import akka.actor.Terminated
 import java.net.URLEncoder
 
-object LocalNamespaceRegion {
-  def props(namespaceProps: Props) = Props(classOf[LocalNamespaceRegion], namespaceProps)
+object LocalTopicRegion {
+  def props(topicProps: Props) = Props(classOf[LocalTopicRegion], topicProps)
 }
 
-class LocalNamespaceRegion(namespaceProps: Props) extends Actor with ActorLogging {
+class LocalTopicRegion(topicProps: Props) extends Actor with ActorLogging {
 
   def receive = {
     case Terminated(ref) =>
@@ -19,14 +19,14 @@ class LocalNamespaceRegion(namespaceProps: Props) extends Actor with ActorLoggin
   }
 
   def deliverMessage(msg: Any, snd: ActorRef): Unit = {
-    val (id, m) = Namespace.idExtractor(msg)
+    val (id, m) = Topic.idExtractor(msg)
     if (id == null || id == "") {
       log.warning("Id must not be empty, dropping message [{}]", msg.getClass.getName)
       context.system.deadLetters ! msg
     } else {
       val name = URLEncoder.encode(id, "utf-8")
       val entry = context.child(name).getOrElse {
-        context.watch(context.actorOf(namespaceProps, name))
+        context.watch(context.actorOf(topicProps, name))
       }
       entry.tell(m, snd)
     }

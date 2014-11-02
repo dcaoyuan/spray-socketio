@@ -16,8 +16,8 @@ import spray.contrib.socketio.ConnectionSession
 import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
-import spray.contrib.socketio.namespace.Queue
-import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.mq.Queue
+import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.MessagePacket
 import spray.json.JsArray
@@ -26,7 +26,7 @@ import spray.json.JsString
 object SocketIOTestClusterServer extends App {
   val usage =
     """
-      Usage: SocketIOTestClusterServer [session|namespace|transport|business] -Dakka.cluster.seed-nodes.0=akka.tcp://SocketIOSystem@host1:port -Dakka.remote.netty.tcp.hostname=host -Dakka.remote.netty.tcp.port=port
+      Usage: SocketIOTestClusterServer [session|topic|transport|business] -Dakka.cluster.seed-nodes.0=akka.tcp://SocketIOSystem@host1:port -Dakka.remote.netty.tcp.hostname=host -Dakka.remote.netty.tcp.port=port
     """
 
   def exitWithUsage = {
@@ -54,27 +54,27 @@ object SocketIOTestClusterServer extends App {
       val extraCfg =
         """
           akka.contrib.cluster.sharding.role = "session"
-          akka.cluster.roles = ["statefule", "session", "namespace"]
+          akka.cluster.roles = ["statefule", "session", "topic"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
       implicit val system = socketioSystem(config)
       Persistence(system)
-      Namespace.startSharding(system, None)
+      Topic.startSharding(system, None)
       ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps))
 
-    case "namespace" :: tail =>
+    case "topic" :: tail =>
       val extraCfg =
         """
-          akka.contrib.cluster.sharding.role = "namespace"
-          akka.cluster.roles = ["statefule", "namespace"]
+          akka.contrib.cluster.sharding.role = "topic"
+          akka.cluster.roles = ["statefule", "topic"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
       implicit val system = socketioSystem(config)
       Persistence(system)
       val socketioExt = SocketIOExtension(system)
-      Namespace.startSharding(system, Some(socketioExt.namespaceProps))
+      Topic.startSharding(system, Some(socketioExt.topicProps))
 
     case "transport" :: tail =>
       val extraCfg =
@@ -129,8 +129,8 @@ object SocketIOTestClusterServer extends App {
       val receiver = system.actorOf(Props(new Receiver))
       ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-      val namespaceClient = socketioExt.namespaceClient
-      namespaceClient ! Subscribe(socketio.EmptyTopic, queue)
+      val topicClient = socketioExt.topicClient
+      topicClient ! Subscribe(socketio.EmptyTopic, queue)
 
     case _ =>
       exitWithUsage

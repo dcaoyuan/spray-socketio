@@ -1,4 +1,4 @@
-package spray.contrib.socketio.namespace
+package spray.contrib.socketio.mq
 
 import akka.actor.Actor
 import akka.actor.ActorLogging
@@ -9,7 +9,7 @@ import akka.actor.Terminated
 import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
-import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck, SendToAll }
+import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck }
 import akka.contrib.pattern.ShardRegion
 import akka.pattern.ask
 import akka.routing.ActorRefRoutee
@@ -23,7 +23,7 @@ import spray.contrib.socketio.SocketIOExtension
 /**
  *
  *
- *    +===serverConn===+               +===connSession===+              +====namespace===+
+ *    +===serverConn===+               +===connSession===+              +======topic=====+
  *    |                |    OnFrame    |                 |   OnPacket   |                |
  *    |                | ------------> |                 | -----------> |                |
  *    |                | <------------ |                 | <----------- |                |
@@ -41,7 +41,7 @@ import spray.contrib.socketio.SocketIOExtension
  *    +================+  |---------------------------------------------------|
  *                        |                                                   |
  *                        |                                                   |
- *    +======node======+  |     +===========namesapce-node==============+     |
+ *    +======node======+  |     +===============mq-node=================+     |
  *    |       mediator----/     | +endpointA (namespace) ----- mediator-------/
  *    |     /     |    |        |   |  |   |                            |
  *    |    /      |    |        |   |  |   +roomA                       |
@@ -66,17 +66,17 @@ import spray.contrib.socketio.SocketIOExtension
  *
  * @Note Akka can do millions of messages per second per actor per core.
  *
- * Namespace is sharding actor in socketio cluster, but, socketio's tranport/session nodes
- * are not aware of Namespace actors, because all messages in that cluster are sent to mediator.
+ * Topic is sharding actor in socketio cluster, but, socketio's tranport/session nodes
+ * are not aware of Topic actors, because all messages in that cluster are sent to mediator.
  *
- * Namespace actors just accept messages via mediator, and then deliver them to
+ * Topic actors just accept messages via mediator, and then deliver them to
  * subscribted queues.
  */
-object Namespace {
+object Topic {
 
-  def props(groupRoutingLogic: RoutingLogic) = Props(classOf[Namespace], groupRoutingLogic)
+  def props(groupRoutingLogic: RoutingLogic) = Props(classOf[Topic], groupRoutingLogic)
 
-  val NamespaceEventSource = "socketio-namespace-event-source"
+  val TopicEventSource = "global-topic-event-source"
 
   sealed trait Command extends ConsistentHashable with Serializable {
     override def consistentHashKey = topic
@@ -90,15 +90,15 @@ object Namespace {
 
   case object AskTopic
   case object AskTopics extends Command {
-    def topic = NamespaceEventSource
+    def topic = TopicEventSource
   }
 
-  final case class Topic(topic: String)
+  final case class TopicName(topic: String)
   final case class Topics(topics: List[String])
 
   case class TopicCreated(topic: String, createdTopic: String) extends Event
 
-  val shardName: String = "Namespaces"
+  val shardName: String = "Topics"
 
   val idExtractor: ShardRegion.IdExtractor = {
     case x: Subscribe      => (x.topic, x)
@@ -172,9 +172,9 @@ object Namespace {
   }
 
   /**
-   * A broker actor that runs on the business nodes to make forwarding msg to Namespace easily.
+   * A broker actor that runs on the business nodes to make forwarding msg to Topic easily.
    *
-   * @param path Namespace sharding service's path
+   * @param path Topic sharding service's path
    * @param originalClient [[ClusterClient]] to access SocketIO Cluster
    */
   class ClusterClientBroker(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
@@ -188,10 +188,10 @@ object Namespace {
 }
 
 /**
- * Namespace is refered to endpoint for observers and will subscribe to topic 'namespace' of mediator
+ * Topic is refered to endpoint for observers
  */
-class Namespace(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
-  import Namespace._
+class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
+  import Topic._
 
   val groupRouter = Router(groupRoutingLogic)
 
@@ -201,16 +201,18 @@ class Namespace(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging
   noticeTopicCreated()
 
   private def topic = self.path.name
-  private def region = SocketIOExtension(context.system).namespaceRegion
+  private def region = SocketIOExtension(context.system).topicRegion
 
   private def noticeTopicCreated() {
     topic match {
-      case NamespaceEventSource =>
-      case x                    => region ! TopicCreated(NamespaceEventSource, x)
+      case TopicEventSource =>
+      case x                => region ! TopicCreated(TopicEventSource, x)
     }
   }
 
-  def receive: Receive = {
+  def receive: Receive = processMessage
+
+  def processMessage: Receive = {
     case x @ Subscribe(topic, group, queue) =>
       val topic1 = topic match {
         case socketio.EmptyTopic => ""
@@ -236,7 +238,7 @@ class Namespace(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging
     case x: TopicCreated        => deliverMessage(x)
 
     case AskTopic =>
-      sender() ! Topic(topic)
+      sender() ! TopicName(topic)
     //case AskTopics =>
     //mediator ! SendToAll(shardPath(context.system), AskTopic)
     //context.actorOf(TopicsAggregatorOnPull.props(sender(), 5.seconds))
@@ -281,26 +283,3 @@ class Namespace(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging
 
 }
 
-object TopicsAggregatorOnPull {
-  def props(originalSender: ActorRef, duration: FiniteDuration) = Props(classOf[TopicsAggregatorOnPull], originalSender, duration)
-
-  case object TimedOut
-}
-
-class TopicsAggregatorOnPull(originalSender: ActorRef, duration: FiniteDuration) extends Actor with ActorLogging {
-  import TopicsAggregatorOnPull._
-
-  var topics = Set[String]()
-
-  import context.dispatcher
-  context.system.scheduler.scheduleOnce(duration, self, TimedOut)
-
-  def receive = {
-    case Namespace.Topic(topic) =>
-      topics += topic
-
-    case TimedOut =>
-      originalSender ! Namespace.Topics(topics.toList)
-      context.stop(self)
-  }
-}

@@ -13,7 +13,7 @@ import scala.collection.immutable
  * During connecting handshake (1::), endpoint is "", the default endpoint.
  * The client may then send ConnectPacket with endpoint (1::/endp1) and
  * (1::/endp2) etc to use the same sender-context pair as multiple sockets.
- * @See Namespace
+ * @See Topic
  *
  * @Note let this context not to be final, so business application can store more
  * states in it.

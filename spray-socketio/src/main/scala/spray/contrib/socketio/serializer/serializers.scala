@@ -12,7 +12,7 @@ import spray.can.websocket.frame.{ FrameParser, FrameRender, Frame }
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionSession
 import spray.contrib.socketio.ConnectionContext
-import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.{ DataPacket, Packet, PacketParser, ConnectPacket, DisconnectPacket, MessagePacket, JsonPacket, EventPacket, NoopPacket }
 import spray.contrib.socketio.transport
 import spray.contrib.socketio.transport.Transport
@@ -615,39 +615,39 @@ class StatusSerializer extends Serializer {
   }
 }
 
-class NamespaceEventSerializer(val system: ExtendedActorSystem) extends Serializer {
+class TopicEventSerializer(val system: ExtendedActorSystem) extends Serializer {
   implicit val byteOrder = ByteOrder.BIG_ENDIAN
 
   final def includeManifest: Boolean = true
 
   final def identifier: Int = 2007
 
-  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Namespace.Event], Array[Byte] => AnyRef](
-    classOf[Namespace.TopicCreated] -> (bytes => toTopicCreated(bytes)))
-  //classOf[Namespace.Unsubscribe] -> (bytes => toUnsubscribe(bytes)),
-  //classOf[Namespace.SubscribeAck] -> (bytes => toSubscribeAck(bytes)),
-  //classOf[Namespace.UnsubscribeAck] -> (bytes => toUnsubscribeAck(bytes)))
+  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Topic.Event], Array[Byte] => AnyRef](
+    classOf[Topic.TopicCreated] -> (bytes => toTopicCreated(bytes)))
+  //classOf[Topic.Unsubscribe] -> (bytes => toUnsubscribe(bytes)),
+  //classOf[Topic.SubscribeAck] -> (bytes => toSubscribeAck(bytes)),
+  //classOf[Topic.UnsubscribeAck] -> (bytes => toUnsubscribeAck(bytes)))
 
   final def toBinary(o: AnyRef): Array[Byte] = {
     o match {
-      case cmd: Namespace.TopicCreated => fromTopicCreated(cmd)
-      //case cmd: Namespace.Unsubscribe    => fromUnsubscribe(cmd)
-      //case cmd: Namespace.SubscribeAck   => fromSubscribeAck(cmd)
-      //case cmd: Namespace.UnsubscribeAck => fromUnsubscribeAck(cmd)
+      case cmd: Topic.TopicCreated => fromTopicCreated(cmd)
+      //case cmd: Topic.Unsubscribe    => fromUnsubscribe(cmd)
+      //case cmd: Topic.SubscribeAck   => fromSubscribeAck(cmd)
+      //case cmd: Topic.UnsubscribeAck => fromUnsubscribeAck(cmd)
     }
   }
 
   final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
     manifest match {
-      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[Namespace.Event]]) match {
+      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[Topic.Event]]) match {
         case Some(f) => f(bytes)
-        case None    => throw new IllegalArgumentException(s"Unimplemented deserialization of message class $clazz in NamespaceCommandSerializer")
+        case None    => throw new IllegalArgumentException(s"Unimplemented deserialization of message class $clazz in TopicEventSerializer")
       }
-      case _ => throw new IllegalArgumentException("Need a command message class to be able to deserialize bytes in NamespaceCommandSerializer")
+      case _ => throw new IllegalArgumentException("Need a event message class to be able to deserialize bytes in TopicEventSerializer")
     }
   }
 
-  final def fromTopicCreated(cmd: Namespace.TopicCreated) = {
+  final def fromTopicCreated(cmd: Topic.TopicCreated) = {
     val builder = ByteString.newBuilder
 
     StringSerializer.appendToBuilder(builder, cmd.topic)
@@ -662,10 +662,10 @@ class NamespaceEventSerializer(val system: ExtendedActorSystem) extends Serializ
     val topic = StringSerializer.fromByteIterator(data)
     val createdTopic = StringSerializer.fromByteIterator(data)
 
-    Namespace.TopicCreated(topic, createdTopic)
+    Topic.TopicCreated(topic, createdTopic)
   }
 
-  //  final def fromUnsubscribe(cmd: Namespace.Unsubscribe) = {
+  //  final def fromUnsubscribe(cmd: Topic.Unsubscribe) = {
   //    val builder = ByteString.newBuilder
   //
   //    StringSerializer.appendToBuilder(builder, cmd.endpoint)
@@ -689,23 +689,23 @@ class NamespaceEventSerializer(val system: ExtendedActorSystem) extends Serializ
   //      case 0x01 => None
   //    }
   //
-  //    Namespace.Unsubscribe(endpoint, queues)
+  //    Topic.Unsubscribe(endpoint, queues)
   //  }
   //
-  //  final def fromSubscribeAck(cmd: Namespace.SubscribeAck) = {
+  //  final def fromSubscribeAck(cmd: Topic.SubscribeAck) = {
   //    fromSubscribe(cmd.subscribe)
   //  }
   //
   //  final def toSubscribeAck(bytes: Array[Byte]) = {
-  //    Namespace.SubscribeAck(toSubscribe(bytes))
+  //    Topic.SubscribeAck(toSubscribe(bytes))
   //  }
   //
-  //  final def fromUnsubscribeAck(cmd: Namespace.UnsubscribeAck) = {
+  //  final def fromUnsubscribeAck(cmd: Topic.UnsubscribeAck) = {
   //    fromUnsubscribe(cmd.unsubscribe)
   //  }
   //
   //  final def toUnsubscribeAck(bytes: Array[Byte]) = {
-  //    Namespace.UnsubscribeAck(toUnsubscribe(bytes))
+  //    Topic.UnsubscribeAck(toUnsubscribe(bytes))
   //  }
 
 }

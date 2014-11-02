@@ -1,4 +1,4 @@
-package spray.contrib.socketio.namespace
+package spray.contrib.socketio.mq
 
 import akka.actor.Props
 import akka.stream.actor.ActorPublisher

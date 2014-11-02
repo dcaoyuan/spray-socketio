@@ -14,8 +14,8 @@ import java.util.concurrent.TimeUnit
 import scala.collection.immutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-import spray.contrib.socketio.namespace.LocalNamespaceRegion
-import spray.contrib.socketio.namespace.Namespace
+import spray.contrib.socketio.mq.LocalTopicRegion
+import spray.contrib.socketio.mq.Topic
 
 object SocketIOExtension extends ExtensionId[SocketIOExtension] with ExtensionIdProvider {
   override def get(system: ActorSystem): SocketIOExtension = super.get(system)
@@ -50,7 +50,7 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   }
 
   private lazy val localSessionRegion = system.actorOf(LocalConnectionSessionRegion.props(TransientConnectionSession.props()), name = ConnectionSession.shardName)
-  private lazy val localNamespaceRegion = system.actorOf(LocalNamespaceRegion.props(Namespace.props(groupRoutingLogic)), name = Namespace.shardName)
+  private lazy val localTopicRegion = system.actorOf(LocalTopicRegion.props(Topic.props(groupRoutingLogic)), name = Topic.shardName)
 
   lazy val sessionProps: Props = if (Settings.enableSessionPersistence) {
     PersistentConnectionSession.props()
@@ -58,8 +58,8 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     TransientConnectionSession.props()
   }
 
-  lazy val namespaceProps: Props = {
-    Namespace.props(groupRoutingLogic)
+  lazy val topicProps: Props = {
+    Topic.props(groupRoutingLogic)
   }
 
   lazy val clusterClient = {
@@ -78,12 +78,12 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
   }
 
   /**
-   * Should start sharding before by: Namespace.startSharding(system, Option[namespcaeProps])
+   * Should start sharding before by: Topic.startSharding(system, Option[topicProps])
    */
-  def namespaceRegion = if (Settings.isCluster) {
-    Namespace.shardRegion(system)
+  def topicRegion = if (Settings.isCluster) {
+    Topic.shardRegion(system)
   } else {
-    localNamespaceRegion
+    localTopicRegion
   }
 
   def sessionClient = if (Settings.isCluster) {
@@ -92,10 +92,10 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     localSessionRegion
   }
 
-  def namespaceClient = if (Settings.isCluster) {
-    Namespace(system).clusterClient
+  def topicClient = if (Settings.isCluster) {
+    Topic(system).clusterClient
   } else {
-    localNamespaceRegion
+    localTopicRegion
   }
 
   lazy val scheduler: Scheduler = {

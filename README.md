@@ -33,7 +33,7 @@ To run cluster benchmark (0.2.x):
 0. cd examples/socketio-benchmark/target/xitrum/bin
 0. ./start_cluster.sh sess1 2551
 0. ./start_cluster.sh sess2
-0. ./start_cluster.sh name1 
+0. ./start_cluster.sh topic1 
 0. ./start_cluster.sh tran
 0. ./start_cluster.sh busi
 0. ./start_driver.sh

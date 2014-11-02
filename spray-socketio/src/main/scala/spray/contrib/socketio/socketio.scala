@@ -39,12 +39,12 @@ package object socketio {
   }
 
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds
-  val namespaceSubscribeTimeout = config.getInt("server.namespace-subscribe-timeout").seconds
+  val topicSubscribeTimeout = config.getInt("server.topic-subscribe-timeout").seconds
 
   /**
-   * topic cannot be "" for DistributedPubSubMediator
+   * topic cannot be ""
    */
-  val EmptyTopic = "socketio-namespace-empty"
+  val EmptyTopic = "global-topic-empty"
 
   /**
    * Topic for broadcast messages. Cannot contain '.' or '/'
@@ -52,9 +52,9 @@ package object socketio {
   def topicForBroadcast(topic: String, room: String) = "socketio-broadcast" + { if (topic != "") "-" + topic else "" } + { if (room != "") "-" + room else "" }
 
   /**
-   * The topic used only by namespace actor. @Note __not for connections and broadcast__.
+   * The topic used only by socketio endpoint actor. @Note __not for connections and broadcast__.
    */
-  def topicForNamespace(topic: String) = if (topic == "") EmptyTopic else topic
+  def topicForEndpoint(topic: String) = if (topic == "") EmptyTopic else topic
 
   val topicForDisconnect = "socketio-disconnect"
 

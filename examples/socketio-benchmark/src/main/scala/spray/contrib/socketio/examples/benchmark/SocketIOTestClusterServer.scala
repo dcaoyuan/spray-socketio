@@ -16,7 +16,7 @@ import spray.contrib.socketio.ConnectionSession
 import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
-import spray.contrib.socketio.namespace.Channel
+import spray.contrib.socketio.namespace.Queue
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.packet.EventPacket
 import spray.contrib.socketio.packet.MessagePacket
@@ -125,12 +125,12 @@ object SocketIOTestClusterServer extends App {
         }
       }
 
-      val channel = system.actorOf(Channel.props())
+      val queue = system.actorOf(Queue.props())
       val receiver = system.actorOf(Props(new Receiver))
-      ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
+      ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
       val namespaceClient = socketioExt.namespaceClient
-      namespaceClient ! Subscribe(socketio.EmptyTopic, channel)
+      namespaceClient ! Subscribe(socketio.EmptyTopic, queue)
 
     case _ =>
       exitWithUsage

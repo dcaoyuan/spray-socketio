@@ -47,17 +47,17 @@ import spray.contrib.socketio.SocketIOExtension
  *    |    /      |    |        |   |  |   +roomA                       |
  *    | conn    conn   |        |   |  |      |                         |
  *    | conn    conn   |        |   |  |      |                         |
- *    | /              |        |   |  |      \---> channelA            |
- *    +=|==============+        |   |  |      \---> channleB            |
+ *    | /              |        |   |  |      \---> queueA              |
+ *    +=|==============+        |   |  |      \---> queueB              |
  *      |                       |   |  |                                |
  *      \                       |   |  +roomB                           |
  *       \                      |   |     |                             |
  *    +---|-------------+       |   |     |                             |
- *    |   | region      |       |   |     \---> channelA --> [observer]-----\
- *    +---|-------------+       |   |     \---> channelB                |   |
+ *    |   | region      |       |   |     \---> queueA --> [observer]-------\
+ *    +---|-------------+       |   |     \---> queueB                  |   |
  *        |                     |   |                                   |   |
- *        |                     |   \---> channelA                      |   |
- *        |                     |   \---> channelB                      |   |
+ *        |                     |   \---> queueA                        |   |
+ *        |                     |   \---> queueB                        |   |
  *        |                     +=======================================+   |
  *        |                                                                 |
  *        |                                                                 |
@@ -70,7 +70,7 @@ import spray.contrib.socketio.SocketIOExtension
  * are not aware of Namespace actors, because all messages in that cluster are sent to mediator.
  *
  * Namespace actors just accept messages via mediator, and then deliver them to
- * subscribted channels.
+ * subscribted queues.
  */
 object Namespace {
 
@@ -195,8 +195,8 @@ class Namespace(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging
 
   val groupRouter = Router(groupRoutingLogic)
 
-  var channels = Set[ActorRef]() // ActorRef of Channel
-  var groupToChannels: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
+  var queues = Set[ActorRef]() // ActorRef of queue 
+  var groupToQueues: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
 
   noticeTopicCreated()
 
@@ -211,25 +211,25 @@ class Namespace(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging
   }
 
   def receive: Receive = {
-    case x @ Subscribe(topic, group, channel) =>
+    case x @ Subscribe(topic, group, queue) =>
       val topic1 = topic match {
         case socketio.EmptyTopic => ""
         case x                   => x
       }
 
-      insertSubscription(group, channel)
+      insertSubscription(group, queue)
       sender() ! SubscribeAck(x)
-      log.info("{} successfully subscribed to topic [{}] under group [{}]", channel, topic, group)
+      log.info("{} successfully subscribed to topic [{}] under group [{}]", queue, topic, group)
 
-    case x @ Unsubscribe(topic, group, channel) =>
+    case x @ Unsubscribe(topic, group, queue) =>
       val topic1 = topic match {
         case socketio.EmptyTopic => ""
         case x                   => x
       }
 
-      removeSubscription(group, channel)
+      removeSubscription(group, queue)
       sender() ! UnsubscribeAck(x)
-      log.info("{} successfully unsubscribed to topic [{}] under group [{}]", channel, topic, group)
+      log.info("{} successfully unsubscribed to topic [{}] under group [{}]", queue, topic, group)
 
     case Publish(topic, msg, _) => deliverMessage(msg)
 
@@ -245,38 +245,38 @@ class Namespace(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging
   }
 
   def deliverMessage(x: Any) {
-    groupToChannels foreach {
-      case (None, channels) => channels foreach (_.ref ! x)
-      case (_, channels)    => groupRouter.withRoutees(channels.toVector).route(x, self)
+    groupToQueues foreach {
+      case (None, queues) => queues foreach (_.ref ! x)
+      case (_, queues)    => groupRouter.withRoutees(queues.toVector).route(x, self)
     }
   }
 
-  def existChannel(channel: ActorRef) = {
-    groupToChannels exists { case (group, channels) => channels.contains(ActorRefRoutee(channel)) }
+  def existsQueue(queue: ActorRef) = {
+    groupToQueues exists { case (group, queues) => queues.contains(ActorRefRoutee(queue)) }
   }
 
-  def insertSubscription(group: Option[String], channel: ActorRef) {
-    if (!channels.contains(channel)) {
-      context watch channel
-      channels += channel
+  def insertSubscription(group: Option[String], queue: ActorRef) {
+    if (!queues.contains(queue)) {
+      context watch queue
+      queues += queue
     }
-    groupToChannels = groupToChannels.updated(group, groupToChannels(group) + ActorRefRoutee(channel))
+    groupToQueues = groupToQueues.updated(group, groupToQueues(group) + ActorRefRoutee(queue))
   }
 
-  def removeSubscription(group: Option[String], channel: ActorRef) {
-    if (!existChannel(channel)) {
-      context unwatch channel
-      channels -= channel
+  def removeSubscription(group: Option[String], queue: ActorRef) {
+    if (!existsQueue(queue)) {
+      context unwatch queue
+      queues -= queue
     }
-    groupToChannels = groupToChannels.updated(group, groupToChannels(group) - ActorRefRoutee(channel))
+    groupToQueues = groupToQueues.updated(group, groupToQueues(group) - ActorRefRoutee(queue))
   }
 
-  def removeSubscription(channel: ActorRef) {
-    context unwatch channel
-    channels -= channel
-    groupToChannels = for {
-      (group, channels) <- groupToChannels
-    } yield (group -> (channels - ActorRefRoutee(channel)))
+  def removeSubscription(queue: ActorRef) {
+    context unwatch queue
+    queues -= queue
+    groupToQueues = for {
+      (group, queues) <- groupToQueues
+    } yield (group -> (queues - ActorRefRoutee(queue)))
   }
 
 }

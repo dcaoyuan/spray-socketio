@@ -35,7 +35,7 @@ import spray.contrib.socketio.ConnectionSession.OnPacket
 import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.OnOpen
 import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.SendHello
-import spray.contrib.socketio.namespace.Channel
+import spray.contrib.socketio.namespace.Queue
 import spray.contrib.socketio.namespace.Namespace
 import spray.contrib.socketio.packet.{EventPacket, Packet, MessagePacket}
 import spray.json.{JsArray, JsString}
@@ -357,8 +357,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         namespaceRegion ! Identify(None) 
         expectMsgType[ActorIdentity]
 
-        val channel = system.actorOf(Channel.props())
-        namespaceRegion ! Subscribe(Namespace.NamespaceEventSource, None, channel)
+        val queue = system.actorOf(Queue.props())
+        namespaceRegion ! Subscribe(Namespace.NamespaceEventSource, None, queue)
         expectMsgType[SubscribeAck]
       }
 
@@ -372,37 +372,37 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("verified-cluster-services")
     }
 
-    var channelOfBusiness3: ActorRef = null 
+    var queueOfBusiness3: ActorRef = null 
 
     "start business sevices" in within(30.seconds) {
 
       runOn(business1, business2) {
-        val nschannel = system.actorOf(Channel.props())
+        val nsqueue = system.actorOf(Queue.props())
         val nsreceiver = system.actorOf(Props(new NamespaceEventReceiver(self)))
-        ActorPublisher(nschannel).subscribe(ActorSubscriber(nsreceiver))
+        ActorPublisher(nsqueue).subscribe(ActorSubscriber(nsreceiver))
 
         val socketioExt = SocketIOExtension(system)
 
-        val channel = system.actorOf(Channel.props())
+        val queue = system.actorOf(Queue.props())
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
-        ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
+        ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-        socketioExt.namespaceClient ! Subscribe(Namespace.NamespaceEventSource, nschannel)
-        socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group1"), channel)
+        socketioExt.namespaceClient ! Subscribe(Namespace.NamespaceEventSource, nsqueue)
+        socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group1"), queue)
         expectMsgAnyClassOf(classOf[Namespace.TopicCreated], classOf[SubscribeAck], classOf[SubscribeAck])
       }
 
       runOn(business3) {
         val socketioExt = SocketIOExtension(system)
 
-        val channel = system.actorOf(Channel.props())
+        val queue = system.actorOf(Queue.props())
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
-        ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
+        ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-        socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group2"), channel)
+        socketioExt.namespaceClient ! Subscribe(socketio.EmptyTopic, Some("group2"), queue)
         expectMsgType[SubscribeAck]
 
-        channelOfBusiness3 = channel
+        queueOfBusiness3 = queue
       }
 
       enterBarrier("started-business")
@@ -460,7 +460,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(business3) {
         enterBarrier("two-groups-tested")
         val socketioExt = SocketIOExtension(system)
-        socketioExt.namespaceClient ! Unsubscribe(socketio.EmptyTopic, Some("group2"), channelOfBusiness3)
+        socketioExt.namespaceClient ! Unsubscribe(socketio.EmptyTopic, Some("group2"), queueOfBusiness3)
         expectMsgType[UnsubscribeAck]
         enterBarrier("one-group")
       }

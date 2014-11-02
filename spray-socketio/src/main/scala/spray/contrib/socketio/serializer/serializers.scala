@@ -669,7 +669,7 @@ class NamespaceEventSerializer(val system: ExtendedActorSystem) extends Serializ
   //    val builder = ByteString.newBuilder
   //
   //    StringSerializer.appendToBuilder(builder, cmd.endpoint)
-  //    cmd.channel match {
+  //    cmd.queues match {
   //      case Some(ref) =>
   //        builder.putByte(0x00)
   //        StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(ref))
@@ -684,12 +684,12 @@ class NamespaceEventSerializer(val system: ExtendedActorSystem) extends Serializ
   //    val data = ByteString(bytes).iterator
   //
   //    val endpoint = StringSerializer.fromByteIterator(data)
-  //    val channel = data.getByte match {
+  //    val queues = data.getByte match {
   //      case 0x00 => Some(system.provider.resolveActorRef(StringSerializer.fromByteIterator(data)))
   //      case 0x01 => None
   //    }
   //
-  //    Namespace.Unsubscribe(endpoint, channel)
+  //    Namespace.Unsubscribe(endpoint, queues)
   //  }
   //
   //  final def fromSubscribeAck(cmd: Namespace.SubscribeAck) = {

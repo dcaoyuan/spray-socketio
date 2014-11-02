@@ -5,11 +5,11 @@ import akka.stream.actor.ActorPublisher
 import akka.stream.actor.ActorPublisherMessage
 import scala.annotation.tailrec
 
-object Channel {
-  def props() = Props(classOf[Channel])
+object Queue {
+  def props() = Props(classOf[Queue])
 }
 
-class Channel extends ActorPublisher[Any] {
+class Queue extends ActorPublisher[Any] {
   private var buf = Vector.empty[Any]
 
   def receive = {

@@ -15,7 +15,7 @@ import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.packet.EventPacket
-import spray.contrib.socketio.namespace.Channel
+import spray.contrib.socketio.namespace.Queue
 import spray.http.{ HttpMethods, Uri, HttpEntity, ContentType, MediaTypes }
 import spray.http.HttpRequest
 import spray.http.HttpResponse
@@ -117,16 +117,16 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
-  val channel = system.actorOf(Channel.props(), "mychannel")
+  val queue = system.actorOf(Queue.props(), "myqueue")
   val receiver = system.actorOf(Props(new Receiver), "myreceiver")
-  ActorPublisher(channel).subscribe(ActorSubscriber(receiver))
+  ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
   // there is no channel.ofType method for RxScala, why?
-  //channel.flatMap {
+  //queue.flatMap {
   //  case x: OnEvent => Observable.items(x)
   //  case _          => Observable.empty
   //}.subscribe(observer)
 
-  socketioExt.namespaceClient ! Subscribe("testendpoint", None, channel)
+  socketioExt.namespaceClient ! Subscribe("testendpoint", None, queue)
 
   val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
 

@@ -12,6 +12,7 @@ import scala.util.Failure
 import scala.util.Success
 import spray.can.Http
 import spray.can.websocket.frame.TextFrame
+import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.transport
 import spray.http.HttpHeaders
 import spray.http.HttpHeaders._
@@ -42,11 +43,6 @@ package object socketio {
   val topicSubscribeTimeout = config.getInt("server.topic-subscribe-timeout").seconds
 
   /**
-   * topic cannot be ""
-   */
-  val EmptyTopic = "global-topic-empty"
-
-  /**
    * Topic for broadcast messages. Cannot contain '.' or '/'
    */
   def topicForBroadcast(topic: String, room: String) = "socketio-broadcast" + { if (topic != "") "-" + topic else "" } + { if (room != "") "-" + room else "" }
@@ -54,7 +50,7 @@ package object socketio {
   /**
    * The topic used only by socketio endpoint actor. @Note __not for connections and broadcast__.
    */
-  def topicForEndpoint(topic: String) = if (topic == "") EmptyTopic else topic
+  def topicForEndpoint(topic: String) = if (topic == "") Topic.TopicEmpty else topic
 
   val topicForDisconnect = "socketio-disconnect"
 

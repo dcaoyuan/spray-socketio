@@ -23,7 +23,8 @@ object Aggregator {
   def props[T](
     groupRoutingLogic: RoutingLogic,
     failureDetector: FailureDetectorRegistry[Address],
-    unreachableReaperInterval: FiniteDuration): Props = Props(classOf[Aggregator[T]], groupRoutingLogic, failureDetector, unreachableReaperInterval)
+    unreachableReaperInterval: FiniteDuration): Props =
+    Props(classOf[Aggregator[T]], groupRoutingLogic, failureDetector, unreachableReaperInterval)
 
   final case class ReportingData[T](data: T)
   final case class Awailable[T](address: Address, report: T)
@@ -46,10 +47,11 @@ object Aggregator {
     def configureDispatcher(props: Props): Props = if (Dispatcher.isEmpty) props else props.withDispatcher(Dispatcher)
 
     val FailureDetectorConfig: Config = config.getConfig("aggregator-failure-detector")
+    val AggregatorReportingInterval = FailureDetectorConfig.getMillisDuration("reporting-interval")
     val AggregatorFailureDetectorImplementationClass: String = FailureDetectorConfig.getString("implementation-class")
     val AggregatorUnreachableReaperInterval: FiniteDuration = {
       FailureDetectorConfig.getMillisDuration("unreachable-nodes-reaper-interval")
-    } requiring (_ > Duration.Zero, "watch-failure-detector.unreachable-nodes-reaper-interval must be > 0")
+    } requiring (_ > Duration.Zero, "aggregator-failure-detector.unreachable-nodes-reaper-interval must be > 0")
   }
 
   protected def createAggregator(system: ExtendedActorSystem, groupRoutingLogic: RoutingLogic): ActorRef = {

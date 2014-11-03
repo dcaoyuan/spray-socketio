@@ -18,6 +18,7 @@ import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.SocketIOServerWorker
 import spray.contrib.socketio.mq.Queue
+import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.EventPacket
 import spray.http.HttpRequest
 
@@ -109,7 +110,7 @@ object SocketIOTestServer extends App {
   val receiver = system.actorOf(Props(new Receiver))
   ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-  socketioExt.topicClient ! Subscribe(socketio.EmptyTopic, None, queue)
+  socketioExt.topicClient ! Subscribe(Topic.TopicEmpty, None, queue)
 
   val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
 

@@ -76,6 +76,11 @@ object Topic {
 
   def props(groupRoutingLogic: RoutingLogic) = Props(classOf[Topic], groupRoutingLogic)
 
+  /**
+   * topic cannot be "", which will be sent via DistributedPubSubMediator -- Singleton Proxy or Cluster Client
+   */
+  val TopicEmpty = "global-topic-empty"
+
   val TopicEventSource = "global-topic-event-source"
 
   sealed trait Command extends ConsistentHashable with Serializable {
@@ -138,11 +143,16 @@ object Topic {
   def shardRegion(system: ActorSystem) = ClusterSharding(system).shardRegion(shardName)
 
   final class SystemSingletons(system: ActorSystem) {
+    lazy val originalClusterClient = {
+      import scala.collection.JavaConversions._
+      val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
+      system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-topic-cluster-client")
+    }
+
     lazy val clusterClient = {
       startSharding(system, None)
       val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
       val path = shardPath(system)
-      val originalClusterClient = SocketIOExtension(system).clusterClient
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
   }
@@ -215,8 +225,8 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
   def processMessage: Receive = {
     case x @ Subscribe(topic, group, queue) =>
       val topic1 = topic match {
-        case socketio.EmptyTopic => ""
-        case x                   => x
+        case TopicEmpty => ""
+        case x          => x
       }
 
       insertSubscription(group, queue)
@@ -225,8 +235,8 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
 
     case x @ Unsubscribe(topic, group, queue) =>
       val topic1 = topic match {
-        case socketio.EmptyTopic => ""
-        case x                   => x
+        case TopicEmpty => ""
+        case x          => x
       }
 
       removeSubscription(group, queue)

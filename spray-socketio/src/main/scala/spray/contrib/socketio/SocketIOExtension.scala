@@ -62,12 +62,6 @@ class SocketIOExtension(system: ExtendedActorSystem) extends Extension {
     Topic.props(groupRoutingLogic)
   }
 
-  lazy val clusterClient = {
-    import scala.collection.JavaConversions._
-    val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
-    system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-cluster-client")
-  }
-
   /**
    * Should start sharding before by: ConnectionSession.startSharding(system, Option[sessionProps])
    */

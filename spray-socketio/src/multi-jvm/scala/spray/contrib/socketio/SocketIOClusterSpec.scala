@@ -221,7 +221,7 @@ object SocketIOClusterSpec {
     }
   }
 
-  class TopicEventReceiver(probe: ActorRef) extends ActorSubscriber with ActorLogging {
+  class TopicEventSourceReceiver(probe: ActorRef) extends ActorSubscriber with ActorLogging {
     override val requestStrategy = WatermarkRequestStrategy(10)
     def receive = {
       case OnNext(value : Topic.TopicCreated) =>
@@ -378,7 +378,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
       runOn(business1, business2) {
         val nsqueue = system.actorOf(Queue.props())
-        val nsreceiver = system.actorOf(Props(new TopicEventReceiver(self)))
+        val nsreceiver = system.actorOf(Props(new TopicEventSourceReceiver(self)))
         ActorPublisher(nsqueue).subscribe(ActorSubscriber(nsreceiver))
 
         val socketioExt = SocketIOExtension(system)
@@ -388,7 +388,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
         socketioExt.topicClient ! Subscribe(Topic.TopicEventSource, nsqueue)
-        socketioExt.topicClient ! Subscribe(socketio.EmptyTopic, Some("group1"), queue)
+        socketioExt.topicClient ! Subscribe(Topic.TopicEmpty, Some("group1"), queue)
         expectMsgAnyClassOf(classOf[Topic.TopicCreated], classOf[SubscribeAck], classOf[SubscribeAck])
       }
 
@@ -399,7 +399,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-        socketioExt.topicClient ! Subscribe(socketio.EmptyTopic, Some("group2"), queue)
+        socketioExt.topicClient ! Subscribe(Topic.TopicEmpty, Some("group2"), queue)
         expectMsgType[SubscribeAck]
 
         queueOfBusiness3 = queue
@@ -460,7 +460,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(business3) {
         enterBarrier("two-groups-tested")
         val socketioExt = SocketIOExtension(system)
-        socketioExt.topicClient ! Unsubscribe(socketio.EmptyTopic, Some("group2"), queueOfBusiness3)
+        socketioExt.topicClient ! Unsubscribe(Topic.TopicEmpty, Some("group2"), queueOfBusiness3)
         expectMsgType[UnsubscribeAck]
         enterBarrier("one-group")
       }

@@ -150,10 +150,15 @@ object ConnectionSession {
   def shardRegion(system: ActorSystem) = ClusterSharding(system).shardRegion(shardName)
 
   final class SystemSingletons(system: ActorSystem) {
+    lazy val originalClusterClient = {
+      import scala.collection.JavaConversions._
+      val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
+      system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-session-cluster-client")
+    }
+
     lazy val clusterClient = {
       startSharding(system, None)
       val path = shardPath(system)
-      val originalClusterClient = SocketIOExtension(system).clusterClient
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
   }

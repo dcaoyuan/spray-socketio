@@ -130,7 +130,7 @@ object SocketIOTestClusterServer extends App {
       ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
       val topicClient = socketioExt.topicClient
-      topicClient ! Subscribe(socketio.EmptyTopic, queue)
+      topicClient ! Subscribe(Topic.TopicEmpty, queue)
 
     case _ =>
       exitWithUsage

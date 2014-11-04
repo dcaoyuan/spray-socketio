@@ -157,7 +157,6 @@ object ConnectionSession {
     }
 
     lazy val clusterClient = {
-      startSharding(system, None)
       val path = shardPath(system)
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
@@ -166,6 +165,18 @@ object ConnectionSession {
   def shardPath(system: ActorSystem) = {
     val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
     s"/user/${shardingGuardianName}/${shardName}"
+  }
+
+  /**
+   * A broker actor that runs outside of the cluster to forward msg to sharding actor easily.
+   *
+   * @param path sharding service's path
+   * @param originalClient [[ClusterClient]] to access Cluster
+   */
+  class ClusterClientBroker(servicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
+    def receive: Actor.Receive = {
+      case cmd: Command => originalClient forward ClusterClient.Send(servicePath, cmd, false)
+    }
   }
 
   private var singletons: SystemSingletons = _
@@ -185,18 +196,6 @@ object ConnectionSession {
       }
     }
     singletons
-  }
-
-  /**
-   * A broker actor that runs on the business nodes to make forwarding msg to ConnectionSession easily.
-   *
-   * @param path ConnectionSession sharding service's path
-   * @param client [[ClusterClient]] to access SocketIO Cluster
-   */
-  class ClusterClientBroker(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
-    def receive: Actor.Receive = {
-      case cmd: Command => originalClient forward ClusterClient.Send(shardingServicePath, cmd, false)
-    }
   }
 
   final class State(val context: ConnectionContext, var transportConnection: ActorRef, var topics: immutable.Set[String]) extends Serializable {

@@ -152,8 +152,6 @@ object Topic {
     }
 
     lazy val clusterClient = {
-      startSharding(system, None)
-      val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
       val path = shardPath(system)
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
@@ -162,6 +160,21 @@ object Topic {
   def shardPath(system: ActorSystem) = {
     val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
     s"/user/${shardingGuardianName}/${shardName}"
+  }
+
+  /**
+   * A broker actor that runs outside of the cluster to forward msg to sharding actor easily.
+   *
+   * @param path sharding service's path
+   * @param originalClient [[ClusterClient]] to access Cluster
+   */
+  class ClusterClientBroker(servicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
+    def receive = {
+      case x: Subscribe      => originalClient forward ClusterClient.Send(servicePath, x, false)
+      case x: Unsubscribe    => originalClient forward ClusterClient.Send(servicePath, x, false)
+      case x: SubscribeAck   => originalClient forward ClusterClient.Send(servicePath, x, false)
+      case x: UnsubscribeAck => originalClient forward ClusterClient.Send(servicePath, x, false)
+    }
   }
 
   private var singletons: SystemSingletons = _
@@ -183,20 +196,6 @@ object Topic {
     singletons
   }
 
-  /**
-   * A broker actor that runs on the business nodes to make forwarding msg to Topic easily.
-   *
-   * @param path Topic sharding service's path
-   * @param originalClient [[ClusterClient]] to access SocketIO Cluster
-   */
-  class ClusterClientBroker(shardingServicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
-    def receive = {
-      case x: Subscribe      => originalClient forward ClusterClient.Send(shardingServicePath, x, false)
-      case x: Unsubscribe    => originalClient forward ClusterClient.Send(shardingServicePath, x, false)
-      case x: SubscribeAck   => originalClient forward ClusterClient.Send(shardingServicePath, x, false)
-      case x: UnsubscribeAck => originalClient forward ClusterClient.Send(shardingServicePath, x, false)
-    }
-  }
 }
 
 /**

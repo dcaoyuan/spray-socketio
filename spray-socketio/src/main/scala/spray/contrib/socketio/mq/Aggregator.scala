@@ -6,17 +6,22 @@ import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.actor.Address
 import akka.actor.ExtendedActorSystem
+import akka.actor.PoisonPill
 import akka.actor.Props
+import akka.contrib.pattern.ClusterSingletonManager
+import akka.contrib.pattern.ClusterSingletonProxy
 import akka.event.EventStream
 import akka.remote.DefaultFailureDetectorRegistry
 import akka.remote.FailureDetector
 import akka.remote.FailureDetectorRegistry
+import akka.routing.BroadcastRoutingLogic
+import akka.routing.ConsistentHashingRoutingLogic
+import akka.routing.RandomRoutingLogic
+import akka.routing.RoundRobinRoutingLogic
 import akka.routing.RoutingLogic
 import com.typesafe.config.Config
-import com.typesafe.config.ConfigFactory
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-import scala.reflect.ClassTag
 
 object Aggregator {
 
@@ -24,11 +29,12 @@ object Aggregator {
     groupRoutingLogic: RoutingLogic,
     failureDetector: FailureDetectorRegistry[Address],
     unreachableReaperInterval: FiniteDuration): Props =
-    Props(classOf[Aggregator[T]], groupRoutingLogic, failureDetector, unreachableReaperInterval)
+    Props(classOf[Aggregator], groupRoutingLogic, failureDetector, unreachableReaperInterval)
 
-  final case class ReportingData[T](data: T)
-  final case class Awailable[T](address: Address, report: T)
-  final case class Unreachable[T](address: Address, report: T)
+  final case class ReportingData(data: Any)
+  final case class Awailable(address: Address, report: Any)
+  final case class Unreachable(address: Address, report: Any)
+  case object ReportingTick
 
   case object Stats
   final case class Stats[T](reportingData: Map[Address, T])
@@ -36,9 +42,8 @@ object Aggregator {
   // sent to self only
   case object ReapUnreachableTick
 
-  val config = ConfigFactory.load().getConfig("spray.socketio")
-  val settings = new Settings(config)
-  class Settings(config: Config) {
+  class Settings(system: ActorSystem) {
+    val config = system.settings.config.getConfig("spray.socketio")
     import config._
     import Helpers.ConfigOps
     import Helpers.Requiring
@@ -52,12 +57,23 @@ object Aggregator {
     val AggregatorUnreachableReaperInterval: FiniteDuration = {
       FailureDetectorConfig.getMillisDuration("unreachable-nodes-reaper-interval")
     } requiring (_ > Duration.Zero, "aggregator-failure-detector.unreachable-nodes-reaper-interval must be > 0")
+
+    val groupRoutingLogic = {
+      config.getString("routing-logic") match {
+        case "random"             => RandomRoutingLogic()
+        case "round-robin"        => RoundRobinRoutingLogic()
+        case "consistent-hashing" => ConsistentHashingRoutingLogic(system)
+        case "broadcast"          => BroadcastRoutingLogic()
+        case other                => throw new IllegalArgumentException(s"Unknown 'routing-logic': [$other]")
+      }
+    }
   }
 
-  protected def createAggregator(system: ExtendedActorSystem, groupRoutingLogic: RoutingLogic): ActorRef = {
+  protected def createAggregator(system: ActorSystem): ActorRef = {
+    val settings = new Settings(system)
     import settings._
-    val failureDetector = createRemoteWatcherFailureDetector(system)
-    system.systemActorOf(
+    val failureDetector = createAggreratorFailureDetector(system)
+    system.actorOf(
       configureDispatcher(
         Aggregator.props(
           groupRoutingLogic,
@@ -66,15 +82,64 @@ object Aggregator {
       "aggregator")
   }
 
-  protected def createRemoteWatcherFailureDetector(system: ExtendedActorSystem): FailureDetectorRegistry[Address] = {
+  protected def createAggreratorFailureDetector(system: ActorSystem): FailureDetectorRegistry[Address] = {
+    val settings = new Settings(system)
     def createFailureDetector(): FailureDetector =
       FailureDetectorLoader.load(settings.AggregatorFailureDetectorImplementationClass, settings.FailureDetectorConfig, system)
 
     new DefaultFailureDetectorRegistry(() => createFailureDetector())
   }
+
+  val TopicAggregatorName = "aggregator-topic"
+  val TopicAggregatorPath = "/user/singleton/" + TopicAggregatorName
+  private def startSingletonTopicAggregator(system: ActorSystem) = {
+    val settings = new Settings(system)
+    val failureDetector = createAggreratorFailureDetector(system)
+    system.actorOf(
+      ClusterSingletonManager.props(
+        singletonProps = props[String](settings.groupRoutingLogic, failureDetector, settings.AggregatorUnreachableReaperInterval),
+        singletonName = TopicAggregatorName,
+        terminationMessage = PoisonPill,
+        role = Some("topic")),
+      name = "singletonTopicAggregator")
+  }
+
+  private def singletonTopicAggregator(system: ActorSystem) = {
+    startSingletonTopicAggregator(system)
+    val settings = new Settings(system)
+    val failureDetector = createAggreratorFailureDetector(system)
+    system.actorOf(
+      ClusterSingletonProxy.props(
+        singletonPath = TopicAggregatorPath,
+        role = Some("topic")),
+      name = "singletonTopicAggregatorProxy")
+  }
+
+  final class SystemSingletons(system: ActorSystem) {
+    lazy val topicAggregator = singletonTopicAggregator(system)
+  }
+
+  private var singletons: SystemSingletons = _
+  private val singletonsMutex = new AnyRef()
+  /**
+   * Get the SystemSingletons, create it if none existed.
+   *
+   * @Note only one will be created no matter how many ActorSystems, actually
+   * one ActorSystem per application usaully.
+   */
+  def apply(system: ActorSystem): SystemSingletons = {
+    if (singletons eq null) {
+      singletonsMutex synchronized {
+        if (singletons eq null) {
+          singletons = new SystemSingletons(system)
+        }
+      }
+    }
+    singletons
+  }
 }
 
-class Aggregator[T: ClassTag](
+class Aggregator(
     groupRoutingLogic: RoutingLogic,
     failureDetector: FailureDetectorRegistry[Address],
     unreachableReaperInterval: FiniteDuration) extends Topic(groupRoutingLogic) {
@@ -82,8 +147,8 @@ class Aggregator[T: ClassTag](
   import Aggregator._
   import context.dispatcher
 
-  val unreachableReaperTask = context.system.scheduler.schedule(unreachableReaperInterval, unreachableReaperInterval, self, ReapUnreachableTick)
-  var reportingEntries: Map[Address, T] = Map.empty
+  val unreachableReaperTask = scheduler.schedule(unreachableReaperInterval, unreachableReaperInterval, self, ReapUnreachableTick)
+  var reportingEntries: Map[Address, Any] = Map.empty
 
   override def postStop(): Unit = {
     super.postStop()
@@ -91,12 +156,12 @@ class Aggregator[T: ClassTag](
   }
 
   override def receive = processMessage orElse {
-    case ReportingData(data: T) => receiveReportingData(data)
-    case ReapUnreachableTick    => reapUnreachable()
-    case Stats                  => sender() ! Stats(reportingEntries)
+    case ReportingData(data: Any) => receiveReportingData(data)
+    case ReapUnreachableTick      => reapUnreachable()
+    case Stats                    => sender() ! Stats(reportingEntries)
   }
 
-  def receiveReportingData(data: T): Unit = {
+  def receiveReportingData(data: Any): Unit = {
     val from = sender().path.address
 
     if (failureDetector.isMonitoring(from)) {

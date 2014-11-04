@@ -19,6 +19,8 @@ import akka.routing.RoutingLogic
 import scala.concurrent.duration._
 import spray.contrib.socketio
 import spray.contrib.socketio.SocketIOExtension
+import spray.contrib.socketio.mq.Aggregator.ReportingData
+import spray.contrib.socketio.mq.Aggregator.ReportingTick
 
 /**
  *
@@ -202,6 +204,7 @@ object Topic {
  */
 class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
   import Topic._
+  import context.dispatcher
 
   val groupRouter = Router(groupRoutingLogic)
 
@@ -210,14 +213,27 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
 
   noticeTopicCreated()
 
+  def scheduler = context.system.scheduler
   private def topic = self.path.name
   private def region = SocketIOExtension(context.system).topicRegion
+  private def topicAggregator = Aggregator(context.system).topicAggregator
+
+  val reportingTask = {
+    val settings = new Aggregator.Settings(context.system)
+    scheduler.schedule(settings.AggregatorReportingInterval, settings.AggregatorReportingInterval, self, ReportingTick)
+  }
 
   private def noticeTopicCreated() {
+    topicAggregator ! ReportingData(topic)
     topic match {
       case TopicEventSource =>
       case x                => region ! TopicCreated(TopicEventSource, x)
     }
+  }
+
+  override def postStop(): Unit = {
+    super.postStop()
+    reportingTask.cancel()
   }
 
   def receive: Receive = processMessage
@@ -244,6 +260,8 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
       log.info("{} successfully unsubscribed to topic [{}] under group [{}]", queue, topic, group)
 
     case Publish(topic, msg, _) => deliverMessage(msg)
+
+    case ReportingTick          => topicAggregator ! ReportingData(topic)
 
     case x: TopicCreated        => deliverMessage(x)
 

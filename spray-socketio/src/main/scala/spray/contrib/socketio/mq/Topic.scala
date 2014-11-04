@@ -9,6 +9,7 @@ import akka.actor.Terminated
 import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
+import akka.contrib.pattern.ClusterSingletonProxy
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck }
 import akka.contrib.pattern.ShardRegion
 import akka.pattern.ask
@@ -20,7 +21,6 @@ import scala.concurrent.duration._
 import spray.contrib.socketio
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.mq.Aggregator.ReportingData
-import spray.contrib.socketio.mq.Aggregator.ReportingTick
 
 /**
  *
@@ -104,6 +104,7 @@ object Topic {
   final case class Topics(topics: List[String])
 
   case class TopicCreated(topic: String, createdTopic: String) extends Event
+  private case object ReportingTick
 
   val shardName: String = "Topics"
 
@@ -143,6 +144,10 @@ object Topic {
   }
 
   def shardRegion(system: ActorSystem) = ClusterSharding(system).shardRegion(shardName)
+  def shardRegionPath(system: ActorSystem) = {
+    val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
+    s"/user/${shardingGuardianName}/${shardName}"
+  }
 
   final class SystemSingletons(system: ActorSystem) {
     lazy val originalClusterClient = {
@@ -152,14 +157,16 @@ object Topic {
     }
 
     lazy val clusterClient = {
-      val path = shardPath(system)
+      val path = shardRegionPath(system)
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
-  }
 
-  def shardPath(system: ActorSystem) = {
-    val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
-    s"/user/${shardingGuardianName}/${shardName}"
+    lazy val topicAggregator = topicAggregatorProxy(system)
+
+    lazy val topicAggregatorClient = {
+      val serverPath = s"/user/${TopicAggregatorPath}/${TopicAggregatorProxyName}"
+      system.actorOf(Props(classOf[ClusterClientBroker], serverPath, originalClusterClient))
+    }
   }
 
   /**
@@ -196,6 +203,22 @@ object Topic {
     singletons
   }
 
+  val TopicAggregator = "aggregator-topic"
+  val TopicAggregatorPath = "/user/" + Aggregator.singletonManagerNameForTopic(TopicAggregator) + "/" + TopicAggregator
+  val TopicAggregatorProxyName = "topicAggregatorProxy"
+  /**
+   * Start on nodes in cluster only
+   */
+  private def topicAggregatorProxy(system: ActorSystem): ActorRef = {
+    val role = Some("topic")
+    val ref = system.actorOf(
+      ClusterSingletonProxy.props(
+        singletonPath = Topic.TopicAggregatorPath,
+        role = role),
+      name = Topic.TopicAggregatorProxyName)
+    ClusterReceptionistExtension(system).registerService(ref)
+    ref
+  }
 }
 
 /**
@@ -210,19 +233,24 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
   var queues = Set[ActorRef]() // ActorRef of queue 
   var groupToQueues: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
 
-  noticeTopicCreated()
-
-  def scheduler = context.system.scheduler
-  private def topic = self.path.name
-  private def region = SocketIOExtension(context.system).topicRegion
-  private def topicAggregator = Aggregator(context.system).topicAggregator
-
-  val reportingTask = {
-    val settings = new Aggregator.Settings(context.system)
-    scheduler.schedule(settings.AggregatorReportingInterval, settings.AggregatorReportingInterval, self, ReportingTick)
+  if (!isAggregator) {
+    notifyTopicCreated()
   }
 
-  private def noticeTopicCreated() {
+  def scheduler = context.system.scheduler
+  def topic = self.path.name
+  def isAggregator = false
+  private def region = SocketIOExtension(context.system).topicRegion
+  private def topicAggregator = Topic(context.system).topicAggregator
+
+  val reportingTask = if (isAggregator) {
+    None
+  } else {
+    val settings = new Aggregator.Settings(context.system)
+    Some(scheduler.schedule(settings.AggregatorReportingInterval, settings.AggregatorReportingInterval, self, ReportingTick))
+  }
+
+  private def notifyTopicCreated() {
     topicAggregator ! ReportingData(topic)
     topic match {
       case TopicEventSource =>
@@ -232,7 +260,7 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
 
   override def postStop(): Unit = {
     super.postStop()
-    reportingTask.cancel()
+    reportingTask foreach { _.cancel }
   }
 
   def receive: Receive = processMessage

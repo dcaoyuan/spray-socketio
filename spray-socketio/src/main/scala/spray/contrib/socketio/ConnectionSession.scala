@@ -148,6 +148,10 @@ object ConnectionSession {
   }
 
   def shardRegion(system: ActorSystem) = ClusterSharding(system).shardRegion(shardName)
+  def shardRegionPath(system: ActorSystem) = {
+    val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
+    s"/user/${shardingGuardianName}/${shardName}"
+  }
 
   final class SystemSingletons(system: ActorSystem) {
     lazy val originalClusterClient = {
@@ -157,14 +161,9 @@ object ConnectionSession {
     }
 
     lazy val clusterClient = {
-      val path = shardPath(system)
+      val path = shardRegionPath(system)
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
-  }
-
-  def shardPath(system: ActorSystem) = {
-    val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
-    s"/user/${shardingGuardianName}/${shardName}"
   }
 
   /**

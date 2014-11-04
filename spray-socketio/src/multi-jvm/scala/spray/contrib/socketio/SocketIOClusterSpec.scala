@@ -35,6 +35,7 @@ import spray.contrib.socketio.ConnectionSession.OnPacket
 import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.OnOpen
 import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.SendHello
+import spray.contrib.socketio.mq.Aggregator
 import spray.contrib.socketio.mq.Queue
 import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.{EventPacket, Packet, MessagePacket}
@@ -302,29 +303,21 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "start cluster sevices" in within(30.seconds) {
 
-      // The first started node should start all sharding sevices, no matter it start this sharding for entries or for proxy.
+      // The first started node should start all sharding sevices and singletonManager with corresponding role,
+      // no matter it starts this sharding/singleton as entries or proxy.
       // Since the sharding's singleton/coordinator will locate to oldest member.
-      runOn(session1) {
+      runOn(session1, session2) {
+        Aggregator.startAggregator(system, Topic.TopicAggregator, role = Some("topic"))
         Topic.startSharding(system, None) 
         ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
       }
 
-      runOn(session2) {
-        Topic.startSharding(system, None) 
-        ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
-      }
-
-      runOn(topic1) {
+      runOn(topic1, topic2) {
         Thread.sleep(5000)
 
+        Aggregator.startAggregator(system, Topic.TopicAggregator, role = Some("topic"))
         Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
       }
-
-      runOn(topic2) {
-        Thread.sleep(5000)
-
-        Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
-      } 
 
       runOn(transport1) {
         Thread.sleep(10000)

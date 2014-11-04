@@ -16,6 +16,7 @@ import spray.contrib.socketio.ConnectionSession
 import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
+import spray.contrib.socketio.mq.Aggregator
 import spray.contrib.socketio.mq.Queue
 import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.EventPacket
@@ -60,6 +61,8 @@ object SocketIOTestClusterServer extends App {
 
       implicit val system = socketioSystem(config)
       Persistence(system)
+
+      Aggregator.startAggregator(system, Topic.TopicAggregator, role = Some("topic"))
       Topic.startSharding(system, None)
       ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps))
 
@@ -73,6 +76,7 @@ object SocketIOTestClusterServer extends App {
 
       implicit val system = socketioSystem(config)
       Persistence(system)
+
       val socketioExt = SocketIOExtension(system)
       Topic.startSharding(system, Some(socketioExt.topicProps))
 

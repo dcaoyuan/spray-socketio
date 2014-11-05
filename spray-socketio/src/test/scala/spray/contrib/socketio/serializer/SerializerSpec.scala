@@ -10,7 +10,6 @@ import akka.util.ByteString
 import com.typesafe.config.ConfigFactory
 import spray.contrib.socketio.ConnectionSession._
 import spray.contrib.socketio.ConnectionContext
-import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.{ Packet, MessagePacket, ConnectPacket, DisconnectPacket, JsonPacket, EventPacket, NoopPacket }
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio.transport
@@ -37,7 +36,6 @@ akka {
       onpacket = "spray.contrib.socketio.serializer.OnPacketSerializer"
       onbroadcast = "spray.contrib.socketio.serializer.OnBroadcastSerializer"
       status = "spray.contrib.socketio.serializer.StatusSerializer"
-      topicevt = "spray.contrib.socketio.serializer.TopicEventSerializer"
     }
     serialization-bindings {
       "spray.can.websocket.frame.Frame" = frame
@@ -48,7 +46,6 @@ akka {
       "spray.contrib.socketio.ConnectionSession$OnPacket" = onpacket
       "spray.contrib.socketio.ConnectionSession$OnBroadcast" = onbroadcast
       "spray.contrib.socketio.ConnectionSession$Status" = status
-      "spray.contrib.socketio.mq.Topic$Event" = topicevt
     }
   }
 }

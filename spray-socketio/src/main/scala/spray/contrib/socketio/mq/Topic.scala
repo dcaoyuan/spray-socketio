@@ -14,7 +14,6 @@ import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, Subs
 import akka.contrib.pattern.ShardRegion
 import akka.pattern.ask
 import akka.routing.ActorRefRoutee
-import akka.routing.ConsistentHashingRouter.ConsistentHashable
 import akka.routing.Router
 import akka.routing.RoutingLogic
 import scala.concurrent.duration._
@@ -83,27 +82,6 @@ object Topic {
    */
   val TopicEmpty = "global-topic-empty"
 
-  val TopicEventSource = "global-topic-event-source"
-
-  sealed trait Command extends ConsistentHashable with Serializable {
-    override def consistentHashKey = topic
-    def topic: String
-  }
-
-  sealed trait Event extends ConsistentHashable with Serializable {
-    override def consistentHashKey = topic
-    def topic: String
-  }
-
-  case object AskTopic
-  case object AskTopics extends Command {
-    def topic = TopicEventSource
-  }
-
-  final case class TopicName(topic: String)
-  final case class Topics(topics: List[String])
-
-  case class TopicCreated(topic: String, createdTopic: String) extends Event
   private case object ReportingTick
 
   val shardName: String = "Topics"
@@ -114,7 +92,6 @@ object Topic {
     case x: SubscribeAck   => (x.subscribe.topic, x)
     case x: UnsubscribeAck => (x.unsubscribe.topic, x)
     case x: Publish        => (x.topic, x)
-    case x: Event          => (x.topic, x)
   }
 
   val shardResolver: ShardRegion.ShardResolver = {
@@ -123,7 +100,6 @@ object Topic {
     case x: SubscribeAck   => hashForShard(x.subscribe.topic)
     case x: UnsubscribeAck => hashForShard(x.unsubscribe.topic)
     case x: Publish        => hashForShard(x.topic)
-    case x: Event          => hashForShard(x.topic)
   }
 
   private def hashForShard(topic: String) = (math.abs(topic.hashCode) % 100).toString
@@ -149,6 +125,30 @@ object Topic {
     s"/user/${shardingGuardianName}/${shardName}"
   }
 
+  val TopicAggregator = "aggregator-topic"
+  val TopicAggregatorPath = "/user/" + Aggregator.singletonManagerNameForTopic(TopicAggregator) + "/" + TopicAggregator
+  val TopicAggregatorProxyName = "topicAggregatorProxy"
+  val TopicAggregatorProxyPath = "/user/" + TopicAggregatorProxyName
+
+  /**
+   * Start on all nodes which has Some(role) within cluster
+   */
+  def startTopicAggregator(system: ActorSystem, role: Option[String]) {
+    Aggregator.startAggregator(system, TopicAggregator, role = role)
+  }
+
+  /**
+   * Start on nodes within cluster only
+   */
+  def startTopicAggregatorProxy(system: ActorSystem, role: Option[String]) {
+    val proxy = system.actorOf(
+      ClusterSingletonProxy.props(
+        singletonPath = Topic.TopicAggregatorPath,
+        role = role),
+      name = Topic.TopicAggregatorProxyName)
+    ClusterReceptionistExtension(system).registerService(proxy)
+  }
+
   final class SystemSingletons(system: ActorSystem) {
     lazy val originalClusterClient = {
       import scala.collection.JavaConversions._
@@ -161,11 +161,10 @@ object Topic {
       system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
     }
 
-    lazy val topicAggregator = topicAggregatorProxy(system)
+    lazy val topicAggregatorProxy = system.actorSelection(TopicAggregatorProxyPath)
 
     lazy val topicAggregatorClient = {
-      val serverPath = s"/user/${TopicAggregatorPath}/${TopicAggregatorProxyName}"
-      system.actorOf(Props(classOf[ClusterClientBroker], serverPath, originalClusterClient))
+      system.actorOf(Props(classOf[ClusterClientBroker], TopicAggregatorProxyPath, originalClusterClient))
     }
   }
 
@@ -203,22 +202,6 @@ object Topic {
     singletons
   }
 
-  val TopicAggregator = "aggregator-topic"
-  val TopicAggregatorPath = "/user/" + Aggregator.singletonManagerNameForTopic(TopicAggregator) + "/" + TopicAggregator
-  val TopicAggregatorProxyName = "topicAggregatorProxy"
-  /**
-   * Start on nodes in cluster only
-   */
-  private def topicAggregatorProxy(system: ActorSystem): ActorRef = {
-    val role = Some("topic")
-    val ref = system.actorOf(
-      ClusterSingletonProxy.props(
-        singletonPath = Topic.TopicAggregatorPath,
-        role = role),
-      name = Topic.TopicAggregatorProxyName)
-    ClusterReceptionistExtension(system).registerService(ref)
-    ref
-  }
 }
 
 /**
@@ -233,29 +216,18 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
   var queues = Set[ActorRef]() // ActorRef of queue 
   var groupToQueues: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
 
-  if (!isAggregator) {
-    notifyTopicCreated()
-  }
-
   def scheduler = context.system.scheduler
   def topic = self.path.name
   def isAggregator = false
   private def region = SocketIOExtension(context.system).topicRegion
-  private def topicAggregator = Topic(context.system).topicAggregator
+  private def topicAggregator = Topic(context.system).topicAggregatorProxy
 
   val reportingTask = if (isAggregator) {
     None
   } else {
+    topicAggregator ! ReportingData(topic)
     val settings = new Aggregator.Settings(context.system)
     Some(scheduler.schedule(settings.AggregatorReportingInterval, settings.AggregatorReportingInterval, self, ReportingTick))
-  }
-
-  private def notifyTopicCreated() {
-    topicAggregator ! ReportingData(topic)
-    topic match {
-      case TopicEventSource =>
-      case x                => region ! TopicCreated(TopicEventSource, x)
-    }
   }
 
   override def postStop(): Unit = {
@@ -274,7 +246,7 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
 
       insertSubscription(group, queue)
       sender() ! SubscribeAck(x)
-      log.info("{} successfully subscribed to topic [{}] under group [{}]", queue, topic, group)
+      log.info("{} successfully subscribed to topic(me) [{}] under group [{}]", queue, topic, group)
 
     case x @ Unsubscribe(topic, group, queue) =>
       val topic1 = topic match {
@@ -284,21 +256,13 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
 
       removeSubscription(group, queue)
       sender() ! UnsubscribeAck(x)
-      log.info("{} successfully unsubscribed to topic [{}] under group [{}]", queue, topic, group)
+      log.info("{} successfully unsubscribed to topic(me) [{}] under group [{}]", queue, topic, group)
 
     case Publish(topic, msg, _) => deliverMessage(msg)
 
     case ReportingTick          => topicAggregator ! ReportingData(topic)
 
-    case x: TopicCreated        => deliverMessage(x)
-
-    case AskTopic =>
-      sender() ! TopicName(topic)
-    //case AskTopics =>
-    //mediator ! SendToAll(shardPath(context.system), AskTopic)
-    //context.actorOf(TopicsAggregatorOnPull.props(sender(), 5.seconds))
-
-    case Terminated(ref) => removeSubscription(ref)
+    case Terminated(ref)        => removeSubscription(ref)
   }
 
   def deliverMessage(x: Any) {

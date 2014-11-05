@@ -7,7 +7,6 @@ import akka.actor.Address
 import akka.actor.ExtendedActorSystem
 import akka.actor.PoisonPill
 import akka.actor.Props
-import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSingletonManager
 import akka.event.EventStream
 import akka.remote.DefaultFailureDetectorRegistry
@@ -31,7 +30,7 @@ object Aggregator {
     Props(classOf[Aggregator], groupRoutingLogic, failureDetector, unreachableReaperInterval)
 
   final case class ReportingData(data: Any)
-  final case class Awailable(address: Address, report: Any)
+  final case class Available(address: Address, report: Any)
   final case class Unreachable(address: Address, report: Any)
 
   case object Stats
@@ -107,7 +106,6 @@ class Aggregator(
   import context.dispatcher
 
   log.info("aggregator [{}] started", topic)
-  ClusterReceptionistExtension(context.system).registerService(self)
 
   val unreachableReaperTask = scheduler.schedule(unreachableReaperInterval, unreachableReaperInterval, self, ReapUnreachableTick)
   var reportingEntries: Map[Address, Any] = Map.empty
@@ -128,14 +126,14 @@ class Aggregator(
     val from = sender().path.address
 
     if (failureDetector.isMonitoring(from)) {
-      log.info("Received reporting data from [{}]", from)
+      log.debug("Received reporting data from [{}]", from)
     } else {
-      log.info("Received first reporting data from [{}]", from)
+      log.debug("Received first reporting data from [{}]", from)
     }
 
     failureDetector.heartbeat(from)
     if (!reportingEntries.contains(from)) {
-      deliverMessage(Awailable(from, data))
+      deliverMessage(Available(from, data))
     }
     reportingEntries = reportingEntries.updated(from, data)
   }

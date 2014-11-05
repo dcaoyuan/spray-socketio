@@ -59,10 +59,10 @@ object SocketIOTestClusterServer extends App {
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
-      implicit val system = socketioSystem(config)
+      val system = socketioSystem(config)
       Persistence(system)
 
-      Aggregator.startAggregator(system, Topic.TopicAggregator, role = Some("topic"))
+      Topic.startTopicAggregator(system, role = Some("topic"))
       Topic.startSharding(system, None)
       ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps))
 
@@ -74,11 +74,12 @@ object SocketIOTestClusterServer extends App {
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
-      implicit val system = socketioSystem(config)
+      val system = socketioSystem(config)
       Persistence(system)
 
-      val socketioExt = SocketIOExtension(system)
-      Topic.startSharding(system, Some(socketioExt.topicProps))
+      Topic.startTopicAggregator(system, Some("topic"))
+      Topic.startTopicAggregatorProxy(system, Some("topic"))
+      Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
 
     case "transport" :: tail =>
       val extraCfg =

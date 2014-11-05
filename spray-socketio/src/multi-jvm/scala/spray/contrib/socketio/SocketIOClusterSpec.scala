@@ -222,13 +222,16 @@ object SocketIOClusterSpec {
     }
   }
 
-  class TopicEventSourceReceiver(probe: ActorRef) extends ActorSubscriber with ActorLogging {
+  class TopicAggregatorReceiver(probe: ActorRef) extends ActorSubscriber with ActorLogging {
     override val requestStrategy = WatermarkRequestStrategy(10)
     def receive = {
-      case OnNext(value : Topic.TopicCreated) =>
+      case OnNext(value : Aggregator.Available) =>
         log.info("Got {}", value)
         probe ! value
-      case OnNext(value) =>
+      case OnNext(value : Aggregator.Unreachable) =>
+        log.info("Got {}", value)
+        probe ! value
+       case OnNext(value) =>
         println("observed: " + value)
     }
   }
@@ -282,8 +285,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
       runOn(session1)   { cluster join node(session1).address }
       runOn(session2)   { cluster join node(session1).address }
-      runOn(topic1) { cluster join node(session1).address }
-      runOn(topic2) { cluster join node(session1).address }
+      runOn(topic1)     { cluster join node(session1).address }
+      runOn(topic2)     { cluster join node(session1).address }
       runOn(transport1) { cluster join node(session1).address }
       runOn(transport2) { cluster join node(session1).address }
 
@@ -303,11 +306,11 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "start cluster sevices" in within(30.seconds) {
 
-      // The first started node should start all sharding sevices and singletonManager with corresponding role,
-      // no matter it starts this sharding/singleton as entries or proxy.
-      // Since the sharding's singleton/coordinator will locate to oldest member.
+      // The first started node should start all sharding sevices and singleton manager with
+      // corresponding role, no matter it starts these sharding/singleton as entry or proxy.
+      // The sharding's singleton/coordinator will be located to the oldest member.
       runOn(session1, session2) {
-        Aggregator.startAggregator(system, Topic.TopicAggregator, role = Some("topic"))
+        Topic.startTopicAggregator(system, role = Some("topic"))
         Topic.startSharding(system, None) 
         ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
       }
@@ -315,7 +318,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(topic1, topic2) {
         Thread.sleep(5000)
 
-        Aggregator.startAggregator(system, Topic.TopicAggregator, role = Some("topic"))
+        Topic.startTopicAggregator(system, role = Some("topic"))
+        Topic.startTopicAggregatorProxy(system, role = Some("topic"))
         Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
       }
 
@@ -350,8 +354,10 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         topicRegion ! Identify(None) 
         expectMsgType[ActorIdentity]
 
+        Topic.startTopicAggregatorProxy(system, Some("topic"))
+        val topicAggregatorProxy = Topic(system).topicAggregatorProxy
         val queue = system.actorOf(Queue.props())
-        topicRegion ! Subscribe(Topic.TopicEventSource, None, queue)
+        topicAggregatorProxy ! Subscribe(Topic.TopicEmpty, None, queue)
         expectMsgType[SubscribeAck]
       }
 
@@ -370,19 +376,23 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "start business sevices" in within(30.seconds) {
 
       runOn(business1, business2) {
-        val nsqueue = system.actorOf(Queue.props())
-        val nsreceiver = system.actorOf(Props(new TopicEventSourceReceiver(self)))
-        ActorPublisher(nsqueue).subscribe(ActorSubscriber(nsreceiver))
-
         val socketioExt = SocketIOExtension(system)
+
+        val topicAggregatorClient = Topic(system).topicAggregatorClient
+
+        val topicsqueue = system.actorOf(Queue.props())
+        val topicsreceiver = system.actorOf(Props(new TopicAggregatorReceiver(self)))
+        ActorPublisher(topicsqueue).subscribe(ActorSubscriber(topicsreceiver))
+
+        topicAggregatorClient ! Subscribe(Topic.TopicEmpty, None, topicsqueue)
+        expectMsgType[SubscribeAck]
 
         val queue = system.actorOf(Queue.props())
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-        socketioExt.topicClient ! Subscribe(Topic.TopicEventSource, nsqueue)
         socketioExt.topicClient ! Subscribe(Topic.TopicEmpty, Some("group1"), queue)
-        expectMsgAnyClassOf(classOf[Topic.TopicCreated], classOf[SubscribeAck], classOf[SubscribeAck])
+        expectMsgAnyClassOf(classOf[Aggregator.Available], classOf[SubscribeAck], classOf[SubscribeAck])
       }
 
       runOn(business3) {

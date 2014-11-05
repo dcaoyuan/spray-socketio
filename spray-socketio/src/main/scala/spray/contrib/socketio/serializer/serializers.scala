@@ -12,7 +12,6 @@ import spray.can.websocket.frame.{ FrameParser, FrameRender, Frame }
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionSession
 import spray.contrib.socketio.ConnectionContext
-import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.{ DataPacket, Packet, PacketParser, ConnectPacket, DisconnectPacket, MessagePacket, JsonPacket, EventPacket, NoopPacket }
 import spray.contrib.socketio.transport
 import spray.contrib.socketio.transport.Transport
@@ -613,101 +612,6 @@ class StatusSerializer extends Serializer {
 
     ConnectionSession.Status(sessionId, connectionTime, location)
   }
-}
-
-class TopicEventSerializer(val system: ExtendedActorSystem) extends Serializer {
-  implicit val byteOrder = ByteOrder.BIG_ENDIAN
-
-  final def includeManifest: Boolean = true
-
-  final def identifier: Int = 2007
-
-  private val fromBinaryMap = collection.immutable.HashMap[Class[_ <: Topic.Event], Array[Byte] => AnyRef](
-    classOf[Topic.TopicCreated] -> (bytes => toTopicCreated(bytes)))
-  //classOf[Topic.Unsubscribe] -> (bytes => toUnsubscribe(bytes)),
-  //classOf[Topic.SubscribeAck] -> (bytes => toSubscribeAck(bytes)),
-  //classOf[Topic.UnsubscribeAck] -> (bytes => toUnsubscribeAck(bytes)))
-
-  final def toBinary(o: AnyRef): Array[Byte] = {
-    o match {
-      case cmd: Topic.TopicCreated => fromTopicCreated(cmd)
-      //case cmd: Topic.Unsubscribe    => fromUnsubscribe(cmd)
-      //case cmd: Topic.SubscribeAck   => fromSubscribeAck(cmd)
-      //case cmd: Topic.UnsubscribeAck => fromUnsubscribeAck(cmd)
-    }
-  }
-
-  final def fromBinary(bytes: Array[Byte], manifest: Option[Class[_]]): AnyRef = {
-    manifest match {
-      case Some(clazz) => fromBinaryMap.get(clazz.asInstanceOf[Class[Topic.Event]]) match {
-        case Some(f) => f(bytes)
-        case None    => throw new IllegalArgumentException(s"Unimplemented deserialization of message class $clazz in TopicEventSerializer")
-      }
-      case _ => throw new IllegalArgumentException("Need a event message class to be able to deserialize bytes in TopicEventSerializer")
-    }
-  }
-
-  final def fromTopicCreated(cmd: Topic.TopicCreated) = {
-    val builder = ByteString.newBuilder
-
-    StringSerializer.appendToBuilder(builder, cmd.topic)
-    StringSerializer.appendToBuilder(builder, cmd.createdTopic)
-
-    builder.result.toArray
-  }
-
-  final def toTopicCreated(bytes: Array[Byte]) = {
-    val data = ByteString(bytes).iterator
-
-    val topic = StringSerializer.fromByteIterator(data)
-    val createdTopic = StringSerializer.fromByteIterator(data)
-
-    Topic.TopicCreated(topic, createdTopic)
-  }
-
-  //  final def fromUnsubscribe(cmd: Topic.Unsubscribe) = {
-  //    val builder = ByteString.newBuilder
-  //
-  //    StringSerializer.appendToBuilder(builder, cmd.endpoint)
-  //    cmd.queues match {
-  //      case Some(ref) =>
-  //        builder.putByte(0x00)
-  //        StringSerializer.appendToBuilder(builder, Serialization.serializedActorPath(ref))
-  //      case None =>
-  //        builder.putByte(0x01)
-  //    }
-  //
-  //    builder.result.toArray
-  //  }
-  //
-  //  final def toUnsubscribe(bytes: Array[Byte]) = {
-  //    val data = ByteString(bytes).iterator
-  //
-  //    val endpoint = StringSerializer.fromByteIterator(data)
-  //    val queues = data.getByte match {
-  //      case 0x00 => Some(system.provider.resolveActorRef(StringSerializer.fromByteIterator(data)))
-  //      case 0x01 => None
-  //    }
-  //
-  //    Topic.Unsubscribe(endpoint, queues)
-  //  }
-  //
-  //  final def fromSubscribeAck(cmd: Topic.SubscribeAck) = {
-  //    fromSubscribe(cmd.subscribe)
-  //  }
-  //
-  //  final def toSubscribeAck(bytes: Array[Byte]) = {
-  //    Topic.SubscribeAck(toSubscribe(bytes))
-  //  }
-  //
-  //  final def fromUnsubscribeAck(cmd: Topic.UnsubscribeAck) = {
-  //    fromUnsubscribe(cmd.unsubscribe)
-  //  }
-  //
-  //  final def toUnsubscribeAck(bytes: Array[Byte]) = {
-  //    Topic.UnsubscribeAck(toUnsubscribe(bytes))
-  //  }
-
 }
 
 class OnPacketSerializer extends Serializer {

@@ -80,7 +80,7 @@ object Topic {
   /**
    * topic cannot be "", which will be sent via DistributedPubSubMediator -- Singleton Proxy or Cluster Client
    */
-  val TopicEmpty = "global-topic-empty"
+  val EMPTY = "global-topic-empty"
 
   private case object ReportingTick
 
@@ -176,10 +176,7 @@ object Topic {
    */
   class ClusterClientBroker(servicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
     def receive = {
-      case x: Subscribe      => originalClient forward ClusterClient.Send(servicePath, x, false)
-      case x: Unsubscribe    => originalClient forward ClusterClient.Send(servicePath, x, false)
-      case x: SubscribeAck   => originalClient forward ClusterClient.Send(servicePath, x, false)
-      case x: UnsubscribeAck => originalClient forward ClusterClient.Send(servicePath, x, false)
+      case x => originalClient forward ClusterClient.Send(servicePath, x, false)
     }
   }
 
@@ -240,8 +237,8 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
   def processMessage: Receive = {
     case x @ Subscribe(topic, group, queue) =>
       val topic1 = topic match {
-        case TopicEmpty => ""
-        case x          => x
+        case EMPTY => ""
+        case x     => x
       }
 
       insertSubscription(group, queue)
@@ -250,8 +247,8 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
 
     case x @ Unsubscribe(topic, group, queue) =>
       val topic1 = topic match {
-        case TopicEmpty => ""
-        case x          => x
+        case EMPTY => ""
+        case x     => x
       }
 
       removeSubscription(group, queue)

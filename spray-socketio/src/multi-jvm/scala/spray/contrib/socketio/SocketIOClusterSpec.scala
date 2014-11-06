@@ -357,7 +357,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         Topic.startTopicAggregatorProxy(system, Some("topic"))
         val topicAggregatorProxy = Topic(system).topicAggregatorProxy
         val queue = system.actorOf(Queue.props())
-        topicAggregatorProxy ! Subscribe(Topic.TopicEmpty, None, queue)
+        topicAggregatorProxy ! Subscribe(Topic.EMPTY, None, queue)
         expectMsgType[SubscribeAck]
       }
 
@@ -384,15 +384,21 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val topicsreceiver = system.actorOf(Props(new TopicAggregatorReceiver(self)))
         ActorPublisher(topicsqueue).subscribe(ActorSubscriber(topicsreceiver))
 
-        topicAggregatorClient ! Subscribe(Topic.TopicEmpty, None, topicsqueue)
+        topicAggregatorClient ! Subscribe(Topic.EMPTY, None, topicsqueue)
         expectMsgType[SubscribeAck]
 
         val queue = system.actorOf(Queue.props())
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-        socketioExt.topicClient ! Subscribe(Topic.TopicEmpty, Some("group1"), queue)
-        expectMsgAnyClassOf(classOf[Aggregator.Available], classOf[SubscribeAck], classOf[SubscribeAck])
+        socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group1"), queue)
+        expectMsgAllClassOf(classOf[Aggregator.Available], classOf[SubscribeAck])
+
+        topicAggregatorClient ! Aggregator.AskStats
+        expectMsgPF(5.seconds) {
+          case Aggregator.Stats(xs) if xs.values.toList == List(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
+          case x => log.error("Wrong aggregator topics: {}", x); assert(false)
+        }
       }
 
       runOn(business3) {
@@ -402,7 +408,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-        socketioExt.topicClient ! Subscribe(Topic.TopicEmpty, Some("group2"), queue)
+        socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group2"), queue)
         expectMsgType[SubscribeAck]
 
         queueOfBusiness3 = queue
@@ -410,37 +416,6 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
       enterBarrier("started-business")
     }
-
-    /*
-     "broadcast subscribers" in within(25.seconds) {
-     runOn(session1) {
-     val client = self
-     system.actorOf(Props(new Actor {
-     override def receive: Receive = {
-     case seq: Seq[_] => client ! seq.toSet
-     }
-     }), name="test")
-     }
-
-     runOn(session2) {
-     akka://SocketIOClusterSpec/user/distributedPubSubMediator
-     val subscriptions = Await.result(system.actorSelection(node(session2).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
-     log.info("subscriptions: " + subscriptions.toString)
-     import system.dispatcher
-     system.actorSelection(node(session1).toSerializationFormat + "user/test").resolveOne()(5 seconds).onSuccess {
-     case actor => actor ! subscriptions.subscriptions
-     }
-     }
-
-     runOn(session1) {
-     val subscriptions = Await.result(system.actorSelection(node(session1).toSerializationFormat + "user/" + SocketIOExtension.mediatorName).ask(GetSubscriptions)(5 seconds).mapTo[GetSubscriptionsAck], Duration.Inf)
-     log.info("subscriptions: " + subscriptions.toString)
-     expectMsg(subscriptions.subscriptions.toSet)
-     }
-
-     enterBarrier("broadcast-subscribers")
-     }
-     */
 
     "chat between client1 and server1" in within(30.seconds) {
       runOn(client1) {
@@ -463,7 +438,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(business3) {
         enterBarrier("two-groups-tested")
         val socketioExt = SocketIOExtension(system)
-        socketioExt.topicClient ! Unsubscribe(Topic.TopicEmpty, Some("group2"), queueOfBusiness3)
+        socketioExt.topicClient ! Unsubscribe(Topic.EMPTY, Some("group2"), queueOfBusiness3)
         expectMsgType[UnsubscribeAck]
         enterBarrier("one-group")
       }

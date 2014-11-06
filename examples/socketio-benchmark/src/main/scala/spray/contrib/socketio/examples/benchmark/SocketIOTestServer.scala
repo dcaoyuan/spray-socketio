@@ -110,7 +110,7 @@ object SocketIOTestServer extends App {
   val receiver = system.actorOf(Props(new Receiver))
   ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
 
-  socketioExt.topicClient ! Subscribe(Topic.TopicEmpty, None, queue)
+  socketioExt.topicClient ! Subscribe(Topic.EMPTY, None, queue)
 
   val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
 

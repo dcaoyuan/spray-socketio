@@ -50,7 +50,7 @@ package object socketio {
   /**
    * The topic used only by socketio endpoint actor. @Note __not for connections and broadcast__.
    */
-  def topicForEndpoint(topic: String) = if (topic == "") Topic.TopicEmpty else topic
+  def topicForEndpoint(topic: String) = if (topic == "") Topic.EMPTY else topic
 
   val topicForDisconnect = "socketio-disconnect"
 

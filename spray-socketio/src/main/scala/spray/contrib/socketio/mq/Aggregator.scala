@@ -33,7 +33,7 @@ object Aggregator {
   final case class Available(address: Address, report: Any)
   final case class Unreachable(address: Address, report: Any)
 
-  case object Stats
+  case object AskStats
   final case class Stats[T](reportingData: Map[Address, T])
 
   // sent to self only
@@ -116,10 +116,12 @@ class Aggregator(
     unreachableReaperTask.cancel()
   }
 
-  override def receive = processMessage orElse {
+  override def receive = processMessage orElse processReporting
+
+  def processReporting: Receive = {
     case ReportingData(data: Any) => receiveReportingData(data)
     case ReapUnreachableTick      => reapUnreachable()
-    case Stats                    => sender() ! Stats(reportingEntries)
+    case AskStats                 => sender() ! Stats(reportingEntries)
   }
 
   def receiveReportingData(data: Any): Unit = {

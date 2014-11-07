@@ -34,7 +34,7 @@ object Aggregator {
   final case class Unreachable(address: Address, report: Any)
 
   case object AskStats
-  final case class Stats[T](reportingData: Map[Address, T])
+  final case class Stats(reportingData: Map[Address, Any])
 
   // sent to self only
   private case object ReapUnreachableTick

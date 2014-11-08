@@ -5,7 +5,6 @@ import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.actor.ActorSystem
 import akka.actor.Props
-import akka.actor.Terminated
 import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
@@ -13,12 +12,10 @@ import akka.contrib.pattern.ClusterSingletonProxy
 import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck }
 import akka.contrib.pattern.ShardRegion
 import akka.pattern.ask
-import akka.routing.ActorRefRoutee
 import akka.routing.Router
 import akka.routing.RoutingLogic
 import scala.concurrent.duration._
 import spray.contrib.socketio
-import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.mq.Aggregator.ReportingData
 
 /**
@@ -204,19 +201,13 @@ object Topic {
 /**
  * Topic is refered to endpoint for observers
  */
-class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
+class Topic(groupRoutingLogic: RoutingLogic) extends Publishable with Actor with ActorLogging {
   import Topic._
   import context.dispatcher
 
   val groupRouter = Router(groupRoutingLogic)
 
-  var queues = Set[ActorRef]() // ActorRef of queue 
-  var groupToQueues: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
-
-  def scheduler = context.system.scheduler
-  def topic = self.path.name
   def isAggregator = false
-  private def region = SocketIOExtension(context.system).topicRegion
   private def topicAggregator = Topic(context.system).topicAggregatorProxy
 
   val reportingTask = if (isAggregator) {
@@ -224,7 +215,7 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
   } else {
     topicAggregator ! ReportingData(topic)
     val settings = new Aggregator.Settings(context.system)
-    Some(scheduler.schedule(settings.AggregatorReportingInterval, settings.AggregatorReportingInterval, self, ReportingTick))
+    Some(context.system.scheduler.schedule(settings.AggregatorReportingInterval, settings.AggregatorReportingInterval, self, ReportingTick))
   }
 
   override def postStop(): Unit = {
@@ -232,70 +223,10 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Actor with ActorLogging {
     reportingTask foreach { _.cancel }
   }
 
-  def receive: Receive = processMessage
+  def receive: Receive = processMessage orElse processReportingTick
 
-  def processMessage: Receive = {
-    case x @ Subscribe(topic, group, queue) =>
-      val topic1 = topic match {
-        case EMPTY => ""
-        case x     => x
-      }
-
-      insertSubscription(group, queue)
-      sender() ! SubscribeAck(x)
-      log.info("{} successfully subscribed to topic(me) [{}] under group [{}]", queue, topic, group)
-
-    case x @ Unsubscribe(topic, group, queue) =>
-      val topic1 = topic match {
-        case EMPTY => ""
-        case x     => x
-      }
-
-      removeSubscription(group, queue)
-      sender() ! UnsubscribeAck(x)
-      log.info("{} successfully unsubscribed to topic(me) [{}] under group [{}]", queue, topic, group)
-
-    case Publish(topic, msg, _) => deliverMessage(msg)
-
-    case ReportingTick          => topicAggregator ! ReportingData(topic)
-
-    case Terminated(ref)        => removeSubscription(ref)
+  def processReportingTick: Receive = {
+    case ReportingTick => topicAggregator ! ReportingData(topic)
   }
-
-  def deliverMessage(x: Any) {
-    groupToQueues foreach {
-      case (None, queues) => queues foreach (_.ref ! x)
-      case (_, queues)    => groupRouter.withRoutees(queues.toVector).route(x, self)
-    }
-  }
-
-  def existsQueue(queue: ActorRef) = {
-    groupToQueues exists { case (group, queues) => queues.contains(ActorRefRoutee(queue)) }
-  }
-
-  def insertSubscription(group: Option[String], queue: ActorRef) {
-    if (!queues.contains(queue)) {
-      context watch queue
-      queues += queue
-    }
-    groupToQueues = groupToQueues.updated(group, groupToQueues(group) + ActorRefRoutee(queue))
-  }
-
-  def removeSubscription(group: Option[String], queue: ActorRef) {
-    if (!existsQueue(queue)) {
-      context unwatch queue
-      queues -= queue
-    }
-    groupToQueues = groupToQueues.updated(group, groupToQueues(group) - ActorRefRoutee(queue))
-  }
-
-  def removeSubscription(queue: ActorRef) {
-    context unwatch queue
-    queues -= queue
-    groupToQueues = for {
-      (group, queues) <- groupToQueues
-    } yield (group -> (queues - ActorRefRoutee(queue)))
-  }
-
 }
 

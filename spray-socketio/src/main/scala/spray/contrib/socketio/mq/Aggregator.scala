@@ -107,7 +107,7 @@ class Aggregator(
 
   log.info("aggregator [{}] started", topic)
 
-  val unreachableReaperTask = scheduler.schedule(unreachableReaperInterval, unreachableReaperInterval, self, ReapUnreachableTick)
+  val unreachableReaperTask = context.system.scheduler.schedule(unreachableReaperInterval, unreachableReaperInterval, self, ReapUnreachableTick)
   var reportingEntries: Map[Address, Any] = Map.empty
 
   override def isAggregator = true

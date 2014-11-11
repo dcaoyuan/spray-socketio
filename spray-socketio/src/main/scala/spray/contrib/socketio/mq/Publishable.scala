@@ -31,12 +31,12 @@ trait Publishable { _: Actor =>
       sender() ! UnsubscribeAck(x)
       log.info("{} successfully unsubscribed to topic(me) [{}] under group [{}]", queue, topic, group)
 
-    case Publish(topic, msg, _) => deliverMessage(msg)
+    case Publish(topic, msg, _) => publish(msg)
 
     case Terminated(ref)        => removeSubscription(ref)
   }
 
-  def deliverMessage(x: Any) {
+  def publish(x: Any) {
     groupToQueues foreach {
       case (None, queues) => queues foreach (_.ref ! x)
       case (_, queues)    => groupRouter.withRoutees(queues.toVector).route(x, self)

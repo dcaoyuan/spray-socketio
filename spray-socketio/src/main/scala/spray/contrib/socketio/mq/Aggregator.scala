@@ -135,7 +135,7 @@ class Aggregator(
 
     failureDetector.heartbeat(from)
     if (!reportingEntries.contains(from)) {
-      deliverMessage(Available(from, data))
+      publish(Available(from, data))
     }
     reportingEntries = reportingEntries.updated(from, data)
   }
@@ -145,7 +145,7 @@ class Aggregator(
     unreachable foreach {
       case (a, data) =>
         log.warning("Detected unreachable: [{}]", a)
-        deliverMessage(Unreachable(a, data))
+        publish(Unreachable(a, data))
         failureDetector.remove(a)
     }
     reportingEntries = reachable

@@ -116,9 +116,9 @@ class Aggregator(
     unreachableReaperTask.cancel()
   }
 
-  override def receive = processMessage orElse processReporting
+  override def receive = publishableBehavior orElse reportingBehavior
 
-  def processReporting: Receive = {
+  def reportingBehavior: Receive = {
     case ReportingData(data: Any) => receiveReportingData(data)
     case ReapUnreachableTick      => reapUnreachable()
     case AskStats                 => sender() ! Stats(reportingEntries)

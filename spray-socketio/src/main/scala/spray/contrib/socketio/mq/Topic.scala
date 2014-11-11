@@ -223,9 +223,9 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Publishable with Actor with
     reportingTask foreach { _.cancel }
   }
 
-  def receive: Receive = processMessage orElse processReportingTick
+  def receive: Receive = publishableBehavior orElse reportingTickiBehavior
 
-  def processReportingTick: Receive = {
+  def reportingTickiBehavior: Receive = {
     case ReportingTick => topicAggregator ! ReportingData(topic)
   }
 }

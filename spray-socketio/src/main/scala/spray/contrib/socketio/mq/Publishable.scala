@@ -20,7 +20,7 @@ trait Publishable { _: Actor =>
 
   def topic = self.path.name
 
-  def processMessage: Receive = {
+  def publishableBehavior: Receive = {
     case x @ Subscribe(topic, group, queue) =>
       insertSubscription(group, queue)
       sender() ! SubscribeAck(x)

@@ -9,7 +9,6 @@ import akka.pattern.ask
 import akka.routing.ActorRefRoutee
 import akka.routing.Router
 import scala.concurrent.duration._
-import spray.contrib.socketio
 
 trait Publishable { _: Actor =>
 

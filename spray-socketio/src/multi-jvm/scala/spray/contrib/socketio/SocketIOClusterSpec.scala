@@ -357,7 +357,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         Topic.startTopicAggregatorProxy(system, Some("topic"))
         val topicAggregatorProxy = Topic(system).topicAggregatorProxy
         val queue = system.actorOf(Queue.props())
-        topicAggregatorProxy ! Subscribe(Topic.EMPTY, None, queue)
+        topicAggregatorProxy ! Subscribe(Topic.EMPTY, queue)
         expectMsgType[SubscribeAck]
       }
 
@@ -384,7 +384,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val topicsreceiver = system.actorOf(Props(new TopicAggregatorReceiver(self)))
         ActorPublisher(topicsqueue).subscribe(ActorSubscriber(topicsreceiver))
 
-        topicAggregatorClient ! Subscribe(Topic.EMPTY, None, topicsqueue)
+        topicAggregatorClient ! Subscribe(Topic.EMPTY, topicsqueue)
         expectMsgType[SubscribeAck]
 
         val queue = system.actorOf(Queue.props())

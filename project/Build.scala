@@ -149,7 +149,7 @@ object Dependencies {
   val spray_json = "io.spray" %% "spray-json" % "1.2.6" 
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
   val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
-  val akka_stream = "com.typesafe.akka" %% "akka-stream-experimental" % "0.7"
+  val akka_stream = "com.typesafe.akka" %% "akka-stream-experimental" % "0.9"
   val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.6"
   val parboiled2 = "org.parboiled" %% "parboiled" % "2.0-M2" //changing ()
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % "test"

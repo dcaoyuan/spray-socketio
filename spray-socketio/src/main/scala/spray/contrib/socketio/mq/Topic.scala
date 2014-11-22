@@ -123,7 +123,7 @@ object Topic {
   }
 
   val TopicAggregator = "aggregator-topic"
-  val TopicAggregatorPath = "/user/" + Aggregator.singletonManagerNameForTopic(TopicAggregator) + "/" + TopicAggregator
+  val TopicAggregatorPath = "/user/" + Aggregator.singletonManagerNameForAggregate(TopicAggregator) + "/" + TopicAggregator
   val TopicAggregatorProxyName = "topicAggregatorProxy"
   val TopicAggregatorProxyPath = "/user/" + TopicAggregatorProxyName
 

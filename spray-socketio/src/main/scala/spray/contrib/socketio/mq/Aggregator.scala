@@ -75,24 +75,26 @@ object Aggregator {
   }
 
   /**
-   * name of ClusterSingletonManager actor could not be dulicated in one actor system.
+   * name of ClusterSingletonManager actor could not be duplicated in one actor system.
    */
-  def singletonManagerNameForTopic(topic: String) = "aggregatorSingleton-" + topic
+  def singletonManagerNameForAggregate(topic: String) = "aggregatorSingleton-" + topic
   /**
    * All nodes has this role should start this singleton manager, or at least, the
    * oldest/first node should start.
+   *
+   * The path of singleton will be "/user/singletonManagerName/aggregatorTopic"
    */
-  def startAggregator(system: ActorSystem, topic: String, role: Option[String]): Unit = {
+  def startAggregator(system: ActorSystem, aggregateTopic: String, role: Option[String]): Unit = {
     val settings = new Settings(system)
     val failureDetector = createAggreratorFailureDetector(system)
-    val managerName = singletonManagerNameForTopic(topic)
-    val ref = system.actorOf(
+
+    system.actorOf(
       ClusterSingletonManager.props(
         singletonProps = props(settings.groupRoutingLogic, failureDetector, settings.AggregatorUnreachableReaperInterval),
-        singletonName = topic,
+        singletonName = aggregateTopic,
         terminationMessage = PoisonPill,
         role = role),
-      name = managerName)
+      name = singletonManagerNameForAggregate(aggregateTopic))
   }
 
 }

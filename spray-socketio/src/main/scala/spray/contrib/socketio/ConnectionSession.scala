@@ -436,7 +436,7 @@ trait ConnectionSession { _: Actor =>
               sendPacket(packet)
             }
           case Failure(ex) =>
-            log.warning("Failed to subscribe to medietor on topic {}: {}", topic, ex.getMessage)
+            log.warning("Failed to subscribe to {} on topic [{}]: {}", mediator, topic, ex.getMessage)
         }
 
       case DisconnectPacket(endpoint) =>

@@ -45,8 +45,8 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
   val controller = role("controller")
 
-  val topic1 = role("topic1")
-  val topic2 = role("topic2")
+  val topic1     = role("topic1")
+  val topic2     = role("topic2")
   val transport1 = role("transport1")
   val transport2 = role("transport2")
   val session1   = role("session1")
@@ -77,19 +77,11 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       spray.socketio.mode = "cluster"
     """))
 
-  nodeConfig(topic1) {
+  nodeConfig(topic1, topic2) {
     ConfigFactory.parseString(
       """
         akka.contrib.cluster.sharding.role = "topic"
-        akka.cluster.roles = ["stateful", "topic"]
-      """)
-  }
-
-  nodeConfig(topic2) {
-    ConfigFactory.parseString(
-      """
-        akka.contrib.cluster.sharding.role = "topic"
-        akka.cluster.roles = ["stateful", "topic"]
+        akka.cluster.roles = ["topic"]
       """)
   }
 
@@ -98,7 +90,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """
         akka.remote.netty.tcp.port = 2551
         akka.contrib.cluster.sharding.role = "session"
-        akka.cluster.roles = ["stateful", "session", "topic"]
+        akka.cluster.roles = ["session"]
       """)
   }
 
@@ -106,7 +98,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString(
       """
         akka.contrib.cluster.sharding.role = "session"
-        akka.cluster.roles = ["stateful", "session", "topic"]
+        akka.cluster.roles = ["session"]
       """)
   }
 
@@ -283,7 +275,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
       val cluster = Cluster(system)
 
-      runOn(session1)   { cluster join node(session1).address }
+      runOn(session1)   { cluster join node(session1).address } // start session1 first, since it's the seed node
       runOn(session2)   { cluster join node(session1).address }
       runOn(topic1)     { cluster join node(session1).address }
       runOn(topic2)     { cluster join node(session1).address }
@@ -309,21 +301,27 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       // The first started node should start all sharding sevices and singleton manager with
       // corresponding role, no matter it starts these sharding/singleton as entry or proxy.
       // The sharding's singleton/coordinator will be located to the oldest member.
-      runOn(session1, session2) {
+
+      runOn(topic1, topic2) {
         Topic.startTopicAggregator(system, role = Some("topic"))
+        // should start the proxy too, since topics should report to topicAggregator via this proxy
+        Topic.startTopicAggregatorProxy(system, role = Some("topic")) 
+        Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
+
+        enterBarrier("started-topicAggregatorSingleton")
+      }
+
+      runOn(session1, session2) {
+        enterBarrier("started-topicAggregatorSingleton")
+        // it seems we have to wait for a while for topic sharding, even there has been aleady the above barrier.
+        Thread.sleep(5000) 
+
         Topic.startSharding(system, None) 
         ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
       }
 
-      runOn(topic1, topic2) {
-        Thread.sleep(5000)
-
-        Topic.startTopicAggregator(system, role = Some("topic"))
-        Topic.startTopicAggregatorProxy(system, role = Some("topic"))
-        Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
-      }
-
       runOn(transport1) {
+        enterBarrier("started-topicAggregatorSingleton")
         Thread.sleep(10000)
 
         ConnectionSession.startSharding(system, None) 
@@ -334,6 +332,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(transport2) {
+        enterBarrier("started-topicAggregatorSingleton")
         Thread.sleep(10000)
 
         ConnectionSession.startSharding(system, None) 
@@ -343,25 +342,32 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         expectMsgType[Tcp.Bound]
       }
 
+      runOn(controller, business1, business2, business3, client1, client2) {
+        enterBarrier("started-topicAggregatorSingleton")
+      }
       enterBarrier("started-cluster-services")
     }
 
     "verify cluster sevices" in within(30.seconds) {
 
-      runOn(session1) {
-        val topicRegion = Topic.shardRegion(system)
-        log.info("topicRegion: {}", topicRegion)
-        topicRegion ! Identify(None) 
-        expectMsgType[ActorIdentity]
-
-        Topic.startTopicAggregatorProxy(system, Some("topic"))
-        val topicAggregatorProxy = Topic(system).topicAggregatorProxy
+      runOn(topic1, topic2) {
+        // verify that topicAggregator is accessible
+        def topicAggregatorProxy = Topic(system).topicAggregatorProxy
         val queue = system.actorOf(Queue.props())
         topicAggregatorProxy ! Subscribe(Topic.EMPTY, queue)
         expectMsgType[SubscribeAck]
       }
 
-     runOn(transport1) {
+      runOn(session1, session2) {
+        // verify that topicRegion is accessible
+        def topicRegion = Topic.shardRegion(system)
+        log.info("topicRegion: {}", topicRegion)
+        topicRegion ! Identify(None) 
+        expectMsgType[ActorIdentity]
+     }
+
+     runOn(transport1, transport2) {
+        // verify that sessionRegion is accessible
         def sessionRegion = ConnectionSession.shardRegion(system)
         log.info("sessionRegion: {}", sessionRegion)
         sessionRegion ! ConnectionSession.AskStatus("0")

@@ -33,32 +33,15 @@ import spray.can.server.UHttp
 import spray.contrib.socketio
 import spray.contrib.socketio.ConnectionSession.OnPacket
 import spray.contrib.socketio.ConnectionSession.OnEvent
-import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.OnOpen
-import spray.contrib.socketio.SocketIOClusterSpec.SocketIOClient.SendHello
+import spray.contrib.socketio.SocketIOClusterInOrderSpec.SocketIOClient.OnOpen
+import spray.contrib.socketio.SocketIOClusterInOrderSpec.SocketIOClient.SendHello
 import spray.contrib.socketio.mq.Aggregator
 import spray.contrib.socketio.mq.Queue
 import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.{EventPacket, Packet, MessagePacket}
 import spray.json.{JsArray, JsString}
 
-/**
- * Note:
- * 1. cluster singleton proxy or cluster sharding proxy does not need to contain the corresponding role. 
- *
- * But
- *
- * 2. Start sharding or its proxy will try to create sharding coordinate singleton first, which should 
- *    be created/located at oldest node with corresponding role. 
- * 3. If the sharding coordinate is not be created/located yet, the sharding proxy could not be 
- *    identified the coordinate singleton, which means, if you want to a sharding proxy to work properly 
- *    and without corresponding role contained, you have to wait for the coordinate singleton is ready 
- *    in cluster.
- *
- * Anyway, the first started node should start all sharding sevices and singleton manager with
- * corresponding role, no matter it starts these sharding/singleton as entry or proxy.
- * The sharding's singleton coordinator will be located at the oldest member.
- */
-object SocketIOClusterSpecConfig extends MultiNodeConfig {
+object SocketIOClusterInOrderSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
   val controller = role("controller")
 
@@ -94,16 +77,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       spray.socketio.mode = "cluster"
     """))
 
-  nodeConfig(topic1) {
-    ConfigFactory.parseString(
-      """
-        akka.remote.netty.tcp.port = 2552
-        akka.contrib.cluster.sharding.role = "topic"
-        akka.cluster.roles = ["topic"]
-      """)
-  }
-
-  nodeConfig(topic2) {
+  nodeConfig(topic1, topic2) {
     ConfigFactory.parseString(
       """
         akka.contrib.cluster.sharding.role = "topic"
@@ -116,7 +90,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """
         akka.remote.netty.tcp.port = 2551
         akka.contrib.cluster.sharding.role = "session"
-        akka.cluster.roles = ["session", "topic"]
+        akka.cluster.roles = ["session"]
       """)
   }
 
@@ -124,14 +98,14 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString(
       """
         akka.contrib.cluster.sharding.role = "session"
-        akka.cluster.roles = ["session", "topic"]
+        akka.cluster.roles = ["session"]
       """)
   }
 
   nodeConfig(transport1, transport2) {
     ConfigFactory.parseString(
       """
-        akka.cluster.roles =["transport", "session"]
+        akka.cluster.roles =["transport"]
       """)
   }
 
@@ -140,10 +114,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """
         akka.cluster.roles = ["business"]
         spray.socketio {
-            cluster.client-initial-contacts = [
-                "akka.tcp://SocketIOClusterSpec@localhost:2551/user/receptionist",
-                "akka.tcp://SocketIOClusterSpec@localhost:2552/user/receptionist"
-            ]
+            cluster.client-initial-contacts = ["akka.tcp://SocketIOClusterInOrderSpec@localhost:2551/user/receptionist"]
         }
       """)
 
@@ -151,21 +122,20 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
 
 }
 
-class SocketIOClusterSpecMultiJvmNode1 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode2 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode3 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode4 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode5 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode6 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode7 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode8 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode9 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode10 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode11 extends SocketIOClusterSpec
-class SocketIOClusterSpecMultiJvmNode12 extends SocketIOClusterSpec
+class SocketIOClusterInOrderSpecMultiJvmNode1 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode2 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode3 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode4 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode5 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode6 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode7 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode8 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode9 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode10 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode11 extends SocketIOClusterInOrderSpec
+class SocketIOClusterInOrderSpecMultiJvmNode12 extends SocketIOClusterInOrderSpec
 
-
-object SocketIOClusterSpec {
+object SocketIOClusterInOrderSpec {
 
   class SocketIOServer(probe: ActorRef) extends Actor with ActorLogging {
     def sessionRegion = ConnectionSession.shardRegion(context.system)
@@ -258,10 +228,10 @@ object SocketIOClusterSpec {
   }
 }
 
-class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with STMultiNodeSpec with ImplicitSender {
+class SocketIOClusterInOrderSpec extends MultiNodeSpec(SocketIOClusterInOrderSpecConfig) with STMultiNodeSpec with ImplicitSender {
 
-  import SocketIOClusterSpecConfig._
-  import SocketIOClusterSpec._
+  import SocketIOClusterInOrderSpecConfig._
+  import SocketIOClusterInOrderSpec._
 
   override def initialParticipants: Int = roles.size
 
@@ -300,35 +270,58 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("setup-persistence")
     }
 
-    "start cluster" in within(30.seconds) {
+    "join cluster" in within(30.seconds) {
 
       val cluster = Cluster(system)
-      val seednode = session1
 
-      // start seednode first, since it's the seed node
+      runOn(session1)   { cluster join node(session1).address } // start session1 first, since it's the seed node
+      runOn(session2)   { cluster join node(session1).address }
+      runOn(topic1)     { cluster join node(session1).address }
+      runOn(topic2)     { cluster join node(session1).address }
+      runOn(transport1) { cluster join node(session1).address }
+      runOn(transport2) { cluster join node(session1).address }
 
-      // with roles: session, topic
-      runOn(session1, session2) { 
-        cluster join node(seednode).address 
 
-        Topic.startTopicAggregator(system, role = Some("topic"))
-        Topic.startSharding(system, None) 
-        ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
-      } 
+      runOn(topic1, topic2, session1, session2, transport1, transport2) {
+        awaitAssert {
+          self ! cluster.state.members.filter(_.status == MemberStatus.Up).size  
+          expectMsg(6)
+        }
+        enterBarrier("join-cluster")
+      }
+      
+      runOn(controller, business1, business2, business3, client1, client2) {
+        enterBarrier("join-cluster")
+      }
+    }
 
-      // with roles: topic
-      runOn(topic1, topic2) { 
-        cluster join node(seednode).address 
+    "start cluster sevices" in within(30.seconds) {
 
+      // The first started node should start all sharding sevices and singleton manager with
+      // corresponding role, no matter it starts these sharding/singleton as entry or proxy.
+      // The sharding's singleton/coordinator will be located to the oldest member.
+
+      runOn(topic1, topic2) {
         Topic.startTopicAggregator(system, role = Some("topic"))
         // should start the proxy too, since topics should report to topicAggregator via this proxy
         Topic.startTopicAggregatorProxy(system, role = Some("topic")) 
         Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
+
+        enterBarrier("started-topic")
       }
 
-      // with roles: transport, session
+      runOn(session1, session2) {
+        enterBarrier("started-topic")
+        // it seems we have to wait for a while for topic sharding coordinate ready, even there has been aleady the above barrier.
+        Thread.sleep(5000) 
+
+        Topic.startSharding(system, None) 
+        ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
+      }
+
       runOn(transport1) {
-        cluster join node(seednode).address 
+        enterBarrier("started-topic")
+        Thread.sleep(10000)
 
         ConnectionSession.startSharding(system, None) 
 
@@ -337,9 +330,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         expectMsgType[Tcp.Bound]
       }
 
-      // with roles: transport, session
-      runOn(transport2) { 
-        cluster join node(seednode).address 
+      runOn(transport2) {
+        enterBarrier("started-topic")
+        Thread.sleep(10000)
 
         ConnectionSession.startSharding(system, None) 
 
@@ -348,18 +341,10 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         expectMsgType[Tcp.Bound]
       }
 
-
-      runOn(topic1, topic2, session1, session2, transport1, transport2) {
-        awaitAssert {
-          self ! cluster.state.members.filter(_.status == MemberStatus.Up).size  
-          expectMsg(6)
-        }
-        enterBarrier("start-cluster")
-      }
-      
       runOn(controller, business1, business2, business3, client1, client2) {
-        enterBarrier("start-cluster")
+        enterBarrier("started-topic")
       }
+      enterBarrier("started-cluster-services")
     }
 
     "verify cluster sevices" in within(30.seconds) {

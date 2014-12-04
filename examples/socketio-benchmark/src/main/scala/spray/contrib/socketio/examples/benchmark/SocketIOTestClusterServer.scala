@@ -16,7 +16,6 @@ import spray.contrib.socketio.ConnectionSession
 import spray.contrib.socketio.ConnectionSession.OnEvent
 import spray.contrib.socketio.SocketIOExtension
 import spray.contrib.socketio.examples.benchmark.SocketIOTestServer.SocketIOServer
-import spray.contrib.socketio.mq.Aggregator
 import spray.contrib.socketio.mq.Queue
 import spray.contrib.socketio.mq.Topic
 import spray.contrib.socketio.packet.EventPacket
@@ -55,7 +54,7 @@ object SocketIOTestClusterServer extends App {
       val extraCfg =
         """
           akka.contrib.cluster.sharding.role = "session"
-          akka.cluster.roles = ["statefule", "session", "topic"]
+          akka.cluster.roles = ["session", "topic"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
@@ -70,7 +69,7 @@ object SocketIOTestClusterServer extends App {
       val extraCfg =
         """
           akka.contrib.cluster.sharding.role = "topic"
-          akka.cluster.roles = ["statefule", "topic"]
+          akka.cluster.roles = ["topic"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
@@ -78,6 +77,7 @@ object SocketIOTestClusterServer extends App {
       Persistence(system)
 
       Topic.startTopicAggregator(system, Some("topic"))
+      // should start the proxy too, since topics should report to topicAggregator via this proxy
       Topic.startTopicAggregatorProxy(system, Some("topic"))
       Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
 

@@ -308,12 +308,12 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         Topic.startTopicAggregatorProxy(system, role = Some("topic")) 
         Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
 
-        enterBarrier("started-topicAggregatorSingleton")
+        enterBarrier("started-topic")
       }
 
       runOn(session1, session2) {
-        enterBarrier("started-topicAggregatorSingleton")
-        // it seems we have to wait for a while for topic sharding, even there has been aleady the above barrier.
+        enterBarrier("started-topic")
+        // it seems we have to wait for a while for topic sharding coordinate ready, even there has been aleady the above barrier.
         Thread.sleep(5000) 
 
         Topic.startSharding(system, None) 
@@ -321,7 +321,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(transport1) {
-        enterBarrier("started-topicAggregatorSingleton")
+        enterBarrier("started-topic")
         Thread.sleep(10000)
 
         ConnectionSession.startSharding(system, None) 
@@ -332,7 +332,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(transport2) {
-        enterBarrier("started-topicAggregatorSingleton")
+        enterBarrier("started-topic")
         Thread.sleep(10000)
 
         ConnectionSession.startSharding(system, None) 
@@ -343,7 +343,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       }
 
       runOn(controller, business1, business2, business3, client1, client2) {
-        enterBarrier("started-topicAggregatorSingleton")
+        enterBarrier("started-topic")
       }
       enterBarrier("started-cluster-services")
     }
@@ -351,7 +351,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "verify cluster sevices" in within(30.seconds) {
 
       runOn(topic1, topic2) {
-        // verify that topicAggregator is accessible
+        // verify that topicAggregator singleton is accessible
         def topicAggregatorProxy = Topic(system).topicAggregatorProxy
         val queue = system.actorOf(Queue.props())
         topicAggregatorProxy ! Subscribe(Topic.EMPTY, queue)
@@ -362,14 +362,16 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         // verify that topicRegion is accessible
         def topicRegion = Topic.shardRegion(system)
         log.info("topicRegion: {}", topicRegion)
-        topicRegion ! Identify(None) 
-        expectMsgType[ActorIdentity]
-     }
+        val queue = system.actorOf(Queue.props())
+        topicRegion ! Subscribe(socketio.topicForBroadcast("", ""), queue)
+        expectMsgType[SubscribeAck]
+      }
 
      runOn(transport1, transport2) {
         // verify that sessionRegion is accessible
         def sessionRegion = ConnectionSession.shardRegion(system)
         log.info("sessionRegion: {}", sessionRegion)
+
         sessionRegion ! ConnectionSession.AskStatus("0")
         expectMsgType[ConnectionSession.Status]
       }
@@ -386,11 +388,11 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
         val topicAggregatorClient = Topic(system).topicAggregatorClient
 
-        val topicsqueue = system.actorOf(Queue.props())
-        val topicsreceiver = system.actorOf(Props(new TopicAggregatorReceiver(self)))
-        ActorPublisher(topicsqueue).subscribe(ActorSubscriber(topicsreceiver))
+        val topicsQueue = system.actorOf(Queue.props())
+        val topicsReceiver = system.actorOf(Props(new TopicAggregatorReceiver(self)))
+        ActorPublisher(topicsQueue).subscribe(ActorSubscriber(topicsReceiver))
 
-        topicAggregatorClient ! Subscribe(Topic.EMPTY, topicsqueue)
+        topicAggregatorClient ! Subscribe(Topic.EMPTY, topicsQueue)
         expectMsgType[SubscribeAck]
 
         val queue = system.actorOf(Queue.props())
@@ -402,7 +404,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
         topicAggregatorClient ! Aggregator.AskStats
         expectMsgPF(5.seconds) {
-          case Aggregator.Stats(xs) if xs.values.toList == List(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
+          case Aggregator.Stats(xs) if xs.values.toList.contains(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
           case x => log.error("Wrong aggregator topics: {}", x); assert(false)
         }
       }

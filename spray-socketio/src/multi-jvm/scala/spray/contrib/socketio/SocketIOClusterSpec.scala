@@ -47,16 +47,18 @@ import spray.json.{JsArray, JsString}
  *
  * But
  *
- * 2. Start sharding or its proxy will try to create sharding coordinate singleton first, which should 
- *    be created/located at oldest node with corresponding role. 
- * 3. If the sharding coordinate is not be created/located yet, the sharding proxy could not be 
- *    identified the coordinate singleton, which means, if you want to a sharding proxy to work properly 
- *    and without corresponding role contained, you have to wait for the coordinate singleton is ready 
- *    in cluster.
+ * 2. Start sharding or its proxy will try to create sharding coordinate singleton on the oldest node, 
+ *    so the oldest node has to contain those (singleton, sharding) corresponding roles and start these
+ *    sharding/singleton entry or proxy. 
+ * 3. If the sharding coordinate is not be created/located in cluster yet, the sharding proxy in other node
+ *    could not identify the coordinate singleton, which means, if you want to a sharding proxy to work 
+ *    properly and which has no corresponding role contained, you have to wait for the coordinate singleton
+ *    is ready in cluster.
  *
- * Anyway, the first started node should start all sharding sevices and singleton manager with
- * corresponding role, no matter it starts these sharding/singleton as entry or proxy.
- * The sharding's singleton coordinator will be located at the oldest member.
+ * The sharding's singleton coordinator will be created and located at the oldest node.
+
+ * Anyway, to free the nodes starting order, the first started node (oldest) should start all sharding 
+ * sevices (or proxy) and singleton manager (or proxy) and thus has to contain all those corresponding roles,
  */
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
@@ -92,14 +94,18 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       }
       akka.persistence.snapshot-store.local.dir = "target/test-snapshots"
       spray.socketio.mode = "cluster"
+      akka.cluster.seed-nodes = [
+        "akka.tcp://SocketIOClusterSpec@localhost:2551",
+        "akka.tcp://SocketIOClusterSpec@localhost:2552"
+      ]
     """))
 
   nodeConfig(topic1) {
     ConfigFactory.parseString(
       """
-        akka.remote.netty.tcp.port = 2552
+        akka.remote.netty.tcp.port = 2551
         akka.contrib.cluster.sharding.role = "topic"
-        akka.cluster.roles = ["topic"]
+        akka.cluster.roles = ["topic", "session"]
       """)
   }
 
@@ -114,7 +120,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
   nodeConfig(session1) {
     ConfigFactory.parseString(
       """
-        akka.remote.netty.tcp.port = 2551
+        akka.remote.netty.tcp.port = 2552
         akka.contrib.cluster.sharding.role = "session"
         akka.cluster.roles = ["session", "topic"]
       """)
@@ -128,10 +134,12 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
       """)
   }
 
+  // We set topic and session node as the candicate of first starting node only,
+  // so transport is not necessary to contain role "session" or "topic"
   nodeConfig(transport1, transport2) {
     ConfigFactory.parseString(
       """
-        akka.cluster.roles =["transport", "session"]
+        akka.cluster.roles =["transport"]
       """)
   }
 
@@ -303,33 +311,34 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
     "start cluster" in within(30.seconds) {
 
       val cluster = Cluster(system)
-      val seednode = session1
 
-      // start seednode first, since it's the seed node
+      // start seed node first, could be topic1 or session1
+      // if you want to test either order, change the order of following code of
+      //   runOn(topic1, topic2)
+      //   runOn(session1, session2)
 
-      // with roles: session, topic
-      runOn(session1, session2) { 
-        cluster join node(seednode).address 
-
-        Topic.startTopicAggregator(system, role = Some("topic"))
-        Topic.startSharding(system, None) 
-        ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
-      } 
-
-      // with roles: topic
+      // with roles: topic, session
       runOn(topic1, topic2) { 
-        cluster join node(seednode).address 
-
         Topic.startTopicAggregator(system, role = Some("topic"))
         // should start the proxy too, since topics should report to topicAggregator via this proxy
         Topic.startTopicAggregatorProxy(system, role = Some("topic")) 
         Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
+
+        // if it starts as the first node, should also start ConnectionSession's coordinate
+        ConnectionSession.startSharding(system, None) 
       }
 
-      // with roles: transport, session
-      runOn(transport1) {
-        cluster join node(seednode).address 
+      // with roles: session, topic
+      runOn(session1, session2) { 
+        // if it starts as the first node, should also start topicAggregator's single manager 
+        Topic.startTopicAggregator(system, role = Some("topic"))
 
+        Topic.startSharding(system, None) 
+        ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps)) 
+      } 
+
+      // with roles: transport
+      runOn(transport1) {
         ConnectionSession.startSharding(system, None) 
 
         val server = system.actorOf(Props(classOf[SocketIOServer], testActor), "socketio-server")
@@ -337,10 +346,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         expectMsgType[Tcp.Bound]
       }
 
-      // with roles: transport, session
+      // with roles: transport 
       runOn(transport2) { 
-        cluster join node(seednode).address 
-
         ConnectionSession.startSharding(system, None) 
 
         val server = system.actorOf(Props(classOf[SocketIOServer], testActor), "socketio-server")
@@ -352,7 +359,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(topic1, topic2, session1, session2, transport1, transport2) {
         awaitAssert {
           self ! cluster.state.members.filter(_.status == MemberStatus.Up).size  
-          expectMsg(6)
+          expectMsg(12)
         }
         enterBarrier("start-cluster")
       }

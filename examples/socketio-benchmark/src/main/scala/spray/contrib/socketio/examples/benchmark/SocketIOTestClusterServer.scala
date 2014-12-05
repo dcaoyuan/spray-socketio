@@ -61,7 +61,9 @@ object SocketIOTestClusterServer extends App {
       val system = socketioSystem(config)
       Persistence(system)
 
+      // if it starts as the first node, should also start topicAggregator's single manager
       Topic.startTopicAggregator(system, role = Some("topic"))
+
       Topic.startSharding(system, None)
       ConnectionSession.startSharding(system, Some(SocketIOExtension(system).sessionProps))
 
@@ -69,7 +71,7 @@ object SocketIOTestClusterServer extends App {
       val extraCfg =
         """
           akka.contrib.cluster.sharding.role = "topic"
-          akka.cluster.roles = ["topic"]
+          akka.cluster.roles = ["topic", "session"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
@@ -80,6 +82,9 @@ object SocketIOTestClusterServer extends App {
       // should start the proxy too, since topics should report to topicAggregator via this proxy
       Topic.startTopicAggregatorProxy(system, Some("topic"))
       Topic.startSharding(system, Some(SocketIOExtension(system).topicProps))
+
+      // if it starts as the first node, should also start ConnectionSession's coordinate
+      ConnectionSession.startSharding(system, None)
 
     case "transport" :: tail =>
       val extraCfg =

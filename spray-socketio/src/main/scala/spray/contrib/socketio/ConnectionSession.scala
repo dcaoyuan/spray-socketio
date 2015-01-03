@@ -153,7 +153,7 @@ object ConnectionSession {
     s"/user/${shardingGuardianName}/${shardName}"
   }
 
-  final class SystemSingletons(system: ActorSystem) {
+  final class NodeSingletons(system: ActorSystem) {
     lazy val originalClusterClient = {
       import scala.collection.JavaConversions._
       val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
@@ -178,19 +178,19 @@ object ConnectionSession {
     }
   }
 
-  private var singletons: SystemSingletons = _
+  private var singletons: NodeSingletons = _
   private val singletonsMutex = new AnyRef()
   /**
-   * Get the SystemSingletons, create it if none existed.
+   * Get the NodeSingletons, create it if none existed.
    *
    * @Note only one will be created no matter how many ActorSystems, actually
    * one ActorSystem per application usaully.
    */
-  def apply(system: ActorSystem): SystemSingletons = {
+  def apply(system: ActorSystem): NodeSingletons = {
     if (singletons eq null) {
       singletonsMutex synchronized {
         if (singletons eq null) {
-          singletons = new SystemSingletons(system)
+          singletons = new NodeSingletons(system)
         }
       }
     }

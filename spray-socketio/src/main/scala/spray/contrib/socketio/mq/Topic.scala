@@ -4,6 +4,10 @@ import akka.actor.Actor
 import akka.actor.ActorLogging
 import akka.actor.ActorRef
 import akka.actor.ActorSystem
+import akka.actor.ExtendedActorSystem
+import akka.actor.Extension
+import akka.actor.ExtensionId
+import akka.actor.ExtensionIdProvider
 import akka.actor.Props
 import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
@@ -70,7 +74,12 @@ import spray.contrib.socketio.mq.Aggregator.ReportingData
  * Topic actors just accept messages via mediator, and then deliver them to
  * subscribted queues.
  */
-object Topic {
+object Topic extends ExtensionId[TopicExtension] with ExtensionIdProvider {
+  // -- implementation of akka extention 
+  override def get(system: ActorSystem) = super.get(system)
+  override def lookup = Topic
+  override def createExtension(system: ExtendedActorSystem) = new TopicExtension(system)
+  // -- end of implementation of akka extention 
 
   def props(groupRoutingLogic: RoutingLogic) = Props(classOf[Topic], groupRoutingLogic)
 
@@ -146,25 +155,6 @@ object Topic {
     ClusterReceptionistExtension(system).registerService(proxy)
   }
 
-  final class NodeSingletons(system: ActorSystem) {
-    lazy val originalClusterClient = {
-      import scala.collection.JavaConversions._
-      val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
-      system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-topic-cluster-client")
-    }
-
-    lazy val clusterClient = {
-      val path = shardRegionPath(system)
-      system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
-    }
-
-    lazy val topicAggregatorProxy = system.actorSelection(TopicAggregatorProxyPath)
-
-    lazy val topicAggregatorClient = {
-      system.actorOf(Props(classOf[ClusterClientBroker], TopicAggregatorProxyPath, originalClusterClient))
-    }
-  }
-
   /**
    * A broker actor that runs outside of the cluster to forward msg to sharding actor easily.
    *
@@ -175,25 +165,6 @@ object Topic {
     def receive = {
       case x => originalClient forward ClusterClient.Send(servicePath, x, false)
     }
-  }
-
-  private var singletons: NodeSingletons = _
-  private val singletonsMutex = new AnyRef()
-  /**
-   * Get the NodeSingletons, create it if none existed.
-   *
-   * @Note only one will be created no matter how many ActorSystems, actually
-   * one ActorSystem per application usaully.
-   */
-  def apply(system: ActorSystem): NodeSingletons = {
-    if (singletons eq null) {
-      singletonsMutex synchronized {
-        if (singletons eq null) {
-          singletons = new NodeSingletons(system)
-        }
-      }
-    }
-    singletons
   }
 
 }
@@ -230,3 +201,23 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Publishable with Actor with
   }
 }
 
+class TopicExtension(system: ExtendedActorSystem) extends Extension {
+
+  lazy val originalClusterClient = {
+    import scala.collection.JavaConversions._
+    val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
+    system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-topic-cluster-client")
+  }
+
+  lazy val clusterClient = {
+    val path = Topic.shardRegionPath(system)
+    system.actorOf(Props(classOf[Topic.ClusterClientBroker], path, originalClusterClient))
+  }
+
+  lazy val topicAggregatorProxy = system.actorSelection(Topic.TopicAggregatorProxyPath)
+
+  lazy val topicAggregatorClient = {
+    system.actorOf(Props(classOf[Topic.ClusterClientBroker], Topic.TopicAggregatorProxyPath, originalClusterClient))
+  }
+
+}

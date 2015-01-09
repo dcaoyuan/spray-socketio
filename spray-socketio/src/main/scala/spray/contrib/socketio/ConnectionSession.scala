@@ -1,6 +1,6 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef, ActorSystem, Props, ActorLogging, Cancellable }
+import akka.actor.{ PoisonPill, Actor, ActorRef, ActorSystem, Props, ActorLogging, Cancellable, ExtensionIdProvider, ExtendedActorSystem, Extension, ExtensionId }
 import akka.contrib.pattern.ClusterClient
 import akka.contrib.pattern.ClusterReceptionistExtension
 import akka.contrib.pattern.ClusterSharding
@@ -35,7 +35,12 @@ import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
 import spray.http.Uri
 
-object ConnectionSession {
+object ConnectionSession extends ExtensionId[ConnectionSessionExtension] with ExtensionIdProvider {
+  // -- implementation of akka extention 
+  override def get(system: ActorSystem) = super.get(system)
+  override def lookup = ConnectionSession
+  override def createExtension(system: ExtendedActorSystem) = new ConnectionSessionExtension(system)
+  // -- end of implementation of akka extention 
 
   case object AskConnectedTime
 
@@ -153,19 +158,6 @@ object ConnectionSession {
     s"/user/${shardingGuardianName}/${shardName}"
   }
 
-  final class NodeSingletons(system: ActorSystem) {
-    lazy val originalClusterClient = {
-      import scala.collection.JavaConversions._
-      val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
-      system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-session-cluster-client")
-    }
-
-    lazy val clusterClient = {
-      val path = shardRegionPath(system)
-      system.actorOf(Props(classOf[ClusterClientBroker], path, originalClusterClient))
-    }
-  }
-
   /**
    * A broker actor that runs outside of the cluster to forward msg to sharding actor easily.
    *
@@ -176,25 +168,6 @@ object ConnectionSession {
     def receive: Actor.Receive = {
       case cmd: Command => originalClient forward ClusterClient.Send(servicePath, cmd, false)
     }
-  }
-
-  private var singletons: NodeSingletons = _
-  private val singletonsMutex = new AnyRef()
-  /**
-   * Get the NodeSingletons, create it if none existed.
-   *
-   * @Note only one will be created no matter how many ActorSystems, actually
-   * one ActorSystem per application usaully.
-   */
-  def apply(system: ActorSystem): NodeSingletons = {
-    if (singletons eq null) {
-      singletonsMutex synchronized {
-        if (singletons eq null) {
-          singletons = new NodeSingletons(system)
-        }
-      }
-    }
-    singletons
   }
 
   final class State(val context: ConnectionContext, var transportConnection: ActorRef, var topics: immutable.Set[String]) extends Serializable {
@@ -586,3 +559,16 @@ trait ConnectionSession { _: Actor =>
   }
 }
 
+class ConnectionSessionExtension(system: ExtendedActorSystem) extends Extension {
+
+  lazy val originalClusterClient = {
+    import scala.collection.JavaConversions._
+    val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
+    system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-session-cluster-client")
+  }
+
+  lazy val clusterClient = {
+    val path = ConnectionSession.shardRegionPath(system)
+    system.actorOf(Props(classOf[ConnectionSession.ClusterClientBroker], path, originalClusterClient))
+  }
+}

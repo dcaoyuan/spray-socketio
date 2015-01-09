@@ -17,10 +17,10 @@ object Build extends sbt.Build {
     .settings(basicSettings: _*)
     .settings(formatSettings: _*)
     .settings(releaseSettings: _*)
-    .settings(SbtMultiJvm.multiJvmSettings ++ multiJvmSettings: _*)
     .settings(libraryDependencies ++= Dependencies.all)
-    .settings(unmanagedSourceDirectories in Test += baseDirectory.value / "multi-jvm/scala")
     .settings(XitrumPackage.skip: _*)
+    .settings(SbtMultiJvm.multiJvmSettings ++ multiJvmSettings: _*)
+    .settings(unmanagedSourceDirectories in Test += baseDirectory.value / "multi-jvm/scala")
     .configs(MultiJvm)
 
   lazy val examples = Project("spray-socketio-examples", file("examples"))

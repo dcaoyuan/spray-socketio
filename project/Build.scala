@@ -46,7 +46,8 @@ object Build extends sbt.Build {
       organization := "com.wandoulabs.akka",
       version := "0.2.0-SNAPSHOT",
       scalaVersion := "2.11.5",
-      crossScalaVersions := Seq("2.10.4", "2.11.5"),
+      // no more scala-2.10.x @see https://github.com/milessabin/shapeless/issues/63
+      //crossScalaVersions := Seq("2.10.4", "2.11.5"),
       scalacOptions ++= Seq("-unchecked", "-deprecation"),
       resolvers ++= Seq(
         "Sonatype OSS Releases" at "https://oss.sonatype.org/content/repositories/releases",

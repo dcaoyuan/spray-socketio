@@ -150,8 +150,7 @@ object Dependencies {
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
   val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
   val akka_stream = "com.typesafe.akka" %% "akka-stream-experimental" % "0.9"
-  val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.6"
-  val parboiled2 = "org.parboiled" %% "parboiled" % "2.0.1" 
+  val parboiled = "org.parboiled" %% "parboiled" % "2.0.1" 
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % "test"
   val akka_multinode_testkit = "com.typesafe.akka" %% "akka-multi-node-testkit" % AKKA_VERSION % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.1.3" % "test"

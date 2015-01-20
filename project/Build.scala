@@ -144,14 +144,14 @@ object Dependencies {
   val SPRAY_VERSION = "1.3.2"
   val AKKA_VERSION = "2.3.9"
 
-  val spray_websocket = "com.wandoulabs.akka" %% "spray-websocket" % "0.1.3"
+  val spray_websocket = "com.wandoulabs.akka" %% "spray-websocket" % "0.1.4-SNAPSHOT"
   val spray_can = "io.spray" %% "spray-can" % SPRAY_VERSION
   val spray_json = "io.spray" %% "spray-json" % "1.3.1" 
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
   val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
   val akka_stream = "com.typesafe.akka" %% "akka-stream-experimental" % "0.9"
   val parboiled = "org.parboiled" %% "parboiled-scala" % "1.1.6"
-  val parboiled2 = "org.parboiled" %% "parboiled" % "2.0-M2" //changing ()
+  val parboiled2 = "org.parboiled" %% "parboiled" % "2.0.1" 
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % "test"
   val akka_multinode_testkit = "com.typesafe.akka" %% "akka-multi-node-testkit" % AKKA_VERSION % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.1.3" % "test"

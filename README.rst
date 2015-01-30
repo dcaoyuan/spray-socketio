@@ -17,44 +17,46 @@ spray.contrib.socketio.examples.benchmark
 
 To run cluster benchmark (0.1.x):
 
-1.  Install cassandra and start it.
-1.  sbt clean compile dist
-1.  cd examples/socketio-benchmark/target/universal/
-1.  unzip bench\_cluster-\*.zip
-1.  cd bench\_cluster-xxxx/bin
-1.  ./start\_cluster.sh tran 2551
-1.  ./start\_cluster.sh conn1
-1.  ./start\_cluster.sh conn2
-1.  ./start\_cluster.sh busi
-1.  ./start\_driver.sh
-1. cd ../logs
-1. tail -f driver\_rt.log
+#.  Install cassandra and start it.
+#.  sbt clean compile dist
+#.  cd examples/socketio-benchmark/target/universal/
+#.  unzip bench\_cluster-\*.zip
+#.  cd bench\_cluster-xxxx/bin
+#.  ./start\_cluster.sh tran 2551
+#.  ./start\_cluster.sh conn1
+#.  ./start\_cluster.sh conn2
+#.  ./start\_cluster.sh busi
+#.  ./start\_driver.sh
+#. cd ../logs
+#. tail -f driver\_rt.log
 
 To run cluster benchmark (0.2.x):
 
-1.  Install cassandra and start it.
-1.  sbt clean compile dist
-1.  cd examples/socketio-benchmark/target/universal/
-1.  unzip bench\_cluster-\*.zip
-1.  cd bench\_cluster-xxxx/bin
-1.  ./start\_cluster.sh sess1 2551
-1.  ./start\_cluster.sh sess2
-1.  ./start\_cluster.sh topic1
-1.  ./start\_cluster.sh tran
-1.  ./start\_cluster.sh busi
-1. ./start\_driver.sh
-1. cd ../logs
-1. tail -f rt\_driver.log
+#.  Install cassandra and start it.
+#.  sbt clean compile dist
+#.  cd examples/socketio-benchmark/target/universal/
+#.  unzip bench\_cluster-\*.zip
+#.  cd bench\_cluster-xxxx/bin
+#.  ./start\_cluster.sh sess1 2551
+#.  ./start\_cluster.sh sess2
+#.  ./start\_cluster.sh topic1
+#.  ./start\_cluster.sh tran
+#.  ./start\_cluster.sh busi
+#. ./start\_driver.sh
+#. cd ../logs
+#. tail -f rt\_driver.log
 
 Since spray-socketio is under heavy developing, with the spray-socketio
 version changed or snapshot version, you may need to cleanup cassandra
 by:
 
-1. cqlsh
-1. cqlsh> select \* from system.schema\_keyspaces;
-1. cqlsh> drop keyspace akka;
-1. cqlsh> drop keyspace akka\_snapshot;
-1. cqlsh> quit;
+.. code:: shell
+
+  cqlsh
+  cqlsh> select \* from system.schema\_keyspaces;
+  cqlsh> drop keyspace akka;
+  cqlsh> drop keyspace akka\_snapshot;
+  cqlsh> quit;
 
 Usage
 ~~~~~

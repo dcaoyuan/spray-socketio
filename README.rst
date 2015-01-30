@@ -53,9 +53,9 @@ by:
 .. code:: shell
 
   cqlsh
-  cqlsh> select \* from system.schema\_keyspaces;
+  cqlsh> select * from system.schema_keyspaces;
   cqlsh> drop keyspace akka;
-  cqlsh> drop keyspace akka\_snapshot;
+  cqlsh> drop keyspace akka_snapshot;
   cqlsh> quit;
 
 Usage

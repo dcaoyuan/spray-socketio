@@ -5,6 +5,11 @@ Socket.IO implementation on Spray with cluster sharding.
 
 Supported transports : WebSocket, XHR-Polling.
 
+.. image:: https://travis-ci.org/wandoulabs/spray-socketio.png
+   :target: https://travis-ci.org/wandoulabs/spray-socketio
+   :alt: spray-socketio build status
+
+
 Benchmark
 ~~~~~~~~~
 

@@ -90,16 +90,17 @@ object SocketIOTestClusterServer extends App {
       val extraCfg =
         """
           akka.cluster.roles =["transport"]
+          akka.contrib.cluster.sharding.role = ""
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 
-      implicit val system = socketioSystem(config)
+      val system = socketioSystem(config)
       ConnectionSession.startSharding(system, None)
 
       val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
       val host = config.getString("transport.host")
       val port = config.getInt("transport.port")
-      IO(UHttp) ! Http.Bind(server, host, port)
+      IO(UHttp)(system) ! Http.Bind(server, host, port)
 
     case "business" :: tail =>
       val extraCfg =

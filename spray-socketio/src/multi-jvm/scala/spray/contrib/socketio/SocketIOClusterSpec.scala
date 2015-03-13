@@ -104,16 +104,16 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString(
       """
         akka.remote.netty.tcp.port = 2551
-        akka.contrib.cluster.sharding.role = "topic"
         akka.cluster.roles = ["topic", "session"]
+        akka.contrib.cluster.sharding.role = "topic"
       """)
   }
 
   nodeConfig(topic2) {
     ConfigFactory.parseString(
       """
-        akka.contrib.cluster.sharding.role = "topic"
         akka.cluster.roles = ["topic"]
+        akka.contrib.cluster.sharding.role = "topic"
       """)
   }
 
@@ -121,16 +121,16 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString(
       """
         akka.remote.netty.tcp.port = 2552
-        akka.contrib.cluster.sharding.role = "session"
         akka.cluster.roles = ["session", "topic"]
+        akka.contrib.cluster.sharding.role = "session"
       """)
   }
 
   nodeConfig(session2) {
     ConfigFactory.parseString(
       """
-        akka.contrib.cluster.sharding.role = "session"
         akka.cluster.roles = ["session", "topic"]
+        akka.contrib.cluster.sharding.role = "session"
       """)
   }
 
@@ -140,6 +140,7 @@ object SocketIOClusterSpecConfig extends MultiNodeConfig {
     ConfigFactory.parseString(
       """
         akka.cluster.roles =["transport"]
+        akka.contrib.cluster.sharding.role = ""
       """)
   }
 
@@ -402,7 +403,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     var queueOfBusiness3: ActorRef = null 
 
-    "start business sevices" in within(30.seconds) {
+    "start business sevices" in within(60.seconds) {
 
       runOn(business1, business2) {
         val socketioExt = SocketIOExtension(system)
@@ -424,7 +425,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         expectMsgAllClassOf(classOf[Aggregator.Available], classOf[SubscribeAck])
 
         topicAggregatorClient ! Aggregator.AskStats
-        expectMsgPF(5.seconds) {
+        expectMsgPF(10.seconds) {
           case Aggregator.Stats(xs) if xs.values.toList.contains(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
           case x => log.error("Wrong aggregator topics: {}", x); assert(false)
         }
@@ -446,7 +447,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("started-business")
     }
 
-    "chat between client1 and server1" in within(30.seconds) {
+    "chat between client1 and server1" in within(60.seconds) {
       runOn(client1) {
         val connect = Http.Connect(host, port1)
         val client = system.actorOf(Props(classOf[SocketIOClient], connect, testActor))
@@ -480,7 +481,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("chat")
     }
 
-    "broadcast" in within(25.seconds) {
+    "broadcast" in within(60.seconds) {
       val msg = "hello world"
       runOn(client2) {
         val connect = Http.Connect(host, port2)

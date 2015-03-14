@@ -43,7 +43,7 @@ object Build extends sbt.Build {
   lazy val basicSettings = Seq(
     organization := "com.wandoulabs.akka",
     version := "0.2.0-SNAPSHOT",
-    scalaVersion := "2.11.5",
+    scalaVersion := "2.11.6",
     // no more scala-2.10.x @see https://github.com/milessabin/shapeless/issues/63
     //crossScalaVersions := Seq("2.10.4", "2.11.5"),
     scalacOptions ++= Seq("-unchecked", "-deprecation"),

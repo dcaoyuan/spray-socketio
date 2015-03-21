@@ -7,8 +7,6 @@ object TransientConnectionSession {
 }
 
 final class TransientConnectionSession() extends ConnectionSession with Actor with ActorLogging {
-  def mediator = SocketIOExtension(context.system).topicRegion
-
   def recoveryFinished: Boolean = true
   def recoveryRunning: Boolean = false
 

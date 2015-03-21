@@ -8,7 +8,6 @@ object PersistentConnectionSession {
 }
 
 final class PersistentConnectionSession() extends ConnectionSession with PersistentActor with ActorLogging {
-  def mediator = SocketIOExtension(context.system).topicRegion
 
   override def persistenceId = self.path.toStringWithoutAddress
 

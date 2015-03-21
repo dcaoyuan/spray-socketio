@@ -209,7 +209,7 @@ trait ConnectionSession { _: Actor =>
   def recoveryFinished: Boolean
   def recoveryRunning: Boolean
 
-  def mediator: ActorRef
+  def mediator = SocketIOExtension(context.system).topicRegion
 
   private lazy val scheduler = SocketIOExtension(context.system).scheduler
 

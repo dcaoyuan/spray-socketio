@@ -31,7 +31,7 @@ object Aggregator {
 
   final case class ReportingData(data: Any)
   final case class Available(address: Address, report: Any)
-  final case class Unreachable(address: Address, report: Any)
+  final case class Unavailable(address: Address, report: Any)
 
   case object AskStats
   final case class Stats(reportingData: Map[Address, Any])
@@ -121,14 +121,12 @@ class Aggregator(
   override def receive = publishableBehavior orElse reportingBehavior
 
   def reportingBehavior: Receive = {
-    case ReportingData(data: Any) => receiveReportingData(data)
+    case ReportingData(data: Any) => receiveReportingData(sender().path.address, data)
     case ReapUnreachableTick      => reapUnreachable()
     case AskStats                 => sender() ! Stats(reportingEntries)
   }
 
-  def receiveReportingData(data: Any): Unit = {
-    val from = sender().path.address
-
+  def receiveReportingData(from: Address, data: Any): Unit = {
     if (failureDetector.isMonitoring(from)) {
       log.debug("Received reporting data from [{}]", from)
     } else {
@@ -137,18 +135,19 @@ class Aggregator(
 
     failureDetector.heartbeat(from)
     if (!reportingEntries.contains(from)) {
+      log.info("Available: [{}]", data)
       publish(Available(from, data))
     }
     reportingEntries = reportingEntries.updated(from, data)
   }
 
   def reapUnreachable() {
-    val (reachable, unreachable) = reportingEntries.partition { case (a, data) => failureDetector.isAvailable(a) }
+    val (reachable, unreachable) = reportingEntries.partition { case (addr, data) => failureDetector.isAvailable(addr) }
     unreachable foreach {
-      case (a, data) =>
-        log.warning("Detected unreachable: [{}]", a)
-        publish(Unreachable(a, data))
-        failureDetector.remove(a)
+      case (addr, data) =>
+        log.info("Unavailable: [{}]", data)
+        publish(Unavailable(addr, data))
+        failureDetector.remove(addr)
     }
     reportingEntries = reachable
   }

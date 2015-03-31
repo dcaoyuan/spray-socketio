@@ -10,7 +10,7 @@ import akka.routing.ActorRefRoutee
 import akka.routing.Router
 import scala.concurrent.duration._
 
-trait Publishable { _: Actor =>
+trait Publishable extends Actor {
 
   var queues = Set[ActorRef]() // ActorRef of queue 
   var groupToQueues: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
@@ -21,19 +21,19 @@ trait Publishable { _: Actor =>
   def topic = self.path.name
 
   def publishableBehavior: Receive = {
-    case x @ Subscribe(topic, group, queue) =>
+    case x @ Subscribe(_, group, queue) =>
       insertSubscription(group, queue)
       sender() ! SubscribeAck(x)
       log.info("{} successfully subscribed to topic(me) [{}] under group [{}]", queue, topic, group)
 
-    case x @ Unsubscribe(topic, group, queue) =>
+    case x @ Unsubscribe(_, group, queue) =>
       removeSubscription(group, queue)
       sender() ! UnsubscribeAck(x)
       log.info("{} successfully unsubscribed to topic(me) [{}] under group [{}]", queue, topic, group)
 
-    case Publish(topic, msg, _) => publish(msg)
+    case Publish(_, msg, _) => publish(msg)
 
-    case Terminated(ref)        => removeSubscription(ref)
+    case Terminated(ref)    => removeSubscription(ref)
   }
 
   def publish(x: Any) {

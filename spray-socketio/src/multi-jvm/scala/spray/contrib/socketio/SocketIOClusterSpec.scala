@@ -258,7 +258,7 @@ object SocketIOClusterSpec {
       case OnNext(value : Aggregator.Available) =>
         log.info("Got {}", value)
         probe ! value
-      case OnNext(value : Aggregator.Unreachable) =>
+      case OnNext(value : Aggregator.Unavailable) =>
         log.info("Got {}", value)
         probe ! value
        case OnNext(value) =>
@@ -293,7 +293,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
   "Sharded socketio cluster" must {
 
-    "setup shared journal" in {
+    "setup shared journal" in within(10.seconds) {
       // start the Persistence extension
       Persistence(system)
       runOn(controller) {

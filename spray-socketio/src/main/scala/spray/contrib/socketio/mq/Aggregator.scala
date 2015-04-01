@@ -2,8 +2,8 @@ package spray.contrib.socketio.mq
 
 import akka.ConfigurationException
 import akka.actor.ActorContext
+import akka.actor.ActorPath
 import akka.actor.ActorSystem
-import akka.actor.Address
 import akka.actor.ExtendedActorSystem
 import akka.actor.PoisonPill
 import akka.actor.Props
@@ -25,16 +25,16 @@ object Aggregator {
 
   def props(
     groupRoutingLogic: RoutingLogic,
-    failureDetector: FailureDetectorRegistry[Address],
+    failureDetector: FailureDetectorRegistry[ActorPath],
     unreachableReaperInterval: FiniteDuration): Props =
     Props(classOf[Aggregator], groupRoutingLogic, failureDetector, unreachableReaperInterval)
 
   final case class ReportingData(data: Any)
-  final case class Available(address: Address, report: Any)
-  final case class Unavailable(address: Address, report: Any)
+  final case class Available(address: ActorPath, report: Any)
+  final case class Unavailable(address: ActorPath, report: Any)
 
   case object AskStats
-  final case class Stats(reportingData: Map[Address, Any])
+  final case class Stats(reportingData: Map[ActorPath, Any])
 
   // sent to self only
   private case object ReapUnreachableTick
@@ -66,7 +66,7 @@ object Aggregator {
     }
   }
 
-  private def createAggreratorFailureDetector(system: ActorSystem): FailureDetectorRegistry[Address] = {
+  private def createAggreratorFailureDetector(system: ActorSystem): FailureDetectorRegistry[ActorPath] = {
     val settings = new Settings(system)
     def createFailureDetector(): FailureDetector =
       FailureDetectorLoader.load(settings.AggregatorFailureDetectorImplementationClass, settings.FailureDetectorConfig, system)
@@ -101,16 +101,16 @@ object Aggregator {
 
 class Aggregator(
     groupRoutingLogic: RoutingLogic,
-    failureDetector: FailureDetectorRegistry[Address],
+    failureDetector: FailureDetectorRegistry[ActorPath],
     unreachableReaperInterval: FiniteDuration) extends Topic(groupRoutingLogic) {
 
   import Aggregator._
   import context.dispatcher
 
-  log.info("aggregator [{}] started", topic)
+  log.info("Aggregator [{}] started", topic)
 
   val unreachableReaperTask = context.system.scheduler.schedule(unreachableReaperInterval, unreachableReaperInterval, self, ReapUnreachableTick)
-  var reportingEntries: Map[Address, Any] = Map.empty
+  var reportingEntries: Map[ActorPath, Any] = Map.empty
 
   override def isAggregator = true
   override def postStop(): Unit = {
@@ -121,12 +121,16 @@ class Aggregator(
   override def receive = publishableBehavior orElse reportingBehavior
 
   def reportingBehavior: Receive = {
-    case ReportingData(data: Any) => receiveReportingData(sender().path.address, data)
+    case ReportingData(data: Any) => receiveReportingData(sender().path, data)
     case ReapUnreachableTick      => reapUnreachable()
     case AskStats                 => sender() ! Stats(reportingEntries)
   }
 
-  def receiveReportingData(from: Address, data: Any): Unit = {
+  def receiveReportingData(from: ActorPath, data: Any): Unit = {
+    // sender: Actor[akka://SocketIOSystem/user/sharding/Topics/testendpoint#926010083] 
+    // path: akka://SocketIOSystem/user/sharding/Topics/testendpoint 
+    // address: akka://SocketIOSystem
+    // address only contains: akka://SocketIOSystem
     if (failureDetector.isMonitoring(from)) {
       log.debug("Received reporting data from [{}]", from)
     } else {
@@ -142,12 +146,12 @@ class Aggregator(
   }
 
   def reapUnreachable() {
-    val (reachable, unreachable) = reportingEntries.partition { case (addr, data) => failureDetector.isAvailable(addr) }
+    val (reachable, unreachable) = reportingEntries.partition { case (path, data) => failureDetector.isAvailable(path) }
     unreachable foreach {
-      case (addr, data) =>
+      case (path, data) =>
         log.info("Unavailable: [{}]", data)
-        publish(Unavailable(addr, data))
-        failureDetector.remove(addr)
+        publish(Unavailable(path, data))
+        failureDetector.remove(path)
     }
     reportingEntries = reachable
   }

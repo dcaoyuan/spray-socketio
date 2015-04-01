@@ -173,20 +173,20 @@ object Topic extends ExtensionId[TopicExtension] with ExtensionIdProvider {
  * Topic is refered to endpoint for observers
  */
 class Topic(groupRoutingLogic: RoutingLogic) extends Publishable with Actor with ActorLogging {
-  import Topic._
   import context.dispatcher
 
   val groupRouter = Router(groupRoutingLogic)
 
   def isAggregator = false
-  private def topicAggregator = Topic(context.system).topicAggregatorProxy
+  private def topicAggregator = context.system.actorSelection(Topic.TopicAggregatorProxyPath)
 
   val reportingTask = if (isAggregator) {
     None
   } else {
     topicAggregator ! ReportingData(topic)
+    log.info("Topic created: [{}]", topic)
     val settings = new Aggregator.Settings(context.system)
-    Some(context.system.scheduler.schedule(settings.AggregatorReportingInterval, settings.AggregatorReportingInterval, self, ReportingTick))
+    Some(context.system.scheduler.schedule(settings.AggregatorReportingInterval, settings.AggregatorReportingInterval, self, Topic.ReportingTick))
   }
 
   override def postStop(): Unit = {
@@ -197,7 +197,7 @@ class Topic(groupRoutingLogic: RoutingLogic) extends Publishable with Actor with
   def receive: Receive = publishableBehavior orElse reportingTickiBehavior
 
   def reportingTickiBehavior: Receive = {
-    case ReportingTick => topicAggregator ! ReportingData(topic)
+    case Topic.ReportingTick => topicAggregator ! ReportingData(topic)
   }
 }
 

@@ -22,6 +22,7 @@ import spray.http.HttpOrigin
 import spray.http.HttpProtocols
 import spray.http.HttpRequest
 import spray.http.HttpResponse
+import spray.http.RemoteAddress
 import spray.http.SomeOrigins
 import spray.http.StatusCodes
 import spray.http.Uri
@@ -41,6 +42,8 @@ package object socketio {
 
   val actorResolveTimeout = config.getInt("server.actor-selection-resolve-timeout").seconds
   val topicSubscribeTimeout = config.getInt("server.topic-subscribe-timeout").seconds
+
+  val EmptyRemoteAddress = RemoteAddress("0.0.0.0")
 
   /**
    * Topic for broadcast messages. Cannot contain '.' or '/'
@@ -122,12 +125,16 @@ package object socketio {
 
   def wsConnecting(req: HttpRequest)(implicit ctx: SoConnectingContext): Option[Boolean] = {
     val query = req.uri.query
-    val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
+    val (remoteAddress, origins) = req.headers.foldLeft((EmptyRemoteAddress, List[HttpOrigin]())) {
+      case (acc, `Remote-Address`(x)) => (x, acc._2)
+      case (acc, Origin(xs))          => (acc._1, xs.toList)
+      case (acc, _)                   => acc
+    }
     req.uri.path.toString.split("/") match {
       case Array("", SOCKET_IO, protocalVersion, transport.WebSocket.ID, sessionId) =>
         ctx.sessionId = sessionId
         import ctx.ec
-        ctx.sessionRegion ! ConnectionSession.Connecting(sessionId, query, origins, ctx.serverConnection, transport.WebSocket)
+        ctx.sessionRegion ! ConnectionSession.Connecting(sessionId, query, remoteAddress, origins, ctx.serverConnection, transport.WebSocket)
         Some(true)
       case _ =>
         None
@@ -154,11 +161,15 @@ package object socketio {
     def unapply(req: HttpRequest)(implicit ctx: SoConnectingContext): Option[Boolean] = req match {
       case HttpRequest(HttpMethods.GET, uri, _, _, HttpProtocols.`HTTP/1.1`) =>
         val query = req.uri.query
-        val origins = req.headers.collectFirst { case Origin(xs) => xs } getOrElse (Nil)
+        val (remoteAddress, origins) = req.headers.foldLeft((EmptyRemoteAddress, List[HttpOrigin]())) {
+          case (acc, `Remote-Address`(x)) => (x, acc._2)
+          case (acc, Origin(xs))          => (acc._1, xs.toList)
+          case (acc, _)                   => acc
+        }
         uri.path.toString.split("/") match {
           case Array("", SOCKET_IO, protocalVersion, transport.XhrPolling.ID, sessionId) =>
             import ctx.ec
-            ctx.sessionRegion ! ConnectionSession.Connecting(sessionId, query, origins, ctx.serverConnection, transport.XhrPolling)
+            ctx.sessionRegion ! ConnectionSession.Connecting(sessionId, query, remoteAddress, origins, ctx.serverConnection, transport.XhrPolling)
             ctx.sessionRegion ! ConnectionSession.OnGet(sessionId, ctx.serverConnection)
             Some(true)
           case _ => None

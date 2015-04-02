@@ -33,6 +33,7 @@ import spray.contrib.socketio.packet.Packet
 import spray.contrib.socketio.packet.PacketParser
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
+import spray.http.RemoteAddress
 import spray.http.Uri
 
 object ConnectionSession extends ExtensionId[ConnectionSessionExtension] with ExtensionIdProvider {
@@ -52,7 +53,7 @@ object ConnectionSession extends ExtensionId[ConnectionSessionExtension] with Ex
 
   final case class CreateSession(sessionId: String) extends Command
 
-  final case class Connecting(sessionId: String, query: Uri.Query, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command with Event
+  final case class Connecting(sessionId: String, query: Uri.Query, remoteAddress: RemoteAddress, origins: Seq[HttpOrigin], transportConnection: ActorRef, transport: Transport) extends Command with Event
   final case class Closing(sessionId: String, transportConnection: ActorRef) extends Command with Event
   final case class SubscribeBroadcast(sessionId: String, endpoint: String, room: String) extends Command with Event
   final case class UnsubscribeBroadcast(sessionId: String, endpoint: String, room: String) extends Command with Event
@@ -313,7 +314,7 @@ trait ConnectionSession { _: Actor =>
     // -- connecting / closing  
     case CreateSession(_) => // may be forwarded by region, just ignore it.
 
-    case cmd @ Connecting(sessionId, query, origins, transportConnection, transport) => // transport fired connecting command
+    case cmd @ Connecting(sessionId, query, remoteAddress, origins, transportConnection, transport) => // transport fired connecting command
       disableIdleTimeout()
       disableCloseTimeout()
       enableHeartbeat()
@@ -322,6 +323,7 @@ trait ConnectionSession { _: Actor =>
         case null =>
           state.context.sessionId = sessionId
           state.context.query = query
+          state.context.remoteAddress = remoteAddress
           state.context.origins = origins
           state.context.transport = transport
           state.transportConnection = transportConnection

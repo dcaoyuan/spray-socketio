@@ -413,16 +413,17 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val topicsQueue = system.actorOf(Queue.props())
         val topicsReceiver = system.actorOf(Props(new TopicAggregatorReceiver(self)))
         ActorPublisher(topicsQueue).subscribe(ActorSubscriber(topicsReceiver))
-
         topicAggregatorClient ! Subscribe(Topic.EMPTY, topicsQueue)
-        expectMsgType[SubscribeAck]
 
         val queue = system.actorOf(Queue.props())
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
-
         socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group1"), queue)
-        expectMsgAllClassOf(classOf[Aggregator.Available], classOf[SubscribeAck])
+
+        // we'd expect 2 SubsribeAck and 1 Available
+        expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
+        expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
+        expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
 
         topicAggregatorClient ! Aggregator.AskStats
         expectMsgPF(10.seconds) {
@@ -437,9 +438,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val queue = system.actorOf(Queue.props())
         val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
         ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
-
         socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group2"), queue)
-        expectMsgType[SubscribeAck]
+        expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
 
         queueOfBusiness3 = queue
       }

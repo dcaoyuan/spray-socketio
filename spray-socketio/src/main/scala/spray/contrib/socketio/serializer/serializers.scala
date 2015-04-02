@@ -15,7 +15,7 @@ import spray.contrib.socketio.ConnectionContext
 import spray.contrib.socketio.packet.{ DataPacket, Packet, PacketParser, ConnectPacket, DisconnectPacket, MessagePacket, JsonPacket, EventPacket, NoopPacket }
 import spray.contrib.socketio.transport
 import spray.contrib.socketio.transport.Transport
-import spray.http.{ HttpOrigin, StringRendering }
+import spray.http.{ HttpOrigin, StringRendering, RemoteAddress }
 import spray.http.Uri.Query
 
 object StringSerializer {
@@ -171,6 +171,7 @@ class ConnectionContextSerializer extends Serializer {
         StringSerializer.appendToBuilder(builder, x.sessionId)
         StringSerializer.appendToBuilder(builder, x.transport.ID)
         StringSerializer.appendToBuilder(builder, x.query.render(new StringRendering).get)
+        StringSerializer.appendToBuilder(builder, x.remoteAddress.render(new StringRendering).get)
 
         builder.putByte(if (x.isConnected) 0x01 else 0x00)
 
@@ -189,6 +190,7 @@ class ConnectionContextSerializer extends Serializer {
     val sessionId = StringSerializer.fromByteIterator(data)
     val transId = StringSerializer.fromByteIterator(data)
     val query = Query(StringSerializer.fromByteIterator(data))
+    val remoteAddress = RemoteAddress(StringSerializer.fromByteIterator(data))
 
     val isConnected = data.getByte == 0x01
 
@@ -197,7 +199,7 @@ class ConnectionContextSerializer extends Serializer {
       origins.append(HttpOrigin(StringSerializer.fromByteIterator(data)))
     }
 
-    val ctx = new ConnectionContext(sessionId, query, origins.toList)
+    val ctx = new ConnectionContext(sessionId, query, remoteAddress, origins.toList)
     ctx.transport = Transport.transportIds.getOrElse(transId, transport.Empty)
     ctx.isConnected = isConnected
 
@@ -301,6 +303,7 @@ class ConnectionSessionCommandSerializer(val system: ExtendedActorSystem) extend
 
     StringSerializer.appendToBuilder(builder, cmd.sessionId)
     StringSerializer.appendToBuilder(builder, cmd.query.render(new StringRendering).get)
+    StringSerializer.appendToBuilder(builder, cmd.remoteAddress.render(new StringRendering).get)
     if (cmd.transport != null) {
       StringSerializer.appendToBuilder(builder, cmd.transport.ID)
     } else {
@@ -318,7 +321,8 @@ class ConnectionSessionCommandSerializer(val system: ExtendedActorSystem) extend
     val data = ByteString(bytes).iterator
 
     val sessionId = StringSerializer.fromByteIterator(data)
-    val query = Query.apply(StringSerializer.fromByteIterator(data))
+    val query = Query(StringSerializer.fromByteIterator(data))
+    val remoteAddress = RemoteAddress(StringSerializer.fromByteIterator(data))
     val transport = Transport.transportIds.getOrElse(StringSerializer.fromByteIterator(data), null)
     val tranportConnection = system.provider.resolveActorRef(StringSerializer.fromByteIterator(data))
     val origins = mutable.ListBuffer[HttpOrigin]()
@@ -326,7 +330,7 @@ class ConnectionSessionCommandSerializer(val system: ExtendedActorSystem) extend
       origins.append(HttpOrigin(StringSerializer.fromByteIterator(data)))
     }
 
-    ConnectionSession.Connecting(sessionId, query, origins.toList, tranportConnection, transport)
+    ConnectionSession.Connecting(sessionId, query, remoteAddress, origins.toList, tranportConnection, transport)
   }
 
   final def fromClosing(cmd: ConnectionSession.Closing) = {

@@ -2,6 +2,7 @@ package spray.contrib.socketio
 
 import spray.contrib.socketio.transport.Transport
 import spray.http.HttpOrigin
+import spray.http.RemoteAddress
 import spray.http.Uri
 import scala.collection.immutable
 
@@ -20,7 +21,7 @@ import scala.collection.immutable
  *
  * transportConnection <1..n--1> connectionSession <1--1> connContext <1--n> transport
  */
-class ConnectionContext(private var _sessionId: String = null, private var _query: Uri.Query = Uri.Query.Empty, private var _origins: Seq[HttpOrigin] = List()) extends Serializable {
+class ConnectionContext(private var _sessionId: String = null, private var _query: Uri.Query = Uri.Query.Empty, private var _remoteAddress: RemoteAddress = EmptyRemoteAddress, private var _origins: Seq[HttpOrigin] = List()) extends Serializable {
   def sessionId = _sessionId
   private[socketio] def sessionId_=(sessionId: String) = {
     _sessionId = sessionId
@@ -30,6 +31,12 @@ class ConnectionContext(private var _sessionId: String = null, private var _quer
   def query = _query
   private[socketio] def query_=(query: Uri.Query) = {
     _query = query
+    this
+  }
+
+  def remoteAddress = _remoteAddress
+  private[socketio] def remoteAddress_=(remoteAddress: RemoteAddress) = {
+    _remoteAddress = remoteAddress
     this
   }
 
@@ -64,6 +71,7 @@ class ConnectionContext(private var _sessionId: String = null, private var _quer
   override def toString(): String = {
     new StringBuilder().append(sessionId)
       .append(", query=").append(query)
+      .append(", remote=").append(remoteAddress)
       .append(", origins=").append(origins)
       .append(", isConnected=").append(isConnected)
       .toString

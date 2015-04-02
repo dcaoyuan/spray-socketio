@@ -13,6 +13,7 @@ import spray.contrib.socketio.ConnectionContext
 import spray.contrib.socketio.packet.{ Packet, MessagePacket, ConnectPacket, DisconnectPacket, JsonPacket, EventPacket, NoopPacket }
 import spray.can.websocket.frame.TextFrame
 import spray.contrib.socketio.transport
+import spray.http.RemoteAddress
 import spray.http.Uri.Query
 import spray.http.HttpOrigin
 import spray.contrib.socketio.transport.WebSocket
@@ -73,6 +74,7 @@ akka {
   }
   val sessionId = "138129031209-DASDASLJDLKAS-DASd1938219381"
   val query = Query("a=1&b=2")
+  val remoteAddress = RemoteAddress("127.0.0.1")
   val origins = List(HttpOrigin("http://www.google.com"))
   val packet = MessagePacket(-1, false, "", "hello world")
   // If you want to make system.actorOf with nested classes, you will need to instantiate the 
@@ -80,7 +82,7 @@ akka {
   val testActorRef = system.actorOf(Props(classOf[Test_Actor], this))
   val deadleaters = system.deadLetters
 
-  val ctx = new ConnectionContext(sessionId, query, origins)
+  val ctx = new ConnectionContext(sessionId, query, remoteAddress, origins)
   ctx.transport = transport.WebSocket
   ctx.isConnected = true
 
@@ -95,7 +97,7 @@ akka {
     }
 
     "handle ConnectionContext" in {
-      val obj = new ConnectionContext(sessionId, query, origins)
+      val obj = new ConnectionContext(sessionId, query, remoteAddress, origins)
       obj.transport = transport.WebSocket
       obj.isConnected = true
       test(obj)
@@ -118,7 +120,7 @@ akka {
       }
 
       "Connecting" in {
-        val obj = Connecting(sessionId, query, origins, self, WebSocket)
+        val obj = Connecting(sessionId, query, remoteAddress, origins, self, WebSocket)
         test(obj)
       }
 

@@ -3,10 +3,13 @@ package spray.contrib.socketio.examples
 import akka.actor.{ ActorSystem, Actor, Props, ActorLogging, ActorRef }
 import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
 import akka.io.IO
-import akka.stream.actor.ActorPublisher
+import akka.stream.ActorFlowMaterializer
 import akka.stream.actor.ActorSubscriber
 import akka.stream.actor.ActorSubscriberMessage.OnNext
 import akka.stream.actor.WatermarkRequestStrategy
+import akka.stream.scaladsl.Flow
+import akka.stream.scaladsl.Sink
+import akka.stream.scaladsl.Source
 import scala.concurrent.Future
 import spray.can.Http
 import spray.can.server.UHttp
@@ -91,7 +94,7 @@ object SimpleServer extends App with MySslConfiguration {
   implicit val system = ActorSystem()
   val socketioExt = SocketIOExtension(system)
 
-  class Receiver extends ActorSubscriber {
+  class MsgWorker extends ActorSubscriber {
     implicit def sessionClient = socketioExt.sessionClient
 
     override val requestStrategy = WatermarkRequestStrategy(10)
@@ -117,16 +120,13 @@ object SimpleServer extends App with MySslConfiguration {
     }
   }
 
-  val queue = system.actorOf(Queue.props(), "myqueue")
-  val receiver = system.actorOf(Props(new Receiver), "myreceiver")
-  ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
-  // there is no channel.ofType method for RxScala, why?
-  //queue.flatMap {
-  //  case x: OnEvent => Observable.items(x)
-  //  case _          => Observable.empty
-  //}.subscribe(observer)
+  // use queue publisher as input Source to a Flow, and worker subscriber as output Sink to this Flow.
+  implicit val materializer = ActorFlowMaterializer()
+  val msgSource = Source.actorPublisher[Any](Queue.props[Any]())
+  val msgSink = Sink.actorSubscriber[Any](Props(new MsgWorker))
+  val msgFlow = Flow[Any].to(msgSink).runWith(msgSource)
 
-  socketioExt.topicClient ! Subscribe("testendpoint", None, queue)
+  socketioExt.topicClient ! Subscribe("testendpoint", None, msgFlow)
 
   val server = system.actorOf(SocketIOServer.props(), name = "socketio-server")
 

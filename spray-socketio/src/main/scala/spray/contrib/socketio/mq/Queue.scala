@@ -5,19 +5,22 @@ import akka.stream.actor.ActorPublisher
 import akka.stream.actor.ActorPublisherMessage
 import scala.annotation.tailrec
 
+/**
+ * http://doc.akka.io/docs/akka-stream-and-http-experimental/1.0-RC2/scala/stream-integrations.html
+ */
 object Queue {
-  def props() = Props(classOf[Queue])
+  def props[T]() = Props(classOf[Queue[T]])
 }
 
-class Queue extends ActorPublisher[Any] {
-  private var buf = Vector.empty[Any]
+class Queue[T] extends ActorPublisher[T] {
+  private var buf = Vector.empty[T]
 
   def receive = {
     case ActorPublisherMessage.Request(_) =>
       deliverBuf()
     case ActorPublisherMessage.Cancel =>
       context.stop(self)
-    case x =>
+    case x: T @unchecked =>
       if (buf.isEmpty && totalDemand > 0) {
         onNext(x)
       } else {
@@ -29,6 +32,10 @@ class Queue extends ActorPublisher[Any] {
   @tailrec
   final def deliverBuf(): Unit = {
     if (totalDemand > 0) {
+      /*
+       * totalDemand is a Long and could be larger than
+       * what buf.splitAt can accept
+       */
       if (totalDemand <= Int.MaxValue) {
         val (use, keep) = buf.splitAt(totalDemand.toInt)
         buf = keep

@@ -15,10 +15,13 @@ import akka.persistence.Persistence
 import akka.pattern.ask
 import akka.remote.testconductor.RoleName
 import akka.remote.testkit.{ MultiNodeSpec, MultiNodeConfig }
-import akka.stream.actor.ActorPublisher
+import akka.stream.ActorFlowMaterializer
 import akka.stream.actor.ActorSubscriber
 import akka.stream.actor.ActorSubscriberMessage.OnNext
 import akka.stream.actor.WatermarkRequestStrategy
+import akka.stream.scaladsl.Flow
+import akka.stream.scaladsl.Sink
+import akka.stream.scaladsl.Source
 import akka.testkit.ImplicitSender
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
@@ -239,7 +242,7 @@ object SocketIOClusterSpec {
     }
   }
   
-  class Receiver(socketioExt: SocketIOExtension, probe: ActorRef) extends ActorSubscriber {
+  class MsgWorker(socketioExt: SocketIOExtension, probe: ActorRef) extends ActorSubscriber {
     override val requestStrategy = WatermarkRequestStrategy(10)
     def receive = {
       case OnNext(value @ OnEvent("chat", args, context)) =>
@@ -252,7 +255,7 @@ object SocketIOClusterSpec {
     }
   }
 
-  class TopicAggregatorReceiver(probe: ActorRef) extends ActorSubscriber with ActorLogging {
+  class TopicAggregatorWorker(probe: ActorRef) extends ActorSubscriber with ActorLogging {
     override val requestStrategy = WatermarkRequestStrategy(10)
     def receive = {
       case OnNext(value : Aggregator.Available) =>
@@ -271,6 +274,8 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
   import SocketIOClusterSpecConfig._
   import SocketIOClusterSpec._
+
+  implicit val materializer = ActorFlowMaterializer()
 
   override def initialParticipants: Int = roles.size
 
@@ -375,8 +380,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(topic1, topic2) {
         // verify that topicAggregator singleton is accessible
         def topicAggregatorProxy = Topic(system).topicAggregatorProxy
-        val queue = system.actorOf(Queue.props())
-        topicAggregatorProxy ! Subscribe(Topic.EMPTY, queue)
+        val topicsSource = Source.actorPublisher[Any](Queue.props[Any]())
+        val topicsFlow = Flow[Any].to(Sink.ignore).runWith(topicsSource)
+        topicAggregatorProxy ! Subscribe(Topic.EMPTY, topicsFlow)
         expectMsgType[SubscribeAck]
       }
 
@@ -384,8 +390,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         // verify that topicRegion is accessible
         def topicRegion = Topic.shardRegion(system)
         log.info("topicRegion: {}", topicRegion)
-        val queue = system.actorOf(Queue.props())
-        topicRegion ! Subscribe(socketio.topicForBroadcast("", ""), queue)
+        val msgSource = Source.actorPublisher[Any](Queue.props[Any]())
+        val msgFlow = Flow[Any].to(Sink.ignore).runWith(msgSource)
+        topicRegion ! Subscribe(socketio.topicForBroadcast("", ""), msgFlow)
         expectMsgType[SubscribeAck]
       }
 
@@ -401,7 +408,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       enterBarrier("verified-cluster-services")
     }
 
-    var queueOfBusiness3: ActorRef = null 
+    var flowOfBusiness3: ActorRef = null 
 
     "start business sevices" in within(60.seconds) {
 
@@ -410,15 +417,15 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
         val topicAggregatorClient = Topic(system).topicAggregatorClient
 
-        val topicsQueue = system.actorOf(Queue.props())
-        val topicsReceiver = system.actorOf(Props(new TopicAggregatorReceiver(self)))
-        ActorPublisher(topicsQueue).subscribe(ActorSubscriber(topicsReceiver))
-        topicAggregatorClient ! Subscribe(Topic.EMPTY, topicsQueue)
+        val topicsSource = Source.actorPublisher[Any](Queue.props[Any]())
+        val topicsSink = Sink.actorSubscriber(Props(new TopicAggregatorWorker(self)))
+        val topicsFlow = Flow[Any].to(topicsSink).runWith(topicsSource)
+        topicAggregatorClient ! Subscribe(Topic.EMPTY, topicsFlow)
 
-        val queue = system.actorOf(Queue.props())
-        val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
-        ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
-        socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group1"), queue)
+        val msgSource = Source.actorPublisher[Any](Queue.props[Any]())
+        val msgSink = Sink.actorSubscriber(Props(new MsgWorker(socketioExt, self)))
+        val msgFlow = Flow[Any].to(msgSink).runWith(msgSource)
+        socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group1"), msgFlow)
 
         // we'd expect 2 SubsribeAck and 1 Available
         expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
@@ -435,13 +442,13 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(business3) {
         val socketioExt = SocketIOExtension(system)
 
-        val queue = system.actorOf(Queue.props())
-        val receiver = system.actorOf(Props(new Receiver(socketioExt, self)))
-        ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
-        socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group2"), queue)
+        val msgSource = Source.actorPublisher[Any](Queue.props[Any]())
+        val msgSink = Sink.actorSubscriber(Props(new MsgWorker(socketioExt, self)))
+        val msgFlow = Flow[Any].to(msgSink).runWith(msgSource)
+        socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group2"), msgFlow)
         expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
 
-        queueOfBusiness3 = queue
+        flowOfBusiness3 = msgFlow 
       }
 
       enterBarrier("started-business")
@@ -468,7 +475,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(business3) {
         enterBarrier("two-groups-tested")
         val socketioExt = SocketIOExtension(system)
-        socketioExt.topicClient ! Unsubscribe(Topic.EMPTY, Some("group2"), queueOfBusiness3)
+        socketioExt.topicClient ! Unsubscribe(Topic.EMPTY, Some("group2"), flowOfBusiness3)
         expectMsgType[UnsubscribeAck]
         enterBarrier("one-group")
       }

@@ -130,13 +130,13 @@ object Dependencies {
   val spray_json = "io.spray" %% "spray-json" % "1.3.1"
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
   val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
-  val akka_stream = "com.typesafe.akka" %% "akka-stream-experimental" % "1.0-RC1"
+  val akka_stream = "com.typesafe.akka" %% "akka-stream-experimental" % "1.0-RC2"
   val parboiled = "org.parboiled" %% "parboiled" % "2.0.1"
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % Test
   val akka_multinode_testkit = "com.typesafe.akka" %% "akka-multi-node-testkit" % AKKA_VERSION % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.2.4" % Test
   val scalaspecs = "org.specs2" %% "specs2-core" % "2.3.13" % Test
-  val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % "test"
+  val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % Test
   val caliper = "com.google.caliper" % "caliper" % "0.5-rc1" % Test
   val akka_persistence_cassandra = "com.github.krasserm" %% "akka-persistence-cassandra" % "0.3.6" % Runtime
 

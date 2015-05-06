@@ -4,10 +4,13 @@ import akka.actor.{ ActorSystem, Props }
 import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
 import akka.io.IO
 import akka.persistence.Persistence
-import akka.stream.actor.ActorPublisher
+import akka.stream.ActorFlowMaterializer
 import akka.stream.actor.ActorSubscriber
 import akka.stream.actor.ActorSubscriberMessage.OnNext
 import akka.stream.actor.WatermarkRequestStrategy
+import akka.stream.scaladsl.Flow
+import akka.stream.scaladsl.Sink
+import akka.stream.scaladsl.Source
 import com.typesafe.config.{ Config, ConfigFactory }
 import spray.can.server.UHttp
 import spray.can.Http
@@ -115,7 +118,7 @@ object SocketIOTestClusterServer extends App {
       val appConfig = ConfigFactory.load()
       val isBroadcast = appConfig.getBoolean("spray.socketio.benchmark.broadcast")
 
-      class Receiver extends ActorSubscriber {
+      class MsgWorker extends ActorSubscriber {
         override val requestStrategy = WatermarkRequestStrategy(10)
 
         implicit val sessionClient = socketioExt.sessionClient
@@ -136,12 +139,14 @@ object SocketIOTestClusterServer extends App {
         }
       }
 
-      val queue = system.actorOf(Queue.props())
-      val receiver = system.actorOf(Props(new Receiver))
-      ActorPublisher(queue).subscribe(ActorSubscriber(receiver))
+      // use queue publisher as input Source to a Flow, and worker subscriber as output Sink to this Flow.
+      implicit val materializer = ActorFlowMaterializer()
+      val msgSource = Source.actorPublisher(Queue.props[Any]())
+      val msgSink = Sink.actorSubscriber(Props(new MsgWorker))
+      val msgFlow = Flow[Any].to(msgSink).runWith(msgSource)
 
       val topicClient = socketioExt.topicClient
-      topicClient ! Subscribe(Topic.EMPTY, queue)
+      topicClient ! Subscribe(Topic.EMPTY, msgFlow)
 
     case _ =>
       exitWithUsage

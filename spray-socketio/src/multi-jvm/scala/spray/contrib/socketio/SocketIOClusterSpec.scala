@@ -65,20 +65,20 @@ import spray.json.{JsArray, JsString}
  */
 object SocketIOClusterSpecConfig extends MultiNodeConfig {
   // first node is a special node for test spec
-  val controller = role("controller")
+  val controller = role("controller") // JVM1
 
-  val topic1     = role("topic1")
-  val topic2     = role("topic2")
-  val transport1 = role("transport1")
-  val transport2 = role("transport2")
-  val session1   = role("session1")
-  val session2   = role("session2")
-  val business1  = role("business1")
-  val business2  = role("business2")
-  val business3  = role("business3")
+  val topic1     = role("topic1") // JVM2
+  val topic2     = role("topic2") // JVM3
+  val transport1 = role("transport1") // JVM4
+  val transport2 = role("transport2") // JVM5
+  val session1   = role("session1") // JVM6
+  val session2   = role("session2") // JVM7
+  val business1  = role("business1") // JVM8
+  val business2  = role("business2") // JVM9
+  val business3  = role("business3") // JVM10
 
-  val client1 = role("client1")
-  val client2 = role("client2")
+  val client1 = role("client1") // JVM11
+  val client2 = role("client2") // JVM12
 
   val host = "127.0.0.1"
 
@@ -304,6 +304,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
       runOn(controller) {
         system.actorOf(Props[SharedLeveldbStore], "store")
       }
+
       enterBarrier("peristence-started")
 
       runOn(topic1, topic2, session1, session2) {
@@ -311,6 +312,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val sharedStore = expectMsgType[ActorIdentity].ref.get
         SharedLeveldbJournal.setStore(sharedStore, system)
       }
+
       enterBarrier("setup-persistence")
     }
 
@@ -401,8 +403,10 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         def sessionRegion = ConnectionSession.shardRegion(system)
         log.info("sessionRegion: {}", sessionRegion)
 
-        sessionRegion ! ConnectionSession.AskStatus("0")
-        expectMsgType[ConnectionSession.Status]
+        awaitAssert { // wait for sharding ready
+          sessionRegion ! ConnectionSession.AskStatus("0")
+          expectMsgType[ConnectionSession.Status]
+        }
       }
 
       enterBarrier("verified-cluster-services")
@@ -412,49 +416,91 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
     "start business sevices" in within(60.seconds) {
 
-      runOn(business1, business2) {
-        val socketioExt = SocketIOExtension(system)
-
+      runOn(business1) {
         val topicAggregatorClient = Topic(system).topicAggregatorClient
 
         val topicsSource = Source.actorPublisher[Any](Queue.props[Any]())
         val topicsSink = Sink.actorSubscriber(Props(new TopicAggregatorWorker(self)))
         val topicsFlow = Flow[Any].to(topicsSink).runWith(topicsSource)
         topicAggregatorClient ! Subscribe(Topic.EMPTY, topicsFlow)
+        expectMsgType[SubscribeAck]
+
+        expectNoMsg(10.seconds)
+
+        val socketioExt = SocketIOExtension(system)
 
         val msgSource = Source.actorPublisher[Any](Queue.props[Any]())
         val msgSink = Sink.actorSubscriber(Props(new MsgWorker(socketioExt, self)))
         val msgFlow = Flow[Any].to(msgSink).runWith(msgSource)
         socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group1"), msgFlow)
 
-        // we'd expect 2 SubsribeAck and 1 Available
-        expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
-        expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
-        expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
+        // we'd expect 1 SubsribeAck and 1 Available
+        expectMsgAllConformingOf(classOf[SubscribeAck], classOf[Aggregator.Available])
 
         topicAggregatorClient ! Aggregator.AskStats
         expectMsgPF(10.seconds) {
           case Aggregator.Stats(xs) if xs.values.toList.contains(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
           case x => log.error("Wrong aggregator topics: {}", x); assert(false)
         }
+
+        enterBarrier("subscribed-topicAggregator-singleton")
+        enterBarrier("started-business")
+      }
+
+      runOn(business2) {
+        enterBarrier("subscribed-topicAggregator-singleton")
+
+        val topicAggregatorClient = Topic(system).topicAggregatorClient
+
+        topicAggregatorClient ! Aggregator.AskStats
+        expectMsgPF(10.seconds) {
+          case Aggregator.Stats(xs) if xs.values.toList.contains(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
+          case x => log.error("Wrong aggregator topics: {}", x); assert(false)
+        }
+
+        val socketioExt = SocketIOExtension(system)
+
+        val msgSource = Source.actorPublisher[Any](Queue.props[Any]())
+        val msgSink = Sink.actorSubscriber(Props(new MsgWorker(socketioExt, self)))
+        val msgFlow = Flow[Any].to(msgSink).runWith(msgSource)
+        socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group1"), msgFlow)
+        expectMsgType[SubscribeAck]
+
+        enterBarrier("started-business")
       }
 
       runOn(business3) {
+        enterBarrier("subscribed-topicAggregator-singleton")
+
+        val topicAggregatorClient = Topic(system).topicAggregatorClient
+
+        topicAggregatorClient ! Aggregator.AskStats
+        expectMsgPF(10.seconds) {
+          case Aggregator.Stats(xs) if xs.values.toList.contains(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
+          case x => log.error("Wrong aggregator topics: {}", x); assert(false)
+        }
+
         val socketioExt = SocketIOExtension(system)
 
         val msgSource = Source.actorPublisher[Any](Queue.props[Any]())
         val msgSink = Sink.actorSubscriber(Props(new MsgWorker(socketioExt, self)))
         val msgFlow = Flow[Any].to(msgSink).runWith(msgSource)
         socketioExt.topicClient ! Subscribe(Topic.EMPTY, Some("group2"), msgFlow)
-        expectMsgAnyClassOf(classOf[SubscribeAck], classOf[Aggregator.Available])
+        expectMsgType[SubscribeAck]
 
         flowOfBusiness3 = msgFlow 
+
+        enterBarrier("started-business")
       }
 
-      enterBarrier("started-business")
+      runOn(controller, transport1, transport2, session1, session2, topic1, topic2, client1, client2) {
+        enterBarrier("subscribed-topicAggregator-singleton")
+        enterBarrier("started-business")
+      }
     }
 
     "chat between client1 and server1" in within(60.seconds) {
+
       runOn(client1) {
         val connect = Http.Connect(host, port1)
         val client = system.actorOf(Props(classOf[SocketIOClient], connect, testActor))
@@ -464,8 +510,10 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         expectMsg(SendHello)
         expectMsg(SendHello)
         expectNoMsg(2.seconds)
+
         enterBarrier("two-groups-tested")
         enterBarrier("one-group")
+
         client ! SendHello
         // because business nodes are now in one group, here should receive only one Hello
         expectMsg(SendHello)
@@ -474,9 +522,11 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
 
       runOn(business3) {
         enterBarrier("two-groups-tested")
+
         val socketioExt = SocketIOExtension(system)
         socketioExt.topicClient ! Unsubscribe(Topic.EMPTY, Some("group2"), flowOfBusiness3)
         expectMsgType[UnsubscribeAck]
+
         enterBarrier("one-group")
       }
 
@@ -485,16 +535,20 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         enterBarrier("one-group")
       }
 
-      enterBarrier("chat")
+      enterBarrier("chated")
     }
 
     "broadcast" in within(60.seconds) {
+      enterBarrier("chated")
+
       val msg = "hello world"
       runOn(client2) {
         val connect = Http.Connect(host, port2)
         val client = system.actorOf(Props(classOf[SocketIOClient], connect, testActor))
         expectMsg(OnOpen)
+
         enterBarrier("client2-started")
+
         expectMsg(msg)
       }
 
@@ -502,7 +556,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val connect = Http.Connect(host, port1)
         val client = system.actorOf(Props(classOf[SocketIOClient], connect, testActor))
         expectMsg(OnOpen)
+
         enterBarrier("client2-started")
+
         client ! SocketIOClient.SendBroadcast(msg)
         expectMsg(msg)
       }
@@ -511,7 +567,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         enterBarrier("client2-started")
       }
 
-      enterBarrier("broadcast")
+      enterBarrier("broadcasted")
     }
 
   }

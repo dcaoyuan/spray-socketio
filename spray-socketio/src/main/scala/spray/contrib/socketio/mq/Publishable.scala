@@ -12,8 +12,8 @@ import scala.concurrent.duration._
 
 trait Publishable extends Actor {
 
-  var flows = Set[ActorRef]() // ActorRef of Flows 
-  var groupToFlows: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
+  var subscribers = Set[ActorRef]() // ActorRef of subscriber
+  var groupToSubscribers: Map[Option[String], Set[ActorRefRoutee]] = Map.empty.withDefaultValue(Set.empty)
 
   def log: LoggingAdapter
   def groupRouter: Router
@@ -21,15 +21,15 @@ trait Publishable extends Actor {
   def topic = self.path.name
 
   def publishableBehavior: Receive = {
-    case x @ Subscribe(_, group, flow) =>
-      insertSubscription(group, flow)
+    case x @ Subscribe(_, group, subscriber) =>
+      insertSubscription(group, subscriber)
       sender() ! SubscribeAck(x)
-      log.info("{} successfully subscribed to topic(me) [{}] under group [{}]", flow, topic, group)
+      log.info("{} successfully subscribed to topic(me) [{}] under group [{}]", subscriber, topic, group)
 
-    case x @ Unsubscribe(_, group, flow) =>
-      removeSubscription(group, flow)
+    case x @ Unsubscribe(_, group, subscriber) =>
+      removeSubscription(group, subscriber)
       sender() ! UnsubscribeAck(x)
-      log.info("{} successfully unsubscribed to topic(me) [{}] under group [{}]", flow, topic, group)
+      log.info("{} successfully unsubscribed to topic(me) [{}] under group [{}]", subscriber, topic, group)
 
     case Publish(_, msg, _) => publish(msg)
 
@@ -37,38 +37,38 @@ trait Publishable extends Actor {
   }
 
   def publish(x: Any) {
-    groupToFlows foreach {
-      case (None, flows) => flows foreach (_.ref ! x)
-      case (_, flows)    => groupRouter.withRoutees(flows.toVector).route(x, self)
+    groupToSubscribers foreach {
+      case (None, subscribers) => subscribers foreach (_.ref ! x)
+      case (_, subscribers)    => groupRouter.withRoutees(subscribers.toVector).route(x, self)
     }
   }
 
-  def existsFlow(flow: ActorRef) = {
-    groupToFlows exists { case (group, flows) => flows.contains(ActorRefRoutee(flow)) }
+  def existsSubscriber(subscriber: ActorRef) = {
+    groupToSubscribers exists { case (group, subscribers) => subscribers.contains(ActorRefRoutee(subscriber)) }
   }
 
-  def insertSubscription(group: Option[String], flow: ActorRef) {
-    if (!flows.contains(flow)) {
-      context watch flow
-      flows += flow
+  def insertSubscription(group: Option[String], subscriber: ActorRef) {
+    if (!subscribers.contains(subscriber)) {
+      context watch subscriber
+      subscribers += subscriber
     }
-    groupToFlows = groupToFlows.updated(group, groupToFlows(group) + ActorRefRoutee(flow))
+    groupToSubscribers = groupToSubscribers.updated(group, groupToSubscribers(group) + ActorRefRoutee(subscriber))
   }
 
-  def removeSubscription(group: Option[String], flow: ActorRef) {
-    if (!existsFlow(flow)) {
-      context unwatch flow
-      flows -= flow
+  def removeSubscription(group: Option[String], subscriber: ActorRef) {
+    if (!existsSubscriber(subscriber)) {
+      context unwatch subscriber
+      subscribers -= subscriber
     }
-    groupToFlows = groupToFlows.updated(group, groupToFlows(group) - ActorRefRoutee(flow))
+    groupToSubscribers = groupToSubscribers.updated(group, groupToSubscribers(group) - ActorRefRoutee(subscriber))
   }
 
-  def removeSubscription(flow: ActorRef) {
-    context unwatch flow
-    flows -= flow
-    groupToFlows = for {
-      (group, flows) <- groupToFlows
-    } yield (group -> (flows - ActorRefRoutee(flow)))
+  def removeSubscription(subscriber: ActorRef) {
+    context unwatch subscriber
+    subscribers -= subscriber
+    groupToSubscribers = for {
+      (group, subscribers) <- groupToSubscribers
+    } yield (group -> (subscribers - ActorRefRoutee(subscriber)))
   }
 
 }

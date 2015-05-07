@@ -438,10 +438,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         expectMsgAllConformingOf(classOf[SubscribeAck], classOf[Aggregator.Available])
 
         topicAggregatorClient ! Aggregator.AskStats
-        expectMsgPF(10.seconds) {
-          case Aggregator.Stats(xs) if xs.values.toList.contains(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
-          case x => log.error("Wrong aggregator topics: {}", x); assert(false)
-        }
+        val stats = expectMsgType[Aggregator.Stats](10.seconds)
+        log.info("aggregator topics: {}", stats)
+        stats.reportingData.values.toList should contain(Topic.EMPTY)
 
         enterBarrier("subscribed-topicAggregator-singleton")
         enterBarrier("started-business")
@@ -453,10 +452,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val topicAggregatorClient = Topic(system).topicAggregatorClient
 
         topicAggregatorClient ! Aggregator.AskStats
-        expectMsgPF(10.seconds) {
-          case Aggregator.Stats(xs) if xs.values.toList.contains(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
-          case x => log.error("Wrong aggregator topics: {}", x); assert(false)
-        }
+        val stats = expectMsgType[Aggregator.Stats](10.seconds)
+        log.info("aggregator topics: {}", stats)
+        stats.reportingData.values.toList should contain(Topic.EMPTY)
 
         val socketioExt = SocketIOExtension(system)
 
@@ -475,10 +473,9 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
         val topicAggregatorClient = Topic(system).topicAggregatorClient
 
         topicAggregatorClient ! Aggregator.AskStats
-        expectMsgPF(10.seconds) {
-          case Aggregator.Stats(xs) if xs.values.toList.contains(Topic.EMPTY) => log.info("aggregator topics: {}", xs); assert(true) 
-          case x => log.error("Wrong aggregator topics: {}", x); assert(false)
-        }
+        val stats = expectMsgType[Aggregator.Stats](10.seconds)
+        log.info("aggregator topics: {}", stats)
+        stats.reportingData.values.toList should contain(Topic.EMPTY)
 
         val socketioExt = SocketIOExtension(system)
 

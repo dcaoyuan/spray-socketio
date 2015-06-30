@@ -4,7 +4,7 @@ import akka.actor.{ ActorSystem, Props }
 import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
 import akka.io.IO
 import akka.persistence.Persistence
-import akka.stream.ActorFlowMaterializer
+import akka.stream.ActorMaterializer
 import akka.stream.actor.ActorSubscriber
 import akka.stream.actor.ActorSubscriberMessage.OnNext
 import akka.stream.actor.WatermarkRequestStrategy
@@ -140,7 +140,7 @@ object SocketIOTestClusterServer extends App {
       }
 
       // use queue publisher as input Source to a Flow, and worker subscriber as output Sink to this Flow.
-      implicit val materializer = ActorFlowMaterializer()
+      implicit val materializer = ActorMaterializer()
       val msgSource = Source.actorPublisher(Queue.props[Any]())
       val msgSink = Sink.actorSubscriber(Props(new MsgWorker))
       val msgFlow = Flow[Any].to(msgSink).runWith(msgSource)

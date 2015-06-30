@@ -15,7 +15,7 @@ import akka.persistence.Persistence
 import akka.pattern.ask
 import akka.remote.testconductor.RoleName
 import akka.remote.testkit.{ MultiNodeSpec, MultiNodeConfig }
-import akka.stream.ActorFlowMaterializer
+import akka.stream.ActorMaterializer
 import akka.stream.actor.ActorSubscriber
 import akka.stream.actor.ActorSubscriberMessage.OnNext
 import akka.stream.actor.WatermarkRequestStrategy
@@ -275,7 +275,7 @@ class SocketIOClusterSpec extends MultiNodeSpec(SocketIOClusterSpecConfig) with 
   import SocketIOClusterSpecConfig._
   import SocketIOClusterSpec._
 
-  implicit val materializer = ActorFlowMaterializer()
+  implicit val materializer = ActorMaterializer()
 
   override def initialParticipants: Int = roles.size
 

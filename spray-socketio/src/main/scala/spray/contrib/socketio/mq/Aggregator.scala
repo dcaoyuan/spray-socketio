@@ -7,7 +7,7 @@ import akka.actor.ActorSystem
 import akka.actor.ExtendedActorSystem
 import akka.actor.PoisonPill
 import akka.actor.Props
-import akka.contrib.pattern.ClusterSingletonManager
+import akka.cluster.singleton.{ ClusterSingletonManagerSettings, ClusterSingletonManager }
 import akka.event.EventStream
 import akka.remote.DefaultFailureDetectorRegistry
 import akka.remote.FailureDetector
@@ -91,9 +91,11 @@ object Aggregator {
     system.actorOf(
       ClusterSingletonManager.props(
         singletonProps = props(settings.groupRoutingLogic, failureDetector, settings.AggregatorUnreachableReaperInterval),
-        singletonName = aggregateTopic,
         terminationMessage = PoisonPill,
-        role = role),
+        settings =
+          ClusterSingletonManagerSettings(system)
+            .withSingletonName(aggregateTopic)
+            .withRole(role)),
       name = singletonManagerNameForAggregate(aggregateTopic))
   }
 

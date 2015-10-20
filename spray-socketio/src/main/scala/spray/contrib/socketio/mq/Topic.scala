@@ -1,25 +1,12 @@
 package spray.contrib.socketio.mq
 
-import akka.actor.Actor
-import akka.actor.ActorLogging
-import akka.actor.ActorRef
-import akka.actor.ActorSystem
-import akka.actor.ExtendedActorSystem
-import akka.actor.Extension
-import akka.actor.ExtensionId
-import akka.actor.ExtensionIdProvider
-import akka.actor.Props
-import akka.contrib.pattern.ClusterClient
-import akka.contrib.pattern.ClusterReceptionistExtension
-import akka.contrib.pattern.ClusterSharding
-import akka.contrib.pattern.ClusterSingletonProxy
-import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck }
-import akka.contrib.pattern.ShardRegion
-import akka.pattern.ask
+import akka.actor._
+import akka.cluster.client.{ ClusterClientSettings, ClusterClient, ClusterClientReceptionist }
+import akka.cluster.sharding.{ ClusterShardingSettings, ClusterSharding, ShardRegion }
+import akka.cluster.singleton.{ ClusterSingletonProxySettings, ClusterSingletonProxy }
+import akka.cluster.pubsub.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck }
 import akka.routing.Router
 import akka.routing.RoutingLogic
-import scala.concurrent.duration._
-import spray.contrib.socketio
 import spray.contrib.socketio.mq.Aggregator.ReportingData
 
 /**
@@ -92,7 +79,7 @@ object Topic extends ExtensionId[TopicExtension] with ExtensionIdProvider {
 
   val shardName: String = "Topics"
 
-  val idExtractor: ShardRegion.IdExtractor = {
+  val idExtractor: ShardRegion.ExtractEntityId = {
     case x: Subscribe      => (x.topic, x)
     case x: Unsubscribe    => (x.topic, x)
     case x: SubscribeAck   => (x.subscribe.topic, x)
@@ -100,7 +87,7 @@ object Topic extends ExtensionId[TopicExtension] with ExtensionIdProvider {
     case x: Publish        => (x.topic, x)
   }
 
-  val shardResolver: ShardRegion.ShardResolver = {
+  val shardResolver: ShardRegion.ExtractShardId = {
     case x: Subscribe      => hashForShard(x.topic)
     case x: Unsubscribe    => hashForShard(x.topic)
     case x: SubscribeAck   => hashForShard(x.subscribe.topic)
@@ -113,26 +100,34 @@ object Topic extends ExtensionId[TopicExtension] with ExtensionIdProvider {
   /**
    * It is recommended to load the ClusterReceptionistExtension when the actor
    * system is started by defining it in the akka.extensions configuration property:
-   *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
+   *   akka.extensions = ["akka.cluster.client.ClusterClientReceptionist"]
    */
   def startSharding(system: ActorSystem, entryProps: Option[Props]) {
     val sharding = ClusterSharding(system)
-    sharding.start(
-      entryProps = entryProps,
-      typeName = shardName,
-      idExtractor = idExtractor,
-      shardResolver = shardResolver)
-    if (entryProps.isDefined) ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
+    entryProps match {
+      case Some(props) ⇒ sharding.start(
+        typeName = shardName,
+        entityProps = props,
+        settings = ClusterShardingSettings(system),
+        extractEntityId = idExtractor,
+        extractShardId = shardResolver)
+      case None ⇒ sharding.startProxy(
+        typeName = shardName,
+        role = None,
+        extractEntityId = idExtractor,
+        extractShardId = shardResolver)
+    }
+    if (entryProps.isDefined) ClusterClientReceptionist(system).registerService(sharding.shardRegion(shardName))
   }
 
   def shardRegion(system: ActorSystem) = ClusterSharding(system).shardRegion(shardName)
   def shardRegionPath(system: ActorSystem) = {
-    val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
-    s"/user/${shardingGuardianName}/${shardName}"
+    val shardingGuardianName = system.settings.config.getString("akka.cluster.sharding.guardian-name")
+    s"/system/${shardingGuardianName}/${shardName}"
   }
 
   val TopicAggregator = "aggregator-topic"
-  val TopicAggregatorPath = "/user/" + Aggregator.singletonManagerNameForAggregate(TopicAggregator) + "/" + TopicAggregator
+  val TopicAggregatorManagerPath = "/user/" + Aggregator.singletonManagerNameForAggregate(TopicAggregator)
   val TopicAggregatorProxyName = "topicAggregatorProxy"
   val TopicAggregatorProxyPath = "/user/" + TopicAggregatorProxyName
 
@@ -149,16 +144,19 @@ object Topic extends ExtensionId[TopicExtension] with ExtensionIdProvider {
   def startTopicAggregatorProxy(system: ActorSystem, role: Option[String]) {
     val proxy = system.actorOf(
       ClusterSingletonProxy.props(
-        singletonPath = Topic.TopicAggregatorPath,
-        role = role),
+        singletonManagerPath = Topic.TopicAggregatorManagerPath,
+        settings =
+          ClusterSingletonProxySettings(system)
+            .withRole(role)
+            .withSingletonName(Topic.TopicAggregator)),
       name = Topic.TopicAggregatorProxyName)
-    ClusterReceptionistExtension(system).registerService(proxy)
+    ClusterClientReceptionist(system).registerService(proxy)
   }
 
   /**
    * A broker actor that runs outside of the cluster to forward msg to sharding actor easily.
    *
-   * @param path sharding service's path
+   * @param servicePath sharding service's path
    * @param originalClient [[ClusterClient]] to access Cluster
    */
   class ClusterClientBroker(servicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
@@ -206,7 +204,8 @@ class TopicExtension(system: ExtendedActorSystem) extends Extension {
   lazy val originalClusterClient = {
     import scala.collection.JavaConversions._
     val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
-    system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-topic-cluster-client")
+    val clusterClientSettings = ClusterClientSettings(system).withInitialContacts(initialContacts map ActorPath.fromString)
+    system.actorOf(ClusterClient.props(clusterClientSettings), "socketio-topic-cluster-client")
   }
 
   lazy val clusterClient = {

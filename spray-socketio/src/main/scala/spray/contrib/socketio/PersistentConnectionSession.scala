@@ -1,7 +1,7 @@
 package spray.contrib.socketio
 
 import akka.actor.{ ActorLogging, Props }
-import akka.persistence.{ PersistenceFailure, PersistentActor, SaveSnapshotSuccess, SaveSnapshotFailure, SnapshotOffer, RecoveryCompleted }
+import akka.persistence.{ PersistentActor, SaveSnapshotSuccess, SaveSnapshotFailure, SnapshotOffer, RecoveryCompleted }
 
 object PersistentConnectionSession {
   def props(): Props = Props(classOf[PersistentConnectionSession])
@@ -29,9 +29,8 @@ final class PersistentConnectionSession() extends ConnectionSession with Persist
   }
 
   def receiveCommand: Receive = working orElse {
-    case SaveSnapshotSuccess(_)           =>
-    case SaveSnapshotFailure(_, reason)   => log.error("Failed to save snapshot: {}", reason)
-    case PersistenceFailure(_, _, reason) => log.error("Failed to persistence: {}", reason)
+    case SaveSnapshotSuccess(_)         =>
+    case SaveSnapshotFailure(_, reason) => log.error("Failed to save snapshot: {}", reason)
   }
 
   override def updateState(evt: Any, newState: ConnectionSession.State) {

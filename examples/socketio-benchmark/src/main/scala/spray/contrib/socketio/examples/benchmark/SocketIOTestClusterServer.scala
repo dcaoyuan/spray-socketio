@@ -1,7 +1,7 @@
 package spray.contrib.socketio.examples.benchmark
 
 import akka.actor.{ ActorSystem, Props }
-import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
+import akka.cluster.pubsub.DistributedPubSubMediator.Subscribe
 import akka.io.IO
 import akka.persistence.Persistence
 import akka.stream.ActorMaterializer
@@ -56,7 +56,7 @@ object SocketIOTestClusterServer extends App {
     case "session" :: tail =>
       val extraCfg =
         """
-          akka.contrib.cluster.sharding.role = "session"
+          akka.cluster.sharding.role = "session"
           akka.cluster.roles = ["session", "topic"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
@@ -73,7 +73,7 @@ object SocketIOTestClusterServer extends App {
     case "topic" :: tail =>
       val extraCfg =
         """
-          akka.contrib.cluster.sharding.role = "topic"
+          akka.cluster.sharding.role = "topic"
           akka.cluster.roles = ["topic", "session"]
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
@@ -93,7 +93,7 @@ object SocketIOTestClusterServer extends App {
       val extraCfg =
         """
           akka.cluster.roles =["transport"]
-          akka.contrib.cluster.sharding.role = ""
+          akka.cluster.sharding.role = ""
         """
       val config = ConfigFactory.parseString(extraCfg).withFallback(commonConfig)
 

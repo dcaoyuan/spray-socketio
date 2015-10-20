@@ -123,17 +123,19 @@ object Build extends sbt.Build {
 
 object Dependencies {
   val SPRAY_VERSION = "1.3.3"
-  val AKKA_VERSION = "2.3.12"
+  val AKKA_VERSION = "2.4.0"
 
   val spray_websocket = "com.wandoulabs.akka" %% "spray-websocket" % "0.1.5-SNAPSHOT"
   val spray_can = "io.spray" %% "spray-can" % SPRAY_VERSION
   val spray_json = "io.spray" %% "spray-json" % "1.3.1"
   val akka_actor = "com.typesafe.akka" %% "akka-actor" % AKKA_VERSION
-  val akka_contrib = "com.typesafe.akka" %% "akka-contrib" % AKKA_VERSION
+  val akka_cluster_tools = "com.typesafe.akka" %% "akka-cluster-tools" % AKKA_VERSION
+  val akka_cluster_sharding = "com.typesafe.akka" %% "akka-cluster-sharding" % AKKA_VERSION
   val akka_stream = "com.typesafe.akka" %% "akka-stream-experimental" % "1.0"
   val parboiled = "org.parboiled" %% "parboiled" % "2.0.1"
   val akka_testkit = "com.typesafe.akka" %% "akka-testkit" % AKKA_VERSION % Test
   val akka_multinode_testkit = "com.typesafe.akka" %% "akka-multi-node-testkit" % AKKA_VERSION % "test"
+  val leveldb = "org.iq80.leveldb" % "leveldb" % "0.7" % "test"
   val scalatest = "org.scalatest" %% "scalatest" % "2.2.4" % Test
   val scalaspecs = "org.specs2" %% "specs2-core" % "2.3.13" % Test
   val apache_math = "org.apache.commons" % "commons-math3" % "3.2" // % Test
@@ -150,7 +152,7 @@ object Dependencies {
   val logback = "ch.qos.logback" % "logback-classic" % "1.0.13"
   val akka_slf4j = "com.typesafe.akka" %% "akka-slf4j" % AKKA_VERSION
 
-  val all = Seq(spray_websocket, spray_can, spray_json, akka_actor, akka_contrib, akka_stream, parboiled, akka_testkit, akka_multinode_testkit, scalatest, scalaspecs, apache_math, caliper, logback, akka_slf4j, kafka)
+  val all = Seq(spray_websocket, spray_can, spray_json, akka_actor, akka_cluster_tools, akka_cluster_sharding, akka_stream, parboiled, akka_testkit, akka_multinode_testkit, scalatest, scalaspecs, apache_math, caliper, logback, akka_slf4j, kafka, leveldb)
 }
 
 object Formatting {

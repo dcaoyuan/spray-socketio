@@ -1,7 +1,7 @@
 package spray.contrib.socketio.examples.benchmark
 
 import akka.actor.{ Terminated, ActorSystem, Actor, Props, ActorLogging, ActorRef }
-import akka.contrib.pattern.DistributedPubSubMediator.Subscribe
+import akka.cluster.pubsub.DistributedPubSubMediator.Subscribe
 import akka.io.IO
 import akka.stream.ActorMaterializer
 import akka.stream.actor.ActorSubscriber

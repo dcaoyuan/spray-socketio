@@ -1,7 +1,6 @@
 package spray.contrib.socketio
 
 import akka.actor._
-import akka.contrib.pattern._
 import akka.dispatch.MonitorableThreadFactory
 import akka.event.Logging
 import akka.event.LoggingAdapter

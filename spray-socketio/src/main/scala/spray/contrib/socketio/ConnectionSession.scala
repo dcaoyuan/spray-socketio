@@ -1,12 +1,10 @@
 package spray.contrib.socketio
 
-import akka.actor.{ PoisonPill, Actor, ActorRef, ActorSystem, Props, ActorLogging, Cancellable, ExtensionIdProvider, ExtendedActorSystem, Extension, ExtensionId }
-import akka.contrib.pattern.ClusterClient
-import akka.contrib.pattern.ClusterReceptionistExtension
-import akka.contrib.pattern.ClusterSharding
-import akka.contrib.pattern.ShardRegion
-import akka.contrib.pattern.ShardRegion.Passivate
-import akka.contrib.pattern.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck }
+import akka.actor._
+import akka.cluster.client.{ ClusterClientSettings, ClusterClient, ClusterClientReceptionist }
+import akka.cluster.sharding.{ ClusterShardingSettings, ClusterSharding, ShardRegion }
+import akka.cluster.sharding.ShardRegion.Passivate
+import akka.cluster.pubsub.DistributedPubSubMediator.{ Publish, Subscribe, SubscribeAck, Unsubscribe, UnsubscribeAck }
 import akka.event.LoggingAdapter
 import akka.io.Tcp
 import akka.pattern.ask
@@ -130,39 +128,48 @@ object ConnectionSession extends ExtensionId[ConnectionSessionExtension] with Ex
 
   val shardName: String = "ConnectionSessions"
 
-  val idExtractor: ShardRegion.IdExtractor = {
+  val idExtractor: ShardRegion.ExtractEntityId = {
     case cmd: Command => (cmd.sessionId, cmd)
   }
 
-  val shardResolver: ShardRegion.ShardResolver = {
+  val shardResolver: ShardRegion.ExtractShardId = {
     case cmd: Command => (math.abs(cmd.sessionId.hashCode) % 100).toString
   }
 
   /**
-   * It is recommended to load the ClusterReceptionistExtension when the actor
+   * It is recommended to load the ClusterClientReceptionist when the actor
    * system is started by defining it in the akka.extensions configuration property:
-   *   akka.extensions = ["akka.contrib.pattern.ClusterReceptionistExtension"]
+   *   akka.extensions = ["akka.cluster.client.ClusterClientReceptionist"]
    */
   def startSharding(system: ActorSystem, entryProps: Option[Props]) {
     val sharding = ClusterSharding(system)
-    sharding.start(
-      entryProps = entryProps,
-      typeName = shardName,
-      idExtractor = idExtractor,
-      shardResolver = shardResolver)
-    if (entryProps.isDefined) ClusterReceptionistExtension(system).registerService(sharding.shardRegion(shardName))
+
+    entryProps match {
+      case Some(props) ⇒ sharding.start(
+        typeName = shardName,
+        entityProps = props,
+        settings = ClusterShardingSettings(system),
+        extractEntityId = idExtractor,
+        extractShardId = shardResolver)
+      case None ⇒ sharding.startProxy(
+        typeName = shardName,
+        role = None,
+        extractEntityId = idExtractor,
+        extractShardId = shardResolver)
+    }
+    if (entryProps.isDefined) ClusterClientReceptionist(system).registerService(sharding.shardRegion(shardName))
   }
 
   def shardRegion(system: ActorSystem) = ClusterSharding(system).shardRegion(shardName)
   def shardRegionPath(system: ActorSystem) = {
-    val shardingGuardianName = system.settings.config.getString("akka.contrib.cluster.sharding.guardian-name")
-    s"/user/${shardingGuardianName}/${shardName}"
+    val shardingGuardianName = system.settings.config.getString("akka.cluster.sharding.guardian-name")
+    s"/system/${shardingGuardianName}/${shardName}"
   }
 
   /**
    * A broker actor that runs outside of the cluster to forward msg to sharding actor easily.
    *
-   * @param path sharding service's path
+   * @param servicePath sharding service's path
    * @param originalClient [[ClusterClient]] to access Cluster
    */
   class ClusterClientBroker(servicePath: String, originalClient: ActorRef) extends Actor with ActorLogging {
@@ -566,7 +573,8 @@ class ConnectionSessionExtension(system: ExtendedActorSystem) extends Extension 
   lazy val originalClusterClient = {
     import scala.collection.JavaConversions._
     val initialContacts = system.settings.config.getStringList("spray.socketio.cluster.client-initial-contacts").toSet
-    system.actorOf(ClusterClient.props(initialContacts map system.actorSelection), "socketio-session-cluster-client")
+    val clusterClientSettings = ClusterClientSettings(system).withInitialContacts(initialContacts map ActorPath.fromString)
+    system.actorOf(ClusterClient.props(clusterClientSettings), "socketio-session-cluster-client")
   }
 
   lazy val clusterClient = {
